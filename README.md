@@ -1,11 +1,16 @@
-# KPubData Studio
+# KPubData Studio — Korea Public Data Studio
 
-KPubData Studio is the UI layer of the KPubData family.
+**KPubData Studio (Korea Public Data Studio)** is the visual interface for
+the KPubData product family.
 
-It helps users configure, preview, run, and inspect `kpubdata-builder` workflows.
+It helps users configure, preview, run, and inspect
+[`kpubdata-builder`](https://github.com/yeongseon/kpubdata-builder) workflows
+without hand-editing configuration files.
 
 ## Product family
 
-- `kpubdata`: public data access + normalization core
-- `kpubdata-builder`: artifact build pipeline
-- `kpubdata-studio`: visual interface for authoring and running builds
+| Package | Role |
+|---|---|
+| [`kpubdata`](https://github.com/yeongseon/kpubdata) | Korea Public Data access + parsing + normalization core |
+| [`kpubdata-builder`](https://github.com/yeongseon/kpubdata-builder) | Dataset assembly + export pipeline |
+| [`kpubdata-studio`](https://github.com/yeongseon/kpubdata-studio) | Visual interface for authoring and running builds |
