@@ -1,5 +1,22 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+# AGENTS.md — kpubdata-studio
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+## Mission
+
+Implement KPubData Studio as the UI shell and workflow interface for `kpubdata-builder`.
+
+## Ground Rules
+
+- Studio must not reimplement builder logic
+- Prefer explicit UI state transitions
+- Keep generated specs portable
+- Surface validation and manifests clearly
+- Make preview a first-class feature
+
+## Priorities
+
+1. information architecture
+2. build draft state
+3. builder API integration layer
+4. preview and validation views
+5. artifact viewer
+6. publish flow
