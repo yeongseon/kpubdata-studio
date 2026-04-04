@@ -1,36 +1,100 @@
 # UI Spec — KPubData Studio
 
-## Primary Screens
+## 1. Primary Screens & Wireframes
 
-### Home
-- recent builds
-- quick actions
-- templates
+### [Home] 대시보드
+빌드 목록을 한눈에 보고 빠르게 작업을 시작하는 곳입니다.
 
-### Build Editor
-- source cards
-- params editor
-- metadata form
-- export target selection
+**Wireframe:**
+```text
++--------------------------------------------------+
+| [Header] KPubData Studio          [User Profile] |
++--------------------------------------------------+
+| [Sidebar]    |                                   |
+| - Dashboard  |  [ + New Build ] [ Quick Actions ]|
+| - Builds     |                                   |
+| - Settings   |  Recent Build Runs                |
+|              |  +-----------------------------+  |
+|              |  | ID | Status | Time | Action |  |
+|              |  |----|--------|------|--------|  |
+|              |  | 01 | Success| 2min | View   |  |
+|              |  +-----------------------------+  |
++--------------+-----------------------------------+
+```
+- **Interactions**:
+  - `[ + New Build ]`: 새로운 빌드 작성 페이지(`/builds/new`)로 이동합니다.
+  - `[ View ]`: 해당 빌드의 상세 결과 페이지로 이동합니다.
+- **APIs**: `GET /builds` (최근 빌드 목록 조회)
 
-### Preview
-- row sample
-- schema summary
-- warnings
+---
 
-### Validation
-- blocking errors
-- non-blocking warnings
+### [Build Editor] 빌드 편집기
+어떤 데이터를 어떻게 수집할지 기획서를 작성하는 곳입니다.
 
-### Build Run
-- log/status timeline
-- output summary
+**Wireframe:**
+```text
++--------------------------------------------------+
+| < Back to List         [ Validate ] [ Run Build ]|
++--------------------------------------------------+
+| [1. Source]          | [3. Preview Panel]        |
+| + Provider Choice    |                           |
+| + Dataset Choice     | (Sample Data Table)       |
+| + Parameters Input   |                           |
+|                      |                           |
+| [2. Export Config]   | [4. Validation Panel]     |
+| + Format (JSON/MD..) |                           |
+| + Target (HF/Local)  | (Warnings/Errors List)    |
++----------------------+---------------------------+
+```
+- **Interactions**:
+  - `Provider/Dataset Choice`: 선택 시 관련 파라미터 입력란이 자동으로 나타납니다.
+  - `[ Validate ]`: 현재 설정이 올바른지 확인합니다. (Validation Panel 업데이트)
+  - `[ Run Build ]`: 검증이 완료된 상태에서만 활성화되며, 누르면 실제 빌드가 시작됩니다.
+- **APIs**:
+  - `GET /providers`: 제공 기관 목록 조회
+  - `POST /validate`: 설정값 검증
+  - `POST /preview`: 샘플 데이터 미리보기
 
-### Artifacts
-- file list
-- rendered Markdown preview
-- manifest JSON view
+---
 
-### Publish
-- destination settings
-- confirmation summary
+### [Build Run] 빌드 실행 화면
+빌드가 진행되는 과정을 실시간으로 지켜보는 곳입니다.
+
+**Wireframe:**
+```text
++--------------------------------------------------+
+| Build #123 - Running...           [ Cancel Build ]|
++--------------------------------------------------+
+| Status: [====------] 40%                         |
+|                                                  |
+| [ Execution Logs ]                               |
+| 10:00:01 - Fetching data from data.go.kr...      |
+| 10:00:05 - Normalizing records...                |
+| 10:00:08 - Converting to Markdown...             |
++--------------------------------------------------+
+```
+- **Interactions**:
+  - `[ Cancel Build ]`: 실행 중인 작업을 즉시 중단합니다.
+- **APIs**: `GET /builds/:id/status` (상태 주기적 확인), `DELETE /builds/:id` (취소)
+
+---
+
+## 2. 에러 및 예외 상태 처리 (Error Handling)
+
+- **Loading State**: 데이터를 불러오는 동안 스피너(Spinner)나 스켈레톤(Skeleton) UI를 보여줍니다.
+- **Empty State**: 목록이 없을 때 "아직 생성된 빌드가 없습니다. 첫 빌드를 만들어보세요!" 라는 안내 문구를 보여줍니다.
+- **Error State**:
+  - **Network Error**: "서버와 연결이 끊겼습니다. 인터넷 연결을 확인해주세요."
+  - **Validation Error**: 입력창 아래에 붉은색 글씨로 구체적인 오류 원인을 적어줍니다. (예: "날짜 형식은 YYYYMMDD여야 합니다.")
+
+---
+
+## 3. 화면별 명세 요약
+
+| 화면명 | 주요 기능 | 호출 API |
+| :--- | :--- | :--- |
+| Home | 전체 현황 파악 | `listBuilds` |
+| Editor | 빌드 설정 기획 및 검증 | `validateSpec`, `previewBuild` |
+| Run | 실시간 빌드 추적 | `getBuildStatus`, `cancelBuild` |
+| Artifacts | 결과물 확인 및 다운로드 | `listArtifacts`, `readManifest` |
+| Publish | 외부 저장소 배포 | `triggerPublish` |
