@@ -12,6 +12,27 @@
 6. **검증 (Validate)**: '검증' 버튼을 눌러 모든 설정이 완벽한지 시스템 확인을 거칩니다.
 7. **실행 (Run)**: '빌드 실행' 버튼을 눌러 실제 데이터 수집을 시작합니다.
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 사용자
+    participant Studio as Studio UI
+    participant BAPI as Builder API
+
+    User->>Studio: 새 빌드 시작 (템플릿 선택)
+    User->>Studio: 데이터 소스 및 파라미터 입력
+    User->>Studio: '미리보기' 클릭
+    Studio->>BAPI: POST /preview (Spec)
+    BAPI-->>Studio: 샘플 데이터 반환
+    Studio-->>User: 데이터 표 표시
+    User->>Studio: '검증' 클릭
+    Studio->>BAPI: POST /validate (Spec)
+    BAPI-->>Studio: 검증 결과 (OK/Error)
+    User->>Studio: '빌드 실행' 클릭
+    Studio->>BAPI: POST /builds/run (Spec)
+    BAPI-->>Studio: 빌드 ID 반환 (queued)
+```
+
 ### 사용자가 경험하는 시나리오 예시
 - **하는 일**: "서울시 강남구의 이번 달 미세먼지 농도 데이터를 마크다운 파일로 만들고 싶어."
 - **시스템 반응**: 강남구 코드가 맞는지 검증하고, 미세먼지 API에서 샘플 데이터를 가져와 보여준 뒤, 빌드가 완료되면 다운로드 링크를 생성합니다.
@@ -27,6 +48,23 @@
 3. **결과 파일 확인**: 이미 생성된 아티팩트(파일)들을 다시 다운로드하거나 내용을 봅니다.
 4. **재수정 후 실행 (Rerun)**: 설정을 조금만 바꿔서(예: 날짜만 오늘로 변경) 다시 빌드합니다.
 
+```mermaid
+sequenceDiagram
+    actor User as 사용자
+    participant Dash as Dashboard
+    participant Detail as Build Detail
+    participant BAPI as Builder API
+
+    User->>Dash: 빌드 목록 확인
+    User->>Dash: 특정 빌드 선택
+    Dash->>Detail: 빌드 정보 로드
+    Detail->>BAPI: GET /builds/:id/manifest
+    BAPI-->>Detail: Manifest JSON
+    Detail-->>User: 설정 및 아티팩트 목록 표시
+    User->>Detail: '다시 빌드(Rerun)' 클릭
+    Detail->>BAPI: POST /builds/run (기존 Spec)
+```
+
 ---
 
 ## 3. Publish Review (출판 및 공유 검토)
@@ -37,6 +75,24 @@
 2. **데이터 카드 확인**: 데이터의 제목, 설명, 라이선스 정보가 잘 입력되었는지 봅니다.
 3. **목적지 확인**: 어디로 보낼지(예: 내 컴퓨터, HuggingFace 등) 결정합니다.
 4. **출판 실행**: '출판' 버튼을 눌러 공유를 완료합니다.
+
+```mermaid
+sequenceDiagram
+    actor User as 사용자
+    participant Select as Build Selection
+    participant Review as Review Card
+    participant BAPI as Builder API
+    participant Ext as External Service (HF)
+
+    User->>Select: 성공한 빌드 선택
+    User->>Review: 메타데이터(설명/라이선스) 확인/수정
+    User->>Review: '출판' 버튼 클릭
+    Review->>BAPI: POST /builds/:id/publish
+    BAPI->>Ext: 아티팩트 및 메타데이터 전송
+    Ext-->>BAPI: 성공 응답
+    BAPI-->>Review: 출판 완료 알림
+    Review-->>User: 결과 링크 및 카드 표시
+```
 
 ---
 
@@ -56,3 +112,46 @@
 - **발생 원인**: 필수 입력값 누락, 혹은 형식에 어긋난 입력(예: 숫자 자리에 문자 입력).
 - **사용자 경험**: '빌드 실행' 버튼이 비활성화되고, 잘못된 입력창 주위에 붉은색 테두리가 생깁니다.
 - **시스템 대처**: "날짜는 YYYYMMDD 형식을 지켜주세요" 등 해결 방법을 직접 제안합니다.
+
+---
+
+## 5. Error Recovery Flow (에러 복구 흐름)
+
+```mermaid
+flowchart TD
+    Error[오류 발생] --> Type{오류 종류}
+    Type --> BuildFail[빌드 실패]
+    Type --> NetFail[네트워크 오류]
+    Type --> ValFail[검증 실패]
+
+    BuildFail --> BuildLog[빌드 로그 분석]
+    BuildLog --> EditSpec[명세(Spec) 수정]
+    EditSpec --> Retry[재시도]
+
+    NetFail --> Offline[오프라인 모드 알림]
+    Offline --> Reconnect[자동 재연결 대기]
+    Reconnect --> Resume[작업 재개]
+
+    ValFail --> InputHighlight[잘못된 입력 강조]
+    InputHighlight --> CorrectInput[사용자 수정]
+    CorrectInput --> ReValidate[자동 다시 검증]
+
+---
+
+## 📚 관련 문서
+
+### 이 저장소 내 문서
+| 문서 | 설명 |
+| :--- | :--- |
+| [UI_SPEC.md](./UI_SPEC.md) | UI 컴포넌트 및 화면 명세 |
+| [STATE_MODEL.md](./STATE_MODEL.md) | 상태 관리 모델 |
+| [INFORMATION_ARCHITECTURE.md](./INFORMATION_ARCHITECTURE.md) | 정보 및 메뉴 구조 |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 시스템 아키텍처 설계 |
+
+### KPubData Product Family
+| 저장소 | 문서 | 설명 |
+| :--- | :--- | :--- |
+| [kpubdata](https://github.com/yeongseon/kpubdata) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata/blob/main/ARCHITECTURE.md) | Core 아키텍처 |
+| [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata-builder/blob/master/ARCHITECTURE.md) | Builder 아키텍처 |
+
+```

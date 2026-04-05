@@ -27,6 +27,17 @@
                      +-----------+-------- [invalid]
 ```
 
+```mermaid
+stateDiagram-v2
+    [*] --> new
+    new --> dirty: 내용 수정
+    dirty --> validated: 검증 성공
+    dirty --> invalid: 검증 실패 (오류 발견)
+    invalid --> dirty: 내용 수정
+    validated --> dirty: 다시 수정
+    validated --> [*]
+```
+
 ### 사용자의 행동과 UI 반응
 - **수정 중일 때**: "저장" 버튼이 활성화됩니다.
 - **검증 완료 시**: "빌드 실행" 버튼이 활성화됩니다.
@@ -54,6 +65,18 @@
                +--(취소)--> [cancelled]
 ```
 
+```mermaid
+stateDiagram-v2
+    [*] --> queued
+    queued --> running: 빌드 실행 시작
+    running --> succeeded: 처리 성공
+    running --> failed: 처리 중 오류
+    running --> cancelled: 사용자 취소
+    succeeded --> [*]
+    failed --> queued: 재시도
+    cancelled --> [*]
+```
+
 ### 사용자의 행동과 UI 반응
 - **실행 중**: 실시간 로그 화면이 보이며, "취소" 버튼을 누를 수 있습니다.
 - **성공 시**: 결과 파일 목록이 보이고, "미리보기"가 가능해집니다.
@@ -72,6 +95,50 @@
 - `published`: 전송이 완료되어 공개된 상태
 - `publish_failed`: 전송 도중 오류 발생
 
+```mermaid
+stateDiagram-v2
+    [*] --> not_started
+    not_started --> ready: 빌드 성공
+    ready --> publishing: 출판 버튼 클릭
+    publishing --> published: 전송 완료
+    publishing --> publish_failed: 전송 오류
+    publish_failed --> ready: 재시도
+    published --> [*]
+```
+
+---
+
+## 4. Complete Lifecycle (전체 생명주기)
+
+Draft부터 시작하여 Build Run을 거쳐 Publish까지 이르는 전체 흐름입니다.
+
+```mermaid
+stateDiagram-v2
+    state "Draft Phase" as Draft {
+        [*] --> Edit: 수정 중
+        Edit --> Validated: 검증 완료
+    }
+
+    state "Build Phase" as Build {
+        [*] --> Queued: 빌드 대기
+        Queued --> Running: 실행 중
+        Running --> Succeeded: 성공
+    }
+
+    state "Publish Phase" as Publish {
+        [*] --> Ready: 출판 준비
+        Ready --> Publishing: 전송 중
+        Publishing --> Published: 공개 완료
+    }
+
+    [*] --> Draft
+    Draft --> Build: 빌드 실행 클릭
+    Build --> Publish: 결과 확인 완료
+    Publish --> [*]
+    
+    Build --> Draft: 실패 시 수정
+```
+
 ---
 
 ## "상태와 UI의 관계" 요약
@@ -85,3 +152,22 @@
 | `running` | 진행률 표시바 (Progress Bar) | [취소] |
 | `succeeded` | "빌드가 완료되었습니다!" | [미리보기], [출판] |
 | `published` | 공유 링크 (URL) 표시 | [링크 복사] |
+
+---
+
+## 📚 관련 문서
+
+### 이 저장소 내 문서
+| 문서 | 설명 |
+| :--- | :--- |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 시스템 아키텍처 설계 |
+| [UI_SPEC.md](./UI_SPEC.md) | UI 컴포넌트 규격 |
+| [USER_FLOWS.md](./USER_FLOWS.md) | 사용자 시나리오 및 흐름 |
+| [API_CONTRACT.md](./API_CONTRACT.md) | API 통신 규약 |
+
+### KPubData Product Family
+| 저장소 | 문서 | 설명 |
+| :--- | :--- | :--- |
+| [kpubdata](https://github.com/yeongseon/kpubdata) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata/blob/main/ARCHITECTURE.md) | Core 아키텍처 |
+| [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata-builder/blob/master/ARCHITECTURE.md) | Builder 아키텍처 |
+

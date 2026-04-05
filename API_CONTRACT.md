@@ -3,6 +3,24 @@
 ## 1. Overview
 Studio(프론트엔드)가 Builder API(백엔드)와 대화할 때 사용하는 약속입니다. 모든 데이터는 JSON 형식으로 주고받습니다.
 
+```mermaid
+graph LR
+    subgraph Studio [Frontend: Studio]
+        UI[User Interface]
+        State[Local State]
+    end
+
+    subgraph API [Backend: Builder API]
+        Datasets[Datasets Resource]
+        Specs[Specs/Validation Resource]
+        Builds[Builds Resource]
+    end
+
+    UI --> Datasets
+    UI --> Specs
+    UI --> Builds
+```
+
 ---
 
 ## 2. API Endpoints 상세
@@ -78,6 +96,31 @@ Studio(프론트엔드)가 Builder API(백엔드)와 대화할 때 사용하는 
 }
 ```
 
+```mermaid
+sequenceDiagram
+    participant UI as Studio UI
+    participant BAPI as Builder API
+
+    UI->>BAPI: POST /validate (Check Spec)
+    BAPI-->>UI: 200 OK (Valid: true)
+    
+    UI->>BAPI: POST /builds (Start Build)
+    BAPI-->>UI: 201 Created (ID: run_99)
+    
+    loop Polling Status
+        UI->>BAPI: GET /builds/run_99/status
+        BAPI-->>UI: 200 OK (Status: running)
+    end
+    
+    BAPI-->>UI: 200 OK (Status: succeeded)
+    
+    UI->>BAPI: GET /builds/run_99/manifest
+    BAPI-->>UI: 200 OK (Artifact Paths)
+    
+    UI->>BAPI: POST /builds/run_99/publish
+    BAPI-->>UI: 200 OK (Published URL)
+```
+
 ---
 
 ## 3. TypeScript 타입 정의 (Type Mapping)
@@ -120,4 +163,36 @@ API 호출에 실패했을 때 서버가 보내주는 표준 에러 형식입니
   "message": "지원하지 않는 파일 형식입니다.",
   "details": ["format must be one of: json, markdown, parquet"]
 }
+```
+
+```mermaid
+flowchart TD
+    Request[Studio API Request] --> Status{HTTP Status?}
+    Status -->|200/201| Success[성공 처리 / 데이터 UI 반영]
+    Status -->|400| BadRequest[입력값 오류: BAD_REQUEST]
+    Status -->|401/403| AuthError[인증 오류: AUTH_ERROR]
+    Status -->|404| NotFound[데이터 없음: NOT_FOUND]
+    Status -->|500| ServerError[서버 내부 오류: INTERNAL_ERROR]
+
+    BadRequest --> ShowDetail[UI에 구체적 오류 사유 표시]
+    AuthError --> LoginRedirect[로그인 화면으로 이동]
+    NotFound --> EmptyState[데이터 없음 안내 UI]
+    ServerError --> RetryToast[잠시 후 다시 시도 토스트 메시지]
+
+---
+
+## 📚 관련 문서
+
+### 이 저장소 내 문서
+| 문서 | 설명 |
+| :--- | :--- |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 시스템 아키텍처 설계 |
+| [STATE_MODEL.md](./STATE_MODEL.md) | 상태 관리 모델 |
+
+### KPubData Product Family
+| 저장소 | 문서 | 설명 |
+| :--- | :--- | :--- |
+| [kpubdata](https://github.com/yeongseon/kpubdata) | [API_SPEC.md](https://github.com/yeongseon/kpubdata/blob/main/API_SPEC.md) | Core API 명세 |
+| [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [API_CONTRACT.md](https://github.com/yeongseon/kpubdata-builder/blob/master/API_CONTRACT.md) | Builder API 규약 |
+
 ```

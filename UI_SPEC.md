@@ -1,6 +1,19 @@
 # UI Spec — KPubData Studio
 
-## 1. Primary Screens & Wireframes
+## 1. Screen Navigation Flow (화면 이동 흐름)
+
+```mermaid
+flowchart TD
+    Home[Home / Dashboard] -->|Create New| Editor[Build Editor]
+    Home -->|View Recent| Run[Build Run / History]
+    Editor -->|Validate/Run| Run
+    Run -->|Success| Artifacts[Artifact Viewer]
+    Artifacts -->|Share| Publish[Publish Page]
+    Run -->|Failure/Edit| Editor
+    Publish --> Home
+```
+
+## 2. Primary Screens & Wireframes
 
 ### [Home] 대시보드
 빌드 목록을 한눈에 보고 빠르게 작업을 시작하는 곳입니다.
@@ -29,7 +42,26 @@
 ---
 
 ### [Build Editor] 빌드 편집기
-어떤 데이터를 어떻게 수집할지 기획서를 작성하는 곳입니다.
+빌드 어떤 데이터를 어떻게 수집할지 기획서를 작성하는 곳입니다.
+
+```mermaid
+graph TD
+    subgraph EditorPage [Build Editor Page]
+        Header[Editor Header: Validate/Run Buttons]
+        subgraph MainContent [Main Configuration Area]
+            direction LR
+            SourceArea[1. Source: Provider/Dataset/Params]
+            ExportArea[2. Export Config: Format/Target]
+        end
+        subgraph FeedbackArea [Feedback Panels]
+            direction LR
+            PreviewPanel[3. Preview Panel: Data Table]
+            ValidationPanel[4. Validation Panel: Errors/Warnings]
+        end
+        Header --> MainContent
+        MainContent --> FeedbackArea
+    end
+```
 
 **Wireframe:**
 ```text
@@ -79,7 +111,38 @@
 
 ---
 
-## 2. 에러 및 예외 상태 처리 (Error Handling)
+## 3. API Call Map per Screen (화면별 API 호출 지도)
+
+```mermaid
+graph LR
+    subgraph Screens [Studio 화면]
+        HomeS[Home Dashboard]
+        EditorS[Build Editor]
+        RunS[Build Run Tracking]
+        ArtifactsS[Artifact Viewer]
+        PublishS[Publish Page]
+    end
+
+    subgraph APIEndpoints [Builder API 엔드포인트]
+        GET_Builds[GET /builds]
+        POST_Validate[POST /validate]
+        POST_Preview[POST /preview]
+        POST_Run[POST /builds/run]
+        GET_Status[GET /builds/:id/status]
+        GET_Manifest[GET /builds/:id/manifest]
+        POST_Publish[POST /builds/:id/publish]
+    end
+
+    HomeS --> GET_Builds
+    EditorS --> POST_Validate
+    EditorS --> POST_Preview
+    EditorS --> POST_Run
+    RunS --> GET_Status
+    ArtifactsS --> GET_Manifest
+    PublishS --> POST_Publish
+```
+
+## 4. 에러 및 예외 상태 처리 (Error Handling)
 
 - **Loading State**: 데이터를 불러오는 동안 스피너(Spinner)나 스켈레톤(Skeleton) UI를 보여줍니다.
 - **Empty State**: 목록이 없을 때 "아직 생성된 빌드가 없습니다. 첫 빌드를 만들어보세요!" 라는 안내 문구를 보여줍니다.
@@ -98,3 +161,22 @@
 | Run | 실시간 빌드 추적 | `getBuildStatus`, `cancelBuild` |
 | Artifacts | 결과물 확인 및 다운로드 | `listArtifacts`, `readManifest` |
 | Publish | 외부 저장소 배포 | `triggerPublish` |
+
+---
+
+## 📚 관련 문서
+
+### 이 저장소 내 문서
+| 문서 | 설명 |
+| :--- | :--- |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 시스템 아키텍처 설계 |
+| [STATE_MODEL.md](./STATE_MODEL.md) | 상태 관리 모델 |
+| [USER_FLOWS.md](./USER_FLOWS.md) | 사용자 흐름도 |
+| [INFORMATION_ARCHITECTURE.md](./INFORMATION_ARCHITECTURE.md) | 정보 구조 설계 |
+
+### KPubData Product Family
+| 저장소 | 문서 | 설명 |
+| :--- | :--- | :--- |
+| [kpubdata](https://github.com/yeongseon/kpubdata) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata/blob/main/ARCHITECTURE.md) | Core 아키텍처 |
+| [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata-builder/blob/master/ARCHITECTURE.md) | Builder 아키텍처 |
+

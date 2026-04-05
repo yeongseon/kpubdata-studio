@@ -4,6 +4,14 @@
 
 Studio is the presentation and workflow layer above `kpubdata-builder`.
 
+```mermaid
+graph TD
+    Studio[KPubData Studio] --> BuilderAPI[Builder API / Service]
+    BuilderAPI --> KBuilder[kpubdata-builder Engine]
+    KBuilder --> KPubData[kpubdata Core]
+    KPubData --> PublicAPIs[Public Data APIs]
+```
+
 ```text
 kpubdata-studio
   -> builder API/service
@@ -43,6 +51,15 @@ It renders configuration, previews, statuses, and outputs.
 
 Studio의 코드는 체계적으로 나누어져 관리됩니다. 각 폴더의 역할은 다음과 같습니다.
 
+```mermaid
+graph LR
+    App[src/app/ - Routes/Pages] --> Components[src/components/ - UI Blocks]
+    App --> Lib[src/lib/ - Logic/API]
+    App --> Hooks[src/hooks/ - UI State]
+    Components --> Lib
+    Hooks --> Lib
+```
+
 ### 디렉토리 구조 및 가이드
 
 - **`src/app/`**: 페이지 경로와 레이아웃을 정의합니다. (URL 구조 담당)
@@ -62,6 +79,30 @@ Studio의 코드는 체계적으로 나누어져 관리됩니다. 각 폴더의 
 ## 5. Builder API와의 통신
 
 Studio는 직접 데이터를 수집하지 않고, **Builder API**라는 중간 매개체를 통해 일을 시킵니다.
+
+```mermaid
+sequenceDiagram
+    participant User as 사용자
+    participant Studio as Studio UI
+    participant API as lib/api.ts
+    participant BAPI as Builder API
+    participant Engine as kpubdata-builder
+    participant Core as kpubdata
+    participant Pub as Public Data API
+
+    User->>Studio: 빌드 버튼 클릭
+    Studio->>API: runBuild() 호출
+    API->>BAPI: POST /builds/run
+    BAPI->>Engine: build.execute()
+    Engine->>Core: fetch_data()
+    Core->>Pub: HTTP GET (Raw Data)
+    Pub-->>Core: Response (XML/JSON)
+    Core-->>Engine: Normalized Records
+    Engine-->>BAPI: Build Completed
+    BAPI-->>API: 200 OK (Result)
+    API-->>Studio: Success UI Update
+    Studio-->>User: 결과 표시
+```
 
 ### 데이터 흐름 (Flow)
 `Studio (UI)` ↔ `Builder API` ↔ `kpubdata-builder (엔진)` ↔ `kpubdata (데이터 소스)`
@@ -105,6 +146,26 @@ Studio needs a stable integration layer exposing:
 
 ## 5. State Ownership
 
+```mermaid
+graph LR
+    subgraph StudioOwns [Studio가 관리하는 상태]
+        direction TB
+        Draft[Unsaved Drafts]
+        Form[Form Input State]
+        UIState[UI Filters/Selections]
+    end
+
+    subgraph BackendOwns [Builder/Backend가 관리하는 상태]
+        direction TB
+        Execution[Build Execution State]
+        Manifest[Manifest Data]
+        Files[Artifact Files]
+        Semantics[Validation Rules]
+    end
+
+    StudioOwns -- Sync via API --> BackendOwns
+```
+
 ### Studio owns
 - unsaved form state
 - local wizard state
@@ -115,3 +176,23 @@ Studio needs a stable integration layer exposing:
 - manifest data
 - artifact file state
 - validation semantics
+
+---
+
+## 📚 관련 문서
+
+### 이 저장소 내 문서
+| 문서 | 설명 |
+| :--- | :--- |
+| [STATE_MODEL.md](./STATE_MODEL.md) | 상태 관리 및 전이 모델 |
+| [UI_SPEC.md](./UI_SPEC.md) | UI 컴포넌트 규격 |
+| [USER_FLOWS.md](./USER_FLOWS.md) | 사용자 시나리오 및 흐름 |
+| [INFORMATION_ARCHITECTURE.md](./INFORMATION_ARCHITECTURE.md) | 정보 및 메뉴 구조 |
+| [API_CONTRACT.md](./API_CONTRACT.md) | API 통신 규약 |
+
+### KPubData Product Family
+| 저장소 | 문서 | 설명 |
+| :--- | :--- | :--- |
+| [kpubdata](https://github.com/yeongseon/kpubdata) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata/blob/main/ARCHITECTURE.md) | Core 아키텍처 |
+| [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata-builder/blob/master/ARCHITECTURE.md) | Builder 아키텍처 |
+
