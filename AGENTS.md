@@ -12,6 +12,13 @@ Implement KPubData Studio as the UI shell and workflow interface for `kpubdata-b
 - Surface validation and manifests clearly
 - Make preview a first-class feature
 
+## Language policy
+
+- **Documentation**: Write in Korean by default. English expansion is planned for future releases.
+- **Code**: All code (variable names, function names, comments, docstrings) must be in English.
+- **Commit messages**: Always in English.
+- **Issue / PR titles and descriptions**: Korean is acceptable; English is also fine.
+
 ## Priorities
 
 1. information architecture
