@@ -19,6 +19,15 @@ Implement KPubData Studio as the UI shell and workflow interface for `kpubdata-b
 - **Commit messages**: Always in English.
 - **Issue / PR titles and descriptions**: Korean is acceptable; English is also fine.
 
+## Branch rules
+
+- Default branch is `main`. **Never push directly to `main`.**
+- Always work on a feature branch and open a PR.
+- Branch naming: `feat/issue-<number>-<short-description>`, `fix/issue-<number>-<short-description>`, `docs/<short-description>`
+- Never force-push to `main`. Never delete `main`.
+- Never rename or delete branches you did not create.
+- If unsure about any git operation, **ask first — do not guess.**
+
 ## Priorities
 
 1. information architecture
@@ -159,5 +168,5 @@ stateDiagram-v2
 | 저장소 | 문서 | 설명 |
 | :--- | :--- | :--- |
 | [kpubdata](https://github.com/yeongseon/kpubdata) | [AGENTS.md](https://github.com/yeongseon/kpubdata/blob/main/AGENTS.md) | Core 에이전트 가이드 |
-| [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [AGENTS.md](https://github.com/yeongseon/kpubdata-builder/blob/master/AGENTS.md) | Builder 에이전트 가이드 |
+| [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [AGENTS.md](https://github.com/yeongseon/kpubdata-builder/blob/main/AGENTS.md) | Builder 에이전트 가이드 |
 
