@@ -79,7 +79,7 @@ Wants to inspect generated artifacts and copy/export config.
 
 ---
 
-## 📚 관련 문서
+## 관련 문서
 
 ### 이 저장소 내 문서
 | 문서 | 설명 |
@@ -92,4 +92,3 @@ Wants to inspect generated artifacts and copy/export config.
 | :--- | :--- | :--- |
 | [kpubdata](https://github.com/yeongseon/kpubdata) | [PRD.md](https://github.com/yeongseon/kpubdata/blob/main/PRD.md) | Core 제품 요구사항 |
 | [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [PRD.md](https://github.com/yeongseon/kpubdata-builder/blob/main/PRD.md) | Builder 제품 요구사항 |
-

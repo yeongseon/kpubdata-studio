@@ -21,7 +21,7 @@
 
 ---
 
-## 📚 관련 문서
+## 관련 문서
 
 ### 이 저장소 내 문서
 | 문서 | 설명 |
@@ -34,4 +34,3 @@
 | :--- | :--- | :--- |
 | [kpubdata](https://github.com/yeongseon/kpubdata) | [ROADMAP.md](https://github.com/yeongseon/kpubdata/blob/main/ROADMAP.md) | Core 개발 로드맵 |
 | [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [ROADMAP.md](https://github.com/yeongseon/kpubdata-builder/blob/main/ROADMAP.md) | Builder 개발 로드맵 |
-
