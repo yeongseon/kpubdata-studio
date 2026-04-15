@@ -149,7 +149,7 @@ stateDiagram-v2
 
 ---
 
-## 📚 관련 문서
+## 관련 문서
 
 ### 이 저장소 내 문서
 | 문서 | 설명 |
@@ -169,4 +169,3 @@ stateDiagram-v2
 | :--- | :--- | :--- |
 | [kpubdata](https://github.com/yeongseon/kpubdata) | [AGENTS.md](https://github.com/yeongseon/kpubdata/blob/main/AGENTS.md) | Core 에이전트 가이드 |
 | [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [AGENTS.md](https://github.com/yeongseon/kpubdata-builder/blob/main/AGENTS.md) | Builder 에이전트 가이드 |
-

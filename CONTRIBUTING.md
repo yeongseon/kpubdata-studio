@@ -115,7 +115,7 @@ flowchart TD
 | **refactor** | 코드 개선 (기능 변화 없음) |
 | **style** | 코드 포맷팅 (세미콜론 누락 등) |
 
-### 3-6. 절대 금지 사항 (⛔)
+### 3-6. 절대 금지 사항
 - **`main` 브랜치에 직접 Push 금지**: 모든 변경 사항은 PR을 통해서만 반영됩니다.
 - **Force Push (`-f`) 금지**: 다른 사람의 작업을 지워버릴 수 있어 매우 위험합니다.
 - **남의 브랜치 수정 금지**: 다른 사람이 작업 중인 브랜치를 지우거나 이름을 바꾸지 마세요.
@@ -160,7 +160,7 @@ PR 제목은 `[#이슈번호] 간단한 설명` 형식을 지켜주세요.
 
 ---
 
-## 📚 관련 문서
+## 관련 문서
 
 ### 이 저장소 내 문서
 | 문서 | 설명 |
@@ -174,4 +174,3 @@ PR 제목은 `[#이슈번호] 간단한 설명` 형식을 지켜주세요.
 | :--- | :--- | :--- |
 | [kpubdata](https://github.com/yeongseon/kpubdata) | [CONTRIBUTING.md](https://github.com/yeongseon/kpubdata/blob/main/CONTRIBUTING.md) | Core 기여 가이드 |
 | [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [CONTRIBUTING.md](https://github.com/yeongseon/kpubdata-builder/blob/main/CONTRIBUTING.md) | Builder 기여 가이드 |
-

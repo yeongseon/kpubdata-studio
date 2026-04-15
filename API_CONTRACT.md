@@ -125,32 +125,67 @@ sequenceDiagram
 
 ## 3. TypeScript 타입 정의 (Type Mapping)
 
-Studio의 코드(`src/lib/types.ts`)에서 사용하는 핵심 타입들입니다.
+Studio의 코드(`src/lib/types.ts`)에서 사용하는 핵심 타입들입니다. Builder API의 snake_case 필드를 Studio의 camelCase로 변환하여 사용합니다.
+
+> **필드명 변환 규칙**: Builder API 응답은 `snake_case`(예: `build_id`, `spec_digest`, `started_at`)이고, Studio TypeScript 타입은 `camelCase`(예: `buildId`, `specDigest`, `startedAt`)입니다. 변환은 `src/lib/api.ts`의 API 레이어에서 수행합니다.
 
 ```typescript
-// 빌드 기획서 (사용자가 입력한 내용)
 export interface BuildSpec {
-  datasetId: string;      // 데이터셋 고유 ID
-  title: string;          // 제목
-  sources: SourceRef[];   // 데이터 출처 목록
-  exports: ExportTarget[];// 결과물 형식 (JSON, MD 등)
+  datasetId: string;
+  title: string;
+  sources: SourceRef[];
+  exports: ExportTarget[];
 }
 
-// 데이터 출처 정보
 export interface SourceRef {
-  provider: string;       // 제공 기관 (예: datago)
-  dataset: string;        // 데이터셋 이름
-  params: Record<string, string>; // 검색 조건
+  provider: string;
+  dataset: string;
+  params: Record<string, string>;
 }
 
-// 빌드 결과 요약 (빌드 완료 후 생성됨)
+export type ManifestStatus = "succeeded" | "failed" | "partial";
+export type SourceBuildStatus = "succeeded" | "failed" | "pending";
+
+export interface SourceManifest {
+  provider: string;
+  dataset: string;
+  status: SourceBuildStatus;
+  recordsFetched?: number;
+  error?: string;
+}
+
 export interface BuildManifest {
   buildId: string;
+  status: ManifestStatus;
+  specDigest: string;
+  startedAt: string;
   finishedAt: string;
-  recordCount: number;    // 총 수집된 데이터 개수
-  artifactPaths: string[];// 생성된 파일 경로들
+  sources: SourceManifest[];
+  artifactPaths: string[];
+  recordCount: number;
+  warnings: string[];
+  errors: string[];
 }
 ```
+
+### 3.1 Builder ↔ Studio 필드 매핑 테이블
+
+| Builder (snake_case) | Studio (camelCase) | 타입 | 설명 |
+|:---|:---|:---|:---|
+| `build_id` | `buildId` | `string` | 빌드 고유 식별자 |
+| `status` | `status` | `ManifestStatus` | 빌드 결과 상태 |
+| `spec_digest` | `specDigest` | `string` | 기획서 해시 (기획서 변경 추적용) |
+| `started_at` | `startedAt` | `string` (ISO 8601) | 빌드 시작 시각 |
+| `finished_at` | `finishedAt` | `string` (ISO 8601) | 빌드 완료 시각 |
+| `sources[].provider` | `sources[].provider` | `string` | 데이터 제공 기관 |
+| `sources[].dataset` | `sources[].dataset` | `string` | 데이터셋 이름 |
+| `sources[].status` | `sources[].status` | `SourceBuildStatus` | source별 실행 결과 |
+| `sources[].records_fetched` | `sources[].recordsFetched` | `number?` | 수집된 레코드 수 |
+| `sources[].error` | `sources[].error` | `string?` | source별 에러 메시지 |
+| `artifact_paths` | `artifactPaths` | `string[]` | 생성된 파일 경로 |
+| `record_count` | `recordCount` | `number` | 총 레코드 수 |
+| `warnings` | `warnings` | `string[]` | 경고 메시지 목록 |
+| `errors` | `errors` | `string[]` | 에러 메시지 목록 |
 
 ---
 
@@ -164,6 +199,30 @@ API 호출에 실패했을 때 서버가 보내주는 표준 에러 형식입니
   "details": ["format must be one of: json, markdown, parquet"]
 }
 ```
+
+### 4.1 Builder 에러 코드 매핑
+
+Builder API가 반환하는 에러 코드와 Studio에서의 처리 방법입니다.
+
+| Builder 에러 코드 | HTTP Status | Studio 처리 |
+|:---|:---|:---|
+| `SPEC_LOAD_ERROR` | 400 | 기획서 로딩 실패 메시지 표시 |
+| `SPEC_VALIDATION_ERROR` | 422 | 필드별 검증 오류 인라인 표시 |
+| `SOURCE_EXECUTION_ERROR` | 502 | source별 실패 상태 + 재시도 버튼 |
+| `ASSEMBLY_ERROR` | 500 | 데이터 조립 실패 메시지 표시 |
+| `EXPORT_ERROR` | 500 | 파일 생성 실패 메시지 표시 |
+| `MANIFEST_WRITE_ERROR` | 500 | 서버 내부 오류 토스트 |
+| `PUBLISH_ERROR` | 502 | 배포 실패 + 재시도 버튼 |
+
+### 4.2 Manifest 상태별 UI 표시
+
+| Manifest Status | 의미 | UI 표시 |
+|:---|:---|:---|
+| `succeeded` | 전체 성공 | 성공 배지 + 결과 요약 |
+| `failed` | 전체 실패 | 에러 배지 + `errors[]` 표시 + source별 실패 원인 |
+| `partial` | 부분 실패 | 경고 배지 + 성공/실패 source 구분 표시 |
+
+> **참고**: Builder의 에러 계층 및 처리 정책은 [kpubdata-builder/docs/ERROR_HANDLING.md](https://github.com/yeongseon/kpubdata-builder/blob/main/docs/ERROR_HANDLING.md)를 참조하세요.
 
 ```mermaid
 flowchart TD
@@ -181,7 +240,7 @@ flowchart TD
 
 ---
 
-## 📚 관련 문서
+## 관련 문서
 
 ### 이 저장소 내 문서
 | 문서 | 설명 |
