@@ -166,6 +166,7 @@ graph TD
 - Draft State는 페이지 이동이나 단계 전환에도 유지되어야 하는 편집 세션입니다.
 - Server State는 Builder API 결과를 캐시/표시하는 데 사용합니다.
 - UI State는 탭, 필터, 펼침 상태처럼 화면 표현 전용 값만 담습니다.
+- UI/draft 상태는 Zustand로 관리하고, 서버 데이터(Builder API 응답)는 TanStack Query로 관리합니다.
 
 ### 왜 분리하나요?
 - 검증 실패가 곧바로 사용자의 입력값 자체를 덮어쓰지 않게 하기 위해
