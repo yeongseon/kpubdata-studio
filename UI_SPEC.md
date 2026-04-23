@@ -142,6 +142,8 @@ graph LR
     PublishS --> POST_Publish
 ```
 
+> 라우팅은 React Router가 담당하며, 각 화면은 `src/pages/`에서 조립되고 실제 API 호출은 `src/features/*/api/index.ts`를 통해 수행됩니다.
+
 ## 4. 에러 및 예외 상태 처리 (Error Handling)
 
 - **Loading State**: 데이터를 불러오는 동안 스피너(Spinner)나 스켈레톤(Skeleton) UI를 보여줍니다.

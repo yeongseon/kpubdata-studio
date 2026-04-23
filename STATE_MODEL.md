@@ -141,7 +141,40 @@ stateDiagram-v2
 
 ---
 
-## "상태와 UI의 관계" 요약
+## 5. 상태 분리 원칙 (Form / Server / UI / Draft)
+
+Studio는 한 화면에서 여러 종류의 상태를 동시에 다룹니다. 서로 다른 책임을 섞지 않기 위해 아래처럼 분리합니다.
+
+| 상태 종류 | 소유 위치 | 예시 | 원칙 |
+| :--- | :--- | :--- | :--- |
+| **Form State** | 페이지/기능 폼 | 입력 중인 provider, dataset, params | 사용자가 타이핑하는 즉시 변하는 값 |
+| **Draft State** | Studio 로컬 초안 | 아직 저장되지 않은 빌드 기획 전체 | 여러 Form State를 모아 편집 세션으로 유지 |
+| **Server State** | Builder API 응답 | providers 목록, preview 결과, run status, manifest | 네트워크로부터 동기화되며 서버가 기준 |
+| **UI State** | 화면 제어 상태 | 선택된 탭, 필터, 모달 열림 여부, 정렬 기준 | 표현 방식만 결정하며 도메인 의미를 소유하지 않음 |
+
+```mermaid
+graph TD
+    Form[Form State] --> Draft[Draft State]
+    Draft --> Validation[Validation Request]
+    Validation --> Server[Server State]
+    UI[UI State] --> Form
+    UI --> Server
+```
+
+### 분리 규칙
+- Form State는 입력 컴포넌트와 가장 가깝게 둡니다.
+- Draft State는 페이지 이동이나 단계 전환에도 유지되어야 하는 편집 세션입니다.
+- Server State는 Builder API 결과를 캐시/표시하는 데 사용합니다.
+- UI State는 탭, 필터, 펼침 상태처럼 화면 표현 전용 값만 담습니다.
+
+### 왜 분리하나요?
+- 검증 실패가 곧바로 사용자의 입력값 자체를 덮어쓰지 않게 하기 위해
+- 서버 응답 지연이 로컬 편집 경험을 망치지 않게 하기 위해
+- 같은 Draft를 여러 화면 패널이 공유하되, 각 패널의 UI 상태는 독립적으로 유지하기 위해
+
+---
+
+## 6. "상태와 UI의 관계" 요약
 
 상태는 사용자가 지금 무엇을 해야 하는지, 무엇을 할 수 있는지를 결정하는 **지침**이 됩니다.
 
