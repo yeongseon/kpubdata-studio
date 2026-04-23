@@ -3,6 +3,8 @@
 ## 1. New Build Wizard (새 빌드 생성 단계)
 데이터를 기획하고 첫 빌드를 성공시키기까지의 과정입니다.
 
+> 이 흐름은 특정 프레임워크의 파일 라우팅 규칙에 의존하지 않으며, 현재 Studio에서는 React Router 기반 SPA 화면 전환으로 구현됩니다.
+
 ### 상세 단계 (Step-by-Step)
 1. **템플릿 선택**: 사용자가 '새 빌드' 버튼을 누르고, 빈 페이지 혹은 미리 만들어진 템플릿(예: 동네예보)을 선택합니다.
 2. **데이터 소스 추가**: 수집할 데이터 기관(Provider)과 데이터셋을 목록에서 고릅니다.
@@ -135,6 +137,7 @@ flowchart TD
     ValFail --> InputHighlight[잘못된 입력 강조]
     InputHighlight --> CorrectInput[사용자 수정]
     CorrectInput --> ReValidate[자동 다시 검증]
+```
 
 ---
 
@@ -153,5 +156,3 @@ flowchart TD
 | :--- | :--- | :--- |
 | [kpubdata](https://github.com/yeongseon/kpubdata) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata/blob/main/ARCHITECTURE.md) | Core 아키텍처 |
 | [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [ARCHITECTURE.md](https://github.com/yeongseon/kpubdata-builder/blob/main/ARCHITECTURE.md) | Builder 아키텍처 |
-
-```

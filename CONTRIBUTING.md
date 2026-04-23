@@ -1,19 +1,19 @@
 # KPubData-Studio 기여 가이드 (CONTRIBUTING.md)
 
-KPubData-Studio 프로젝트에 오신 것을 환영합니다! 이 프로젝트는 공공데이터를 시각화하고 관리하기 위한 웹 대시보드입니다. Next.js와 TypeScript를 사용해 멋진 화면을 만들어 보세요.
+KPubData-Studio 프로젝트에 오신 것을 환영합니다! 이 프로젝트는 공공데이터를 시각화하고 관리하기 위한 웹 대시보드입니다. Vite, React, TypeScript를 사용해 멋진 화면을 만들어 보세요.
 
 ## 1. 환영 인사 및 프로젝트 소개
 
 KPubData 패밀리 소개:
 - **kpubdata**: 데이터 수집 엔진 (Python)
 - **kpubdata-builder**: 데이터 가공 도구 (Python)
-- **kpubdata-studio**: 데이터 시각화 및 웹 관리 도구 (Next.js)
+- **kpubdata-studio**: 데이터 시각화 및 웹 관리 도구 (Vite + React SPA)
 
 이 레포지토리(`kpubdata-studio`)는 사용자에게 데이터를 보여주는 웹 애플리케이션입니다.
 
 ## 2. 개발 환경 설정 (처음부터 끝까지)
 
-이 프로젝트는 **Next.js**와 **TypeScript**로 만들어졌습니다. 개발을 시작하기 위해 컴퓨터에 다음 도구들을 설치해야 합니다.
+이 프로젝트는 **Vite**, **React**, **TypeScript**로 만들어졌습니다. 개발을 시작하기 위해 컴퓨터에 다음 도구들을 설치해야 합니다.
 
 ### Step 1: 필수 도구 설치
 1. **Git**: 코드의 버전을 관리하는 도구입니다. ([다운로드](https://git-scm.com))
@@ -42,9 +42,9 @@ git remote add upstream https://github.com/yeongseon/kpubdata-studio.git
 # 필요한 라이브러리 모두 설치
 npm install
 
-# 내 컴퓨터에서 웹사이트 실행하기
+# 내 컴퓨터에서 웹사이트 실행하기 (Vite 개발 서버)
 npm run dev
-# 실행 후 브라우저에서 http://localhost:3000 에 접속해 보세요!
+# 실행 후 브라우저에서 http://localhost:5173 에 접속해 보세요!
 
 # 코드 스타일 확인 (규칙에 맞게 짰는지 검사)
 npm run lint
@@ -136,14 +136,14 @@ npm test           # 3. 자동화 테스트 검사
 - **함수형 컴포넌트**: 모든 UI 컴포넌트는 함수형(`function`)으로 작성해 주세요.
 - **Tailwind CSS**: 디자인은 Tailwind CSS를 기본으로 사용합니다.
 
-## 5. 첫 번째 페이지 추가하기 (Next.js App Router)
+## 5. 첫 번째 페이지 추가하기 (Vite + React Router)
 
-Next.js 15의 App Router 방식을 사용합니다.
+React Router 기반 SPA 구조를 사용합니다.
 
-1. `src/app/` 폴더 아래에 새로운 폴더를 만듭니다 (예: `src/app/dashboard/`).
-2. 해당 폴더 안에 `page.tsx` 파일을 만듭니다.
-3. React 컴포넌트를 작성하고 `export default`로 내보냅니다.
-4. 브라우저에서 `http://localhost:3000/dashboard` 주소로 접속해 확인합니다.
+1. `src/pages/` 폴더 아래에 새로운 페이지 컴포넌트를 만듭니다 (예: `src/pages/DashboardPage.tsx`).
+2. `src/app/router.tsx`에서 경로를 등록합니다.
+3. 필요한 기능별 API/상태는 `src/features/` 아래에 추가합니다.
+4. 브라우저에서 `http://localhost:5173/dashboard` 주소로 접속해 확인합니다.
 
 ## 6. PR 가이드 및 체크리스트
 

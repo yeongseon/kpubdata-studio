@@ -58,25 +58,20 @@ graph TD
 
 ```mermaid
 graph LR
-    Root[/] --> Dashboard[page.tsx]
+    Root[/] --> Dashboard[HomePage]
     Root --> Builds[/builds]
-    Root --> Settings[/settings]
 
-    Builds --> BuildList[page.tsx]
-    Builds --> New[/new/page.tsx]
-    Builds --> BuildID[/[id]/page.tsx]
-    
-    BuildID --> Run[/run/page.tsx]
+    Builds --> BuildList[BuildsPage]
+    Builds --> New[/new]
 ```
 
 | 경로 | 화면 내용 | 폴더 위치 |
 | :--- | :--- | :--- |
-| `/` | 대시보드 홈 (최근 빌드 5개 표시) | `src/app/page.tsx` |
-| `/builds` | 전체 빌드 목록 (검색 및 필터링 가능) | `src/app/builds/page.tsx` |
-| `/builds/new` | 새 빌드 생성 마법사 (빈 문서) | `src/app/builds/new/page.tsx` |
-| `/builds/[id]` | 특정 빌드의 상세 정보 및 설정 편집 | `src/app/builds/[id]/page.tsx` |
-| `/builds/[id]/run` | 실행 중인 빌드의 실시간 추적 화면 | `src/app/builds/[id]/run/page.tsx` |
-| `/settings` | 계정 설정 및 API 연동 설정 | `src/app/settings/page.tsx` |
+| `/` | 대시보드 홈 (최근 빌드 5개 표시) | `src/pages/HomePage.tsx` |
+| `/builds` | 전체 빌드 목록 (검색 및 필터링 가능) | `src/pages/BuildsPage.tsx` |
+| `/builds/new` | 새 빌드 생성 마법사 (빈 문서) | `src/pages/NewBuildPage.tsx` |
+
+> URL 매핑은 파일 시스템이 아니라 `src/app/router.tsx`의 React Router 설정이 단일 기준입니다.
 
 ---
 
