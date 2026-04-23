@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BuildRun, BuildSpec, DraftStatus } from "@/lib/types";
+import type { BuildRun, BuildSpec, DraftStatus } from "@/shared/lib/types";
 
 describe("studio domain types", () => {
   it("allows typed build spec and run models", () => {
