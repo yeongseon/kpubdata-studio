@@ -50,7 +50,15 @@ Wants to inspect generated artifacts and copy/export config.
 - Outputs must be inspectable before publish
 - Build history must be easy to review
 
-## 6. Core User Flows
+## 6. Frontend Tech Stack
+
+- **Vite**: 개발 서버 및 프로덕션 빌드
+- **React**: 화면 구성과 상태 기반 렌더링
+- **React Router**: 클라이언트 사이드 라우팅
+- **TypeScript**: Builder API 계약과 UI 상태 타입 안정성 확보
+- **Tailwind CSS**: 빠른 화면 스타일링
+
+## 7. Core User Flows
 
 ### Flow A — Create a new dataset build
 1. Start new build

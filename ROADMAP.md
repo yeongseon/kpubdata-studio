@@ -1,6 +1,9 @@
 # Roadmap — kpubdata-studio
 
 ## v0.1
+- Vite + React SPA 셸 정착
+- React Router 기반 주요 경로 구성
+- feature-based 폴더 구조 정착
 - build wizard
 - source config form
 - preview page

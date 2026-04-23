@@ -6,7 +6,7 @@ Studio is the presentation and workflow layer above `kpubdata-builder`.
 
 ```mermaid
 graph TD
-    Studio[KPubData Studio] --> BuilderAPI[Builder API / Service]
+    Studio[KPubData Studio SPA] --> BuilderAPI[Builder API / Service]
     BuilderAPI --> KBuilder[kpubdata-builder Engine]
     KBuilder --> KPubData[kpubdata Core]
     KPubData --> PublicAPIs[Public Data APIs]
@@ -27,16 +27,26 @@ KPubData Studio는 복잡한 데이터 수집 과정을 누구나 쉽게 할 수
 
 ---
 
-## 2. Next.js + React 기초 (대학생을 위한 개념 정리)
+## 2. SPA 아키텍처 개요
 
-Studio는 최신 웹 기술인 **Next.js**와 **React**로 만들어졌습니다. 처음 접하는 분들을 위한 핵심 개념입니다:
+Studio는 **Vite + React + TypeScript + React Router** 기반의 단일 페이지 애플리케이션(SPA)입니다.
 
-- **React**: UI(사용자 화면)를 조각(컴포넌트)으로 나누어 만드는 도구입니다. 레고 블록을 조립하듯 화면을 만듭니다.
-- **Next.js App Router**: URL 주소와 실제 페이지 파일을 연결해주는 내비게이션 시스템입니다.
-- **page.tsx**: 특정 URL 주소에 들어갔을 때 실제로 보이는 화면 내용이 담긴 파일입니다.
-- **layout.tsx**: 여러 페이지에서 공통으로 쓰는 틀(헤더, 사이드바 등)을 정의하는 파일입니다.
-- **Server Components**: 서버에서 미리 그려서 보내주는 화면 조각 (빠른 로딩).
-- **Client Components**: 사용자의 클릭이나 입력에 즉각 반응하는 화면 조각 (상호작용). 파일 맨 위에 `'use client'`라고 적혀 있습니다.
+- **Vite**: 빠른 개발 서버와 프로덕션 빌드를 담당합니다.
+- **React**: 화면을 컴포넌트 단위로 조립합니다.
+- **React Router**: 브라우저 URL과 페이지 컴포넌트를 연결합니다.
+- **TypeScript**: Builder API 계약과 UI 상태를 정적으로 검증합니다.
+
+```mermaid
+graph TD
+    Main[src/main.tsx] --> App[src/app/App.tsx]
+    App --> Router[src/app/router.tsx]
+    Router --> Home[HomePage]
+    Router --> Builds[BuildsPage]
+    Router --> NewBuild[NewBuildPage]
+    Home --> Features[src/features/*]
+    Builds --> Features
+    NewBuild --> Features
+```
 
 ---
 
@@ -45,34 +55,63 @@ Studio는 최신 웹 기술인 **Next.js**와 **React**로 만들어졌습니다
 Studio does not own build semantics.
 It renders configuration, previews, statuses, and outputs.
 
+핵심 원칙:
+- 빌드 의미론은 Builder가 소유한다.
+- Studio는 입력, 상태 전이, 시각화, 검토 흐름을 담당한다.
+- 기능별 API 호출은 feature 경계 안에 둔다.
+- 공통 타입과 UI는 `shared/`, 핵심 도메인 표현은 `entities/`에 둔다.
+
 ---
 
 ## 4. Frontend Architecture 상세
 
-Studio의 코드는 체계적으로 나누어져 관리됩니다. 각 폴더의 역할은 다음과 같습니다.
-
 ```mermaid
 graph LR
-    App[src/app/ - Routes/Pages] --> Components[src/components/ - UI Blocks]
-    App --> Lib[src/lib/ - Logic/API]
-    App --> Hooks[src/hooks/ - UI State]
-    Components --> Lib
-    Hooks --> Lib
+    Main[main.tsx] --> App[app/App.tsx]
+    App --> Router[app/router.tsx]
+    Router --> Pages[pages/*]
+    Pages --> Features[features/*]
+    Features --> Shared[shared/*]
+    Features --> Entities[entities/*]
+    Features --> BuilderAPI[Builder API]
 ```
 
 ### 디렉토리 구조 및 가이드
 
-- **`src/app/`**: 페이지 경로와 레이아웃을 정의합니다. (URL 구조 담당)
-  - `page.tsx`: `/` 경로 (홈 대시보드)
-  - `builds/page.tsx`: `/builds` 경로 (빌드 목록)
-  - `builds/new/page.tsx`: `/builds/new` 경로 (새 빌드 생성)
-- **`src/components/`**: 재사용 가능한 UI 조각들을 모아둡니다.
-  - `ui/`: 버튼, 입력창 등 기본 디자인 요소
-  - `editor/`: 빌드 설정 편집기 관련 컴포넌트
-- **`src/lib/`**: 비즈니스 로직, API 호출 함수, 타입 정의가 들어갑니다.
-  - `api.ts`: 백엔드 서버와 통신하는 함수들
-  - `types.ts`: 데이터 구조를 정의한 타입들
-- **`src/hooks/`**: 반복되는 상태 관리 로직을 추출한 '커스텀 훅'들을 둡니다.
+- **`src/main.tsx`**: 브라우저 `#root`에 앱을 마운트하는 진입점입니다.
+- **`src/app/`**: 앱 셸과 라우터를 조립합니다.
+  - `App.tsx`: `RouterProvider` 연결
+  - `router.tsx`: 브라우저 라우트와 공통 셸 정의
+- **`src/pages/`**: URL 단위 페이지 컴포넌트를 둡니다.
+  - `HomePage.tsx`: `/`
+  - `BuildsPage.tsx`: `/builds`
+  - `NewBuildPage.tsx`: `/builds/new`
+- **`src/features/`**: 기능 단위로 UI, API, 상태를 묶습니다.
+  - `build-spec/`: 빌드 기획 입력
+  - `preview/`: 미리보기
+  - `validation/`: 검증 결과
+  - `runs/`: 실행 추적
+  - `artifacts/`: 결과물 조회
+  - `publish/`: 출판 흐름
+- **`src/shared/`**: 공통 config, hooks, lib, types, ui를 둡니다.
+- **`src/entities/`**: `build`, `dataset`, `manifest`, `artifact` 등 핵심 도메인 모델을 둡니다.
+
+### Feature Folder Convention
+
+기능 폴더는 아래 패턴을 기본으로 삼습니다.
+
+```text
+src/features/<feature>/
+├── api/           # Builder API 호출 진입점
+├── components/    # 기능 전용 UI
+├── hooks/         # 기능 전용 상태/데이터 훅 (필요 시)
+└── schemas/       # 입력 검증/매핑 스키마 (필요 시)
+```
+
+원칙:
+- 기능별 HTTP 연동은 `features/*/api/index.ts`에서 시작합니다.
+- 페이지는 여러 feature를 조립하지만 Builder API 세부 구현을 직접 소유하지 않습니다.
+- feature 간 공통 코드는 `shared/`로 올리고, 개념적으로 독립된 핵심 데이터는 `entities/`에 둡니다.
 
 ---
 
@@ -83,41 +122,35 @@ Studio는 직접 데이터를 수집하지 않고, **Builder API**라는 중간 
 ```mermaid
 sequenceDiagram
     participant User as 사용자
-    participant Studio as Studio UI
-    participant API as lib/api.ts
+    participant Page as Page
+    participant FeatureAPI as features/*/api/index.ts
     participant BAPI as Builder API
     participant Engine as kpubdata-builder
     participant Core as kpubdata
     participant Pub as Public Data API
 
-    User->>Studio: 빌드 버튼 클릭
-    Studio->>API: runBuild() 호출
-    API->>BAPI: POST /builds/run
+    User->>Page: 빌드 실행 요청
+    Page->>FeatureAPI: runBuild(spec)
+    FeatureAPI->>BAPI: POST /builds
     BAPI->>Engine: build.execute()
     Engine->>Core: fetch_data()
-    Core->>Pub: HTTP GET (Raw Data)
-    Pub-->>Core: Response (XML/JSON)
+    Core->>Pub: HTTP GET
+    Pub-->>Core: Response
     Core-->>Engine: Normalized Records
     Engine-->>BAPI: Build Completed
-    BAPI-->>API: 200 OK (Result)
-    API-->>Studio: Success UI Update
-    Studio-->>User: 결과 표시
+    BAPI-->>FeatureAPI: Result JSON
+    FeatureAPI-->>Page: UI용 데이터 반환
+    Page-->>User: 결과 표시
 ```
 
 ### 데이터 흐름 (Flow)
-`Studio (UI)` ↔ `Builder API` ↔ `kpubdata-builder (엔진)` ↔ `kpubdata (데이터 소스)`
+`Studio (SPA)` ↔ `Builder API` ↔ `kpubdata-builder (엔진)` ↔ `kpubdata (데이터 소스)`
 
-### `lib/api.ts`의 역할
-이 파일은 Studio가 Builder API에게 "이 빌드 설정이 괜찮은지 봐줘", "빌드를 시작해줘"라고 부탁할 때 사용하는 함수들의 집합입니다.
+### API Client Positioning
 
-**API 호출 예시:**
-```typescript
-// 빌드 설정 검증 요청
-const result = await validateSpec(mySpec);
-
-// 빌드 결과 미리보기 요청
-const preview = await previewBuild(mySpec);
-```
+- Builder API 클라이언트는 Studio 내부의 **integration surface**입니다.
+- 페이지는 feature API를 호출하고, feature API는 Builder의 HTTP 계약을 캡슐화합니다.
+- 필드명 변환, 응답 정규화, 에러 표준화는 feature API 또는 shared lib에서 담당합니다.
 
 ---
 
@@ -132,7 +165,7 @@ const preview = await previewBuild(mySpec);
 - artifact viewer
 - publication form
 
-## 4. Backend / Integration Surface
+## 7. Backend / Integration Surface
 
 Studio needs a stable integration layer exposing:
 - list datasets
@@ -144,7 +177,7 @@ Studio needs a stable integration layer exposing:
 - list artifacts
 - publish build
 
-## 5. State Ownership
+## 8. State Ownership
 
 ```mermaid
 graph LR
