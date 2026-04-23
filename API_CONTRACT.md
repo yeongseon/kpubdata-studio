@@ -6,8 +6,9 @@ Studio(프론트엔드)가 Builder API(백엔드)와 대화할 때 사용하는 
 ```mermaid
 graph LR
     subgraph Studio [Frontend: Studio]
-        UI[User Interface]
-        State[Local State]
+        UI[Pages]
+        FeatureAPI[features/*/api/index.ts]
+        State[Draft/UI State]
     end
 
     subgraph API [Backend: Builder API]
@@ -16,14 +17,33 @@ graph LR
         Builds[Builds Resource]
     end
 
-    UI --> Datasets
-    UI --> Specs
-    UI --> Builds
+    UI --> FeatureAPI
+    FeatureAPI --> Datasets
+    FeatureAPI --> Specs
+    FeatureAPI --> Builds
 ```
 
 ---
 
 ## 2. API Endpoints 상세
+
+### 2.0 Feature-based API 구조
+
+Studio는 엔드포인트를 페이지에서 직접 호출하지 않고, 기능별 API 진입점을 통해 Builder API를 사용합니다.
+
+| Feature | API 진입점 | 주요 책임 |
+| :--- | :--- | :--- |
+| Build Spec | `src/features/build-spec/api/index.ts` | 기획 입력 관련 요청 조립 |
+| Preview | `src/features/preview/api/index.ts` | 샘플 데이터 미리보기 요청 |
+| Validation | `src/features/validation/api/index.ts` | 기획 검증 요청 |
+| Runs | `src/features/runs/api/index.ts` | 빌드 실행 및 상태 조회 |
+| Artifacts | `src/features/artifacts/api/index.ts` | 결과물/manifest 조회 |
+| Publish | `src/features/publish/api/index.ts` | 출판 요청 |
+
+원칙:
+- 페이지는 feature API를 호출한다.
+- feature API는 Builder의 HTTP 계약을 캡슐화한다.
+- 공통 타입은 `src/shared/lib/types.ts` 등 shared 계층에서 재사용한다.
 
 ### [Datasets] 데이터 정보 조회
 
@@ -125,9 +145,9 @@ sequenceDiagram
 
 ## 3. TypeScript 타입 정의 (Type Mapping)
 
-Studio의 코드(`src/lib/types.ts`)에서 사용하는 핵심 타입들입니다. Builder API의 snake_case 필드를 Studio의 camelCase로 변환하여 사용합니다.
+Studio의 코드(`src/shared/lib/types.ts`)에서 사용하는 핵심 타입들입니다. Builder API의 snake_case 필드를 Studio의 camelCase로 변환하여 사용합니다.
 
-> **필드명 변환 규칙**: Builder API 응답은 `snake_case`(예: `build_id`, `spec_digest`, `started_at`)이고, Studio TypeScript 타입은 `camelCase`(예: `buildId`, `specDigest`, `startedAt`)입니다. 변환은 `src/lib/api.ts`의 API 레이어에서 수행합니다.
+> **필드명 변환 규칙**: Builder API 응답은 `snake_case`(예: `build_id`, `spec_digest`, `started_at`)이고, Studio TypeScript 타입은 `camelCase`(예: `buildId`, `specDigest`, `startedAt`)입니다. 변환은 `src/features/*/api/index.ts` 또는 shared API 유틸리티 레이어에서 수행합니다.
 
 ```typescript
 export interface BuildSpec {
@@ -237,6 +257,7 @@ flowchart TD
     AuthError --> LoginRedirect[로그인 화면으로 이동]
     NotFound --> EmptyState[데이터 없음 안내 UI]
     ServerError --> RetryToast[잠시 후 다시 시도 토스트 메시지]
+```
 
 ---
 
@@ -253,5 +274,3 @@ flowchart TD
 | :--- | :--- | :--- |
 | [kpubdata](https://github.com/yeongseon/kpubdata) | [API_SPEC.md](https://github.com/yeongseon/kpubdata/blob/main/API_SPEC.md) | Core API 명세 |
 | [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [API_CONTRACT.md](https://github.com/yeongseon/kpubdata-builder/blob/main/API_CONTRACT.md) | Builder API 규약 |
-
-```
