@@ -1,8 +1,8 @@
-# Architecture — KPubData Studio
+# 아키텍처 — KPubData Studio
 
-## 1. Role
+## 1. 역할
 
-Studio is the presentation and workflow layer above `kpubdata-builder`.
+Studio는 `kpubdata-builder` 위에 놓이는 표현 계층이자 워크플로 계층입니다.
 
 ```mermaid
 graph TD
@@ -52,20 +52,20 @@ graph TD
 
 ---
 
-## 3. Architectural Principle
+## 3. 아키텍처 원칙
 
-Studio does not own build semantics.
-It renders configuration, previews, statuses, and outputs.
+Studio는 빌드 의미론을 소유하지 않습니다.
+Studio는 설정, 미리보기, 상태, 결과물을 렌더링합니다.
 
 핵심 원칙:
-- 빌드 의미론은 Builder가 소유한다.
-- Studio는 입력, 상태 전이, 시각화, 검토 흐름을 담당한다.
-- 기능별 API 호출은 feature 경계 안에 둔다.
-- 공통 타입과 UI는 `shared/`, 핵심 도메인 표현은 `entities/`에 둔다.
+- 빌드 의미론은 Builder가 소유합니다.
+- Studio는 입력, 상태 전이, 시각화, 검토 흐름을 담당합니다.
+- 기능별 API 호출은 feature 경계 안에 둡니다.
+- 공통 타입과 UI는 `shared/`, 핵심 도메인 표현은 `entities/`에 둡니다.
 
 ---
 
-## 4. Frontend Architecture 상세
+## 4. 프런트엔드 아키텍처 상세
 
 ```mermaid
 graph LR
@@ -78,7 +78,7 @@ graph LR
     Features --> BuilderAPI[Builder API]
 ```
 
-### 디렉토리 구조 및 가이드
+### 디렉터리 구조 및 가이드
 
 - **`src/main.tsx`**: 브라우저 `#root`에 앱을 마운트하는 진입점입니다.
 - **`src/app/`**: 앱 셸과 라우터를 조립합니다.
@@ -98,7 +98,7 @@ graph LR
 - **`src/shared/`**: 공통 config, hooks, lib, types, ui를 둡니다.
 - **`src/entities/`**: `build`, `dataset`, `manifest`, `artifact` 등 핵심 도메인 모델을 둡니다.
 
-### Feature Folder Convention
+### 기능 폴더 규약
 
 기능 폴더는 아래 패턴을 기본으로 삼습니다.
 
@@ -119,7 +119,7 @@ src/features/<feature>/
 
 ## 5. Builder API와의 통신
 
-Studio는 직접 데이터를 수집하지 않고, **Builder API**라는 중간 매개체를 통해 일을 시킵니다.
+Studio는 직접 데이터를 수집하지 않고, **Builder API**라는 중간 매개체를 통해 작업을 수행합니다.
 
 ```mermaid
 sequenceDiagram
@@ -145,41 +145,41 @@ sequenceDiagram
     Page-->>User: 결과 표시
 ```
 
-### 데이터 흐름 (Flow)
+### 데이터 흐름
 `Studio (SPA)` ↔ `Builder API` ↔ `kpubdata-builder (엔진)` ↔ `kpubdata (데이터 소스)`
 
-### API Client Positioning
+### API 클라이언트 위치
 
-- Builder API 클라이언트는 Studio 내부의 **integration surface**입니다.
+- Builder API 클라이언트는 Studio 내부의 **연동 표면**입니다.
 - 페이지는 feature API를 호출하고, feature API는 Builder의 HTTP 계약을 캡슐화합니다.
 - 필드명 변환, 응답 정규화, 에러 표준화는 feature API 또는 shared lib에서 담당합니다.
 
 ---
 
-## 6. Major Frontend Areas
+## 6. 주요 프런트엔드 영역
 
-- build dashboard
-- source selection
-- build spec editor
-- preview panel
-- validation panel
-- run/build history
-- artifact viewer
-- publication form
+- 빌드 대시보드
+- 소스 선택
+- 빌드 스펙 편집기
+- 미리보기 패널
+- 검증 패널
+- 실행/빌드 이력
+- 아티팩트 뷰어
+- 출판 폼
 
-## 7. Backend / Integration Surface
+## 7. 백엔드 / 연동 표면
 
-Studio needs a stable integration layer exposing:
-- list datasets
-- fetch source preview
-- validate spec
-- execute build
-- fetch build status
-- read manifest
-- list artifacts
-- publish build
+Studio에는 다음을 노출하는 안정적인 연동 계층이 필요합니다.
+- 데이터셋 목록 조회
+- 소스 미리보기 가져오기
+- 스펙 검증
+- 빌드 실행
+- 빌드 상태 조회
+- manifest 읽기
+- 아티팩트 목록 조회
+- 빌드 출판
 
-## 8. State Ownership
+## 8. 상태 소유권
 
 ```mermaid
 graph LR
@@ -201,20 +201,20 @@ graph LR
     StudioOwns -- Sync via API --> BackendOwns
 ```
 
-### Studio owns
-- unsaved form/draft state
-- local wizard state
-- UI filters, selections, and panel state
+### Studio가 소유하는 상태
+- 저장되지 않은 폼/초안 상태
+- 로컬 위저드 상태
+- UI 필터, 선택 상태, 패널 상태
 
-### State ownership rule
-- Zustand owns UI and draft state.
-- TanStack Query owns server state and caching.
+### 상태 소유권 규칙
+- Zustand는 UI 상태와 초안 상태를 소유합니다.
+- TanStack Query는 서버 상태와 캐싱을 소유합니다.
 
-### Builder/backend owns
-- build execution state
-- manifest data
-- artifact file state
-- validation semantics
+### Builder/backend가 소유하는 상태
+- 빌드 실행 상태
+- manifest 데이터
+- 아티팩트 파일 상태
+- 검증 의미론
 
 ---
 

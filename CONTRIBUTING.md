@@ -15,7 +15,7 @@ KPubData 패밀리 소개:
 
 이 프로젝트는 **Vite**, **React**, **TypeScript**로 만들어졌습니다. 개발을 시작하기 위해 컴퓨터에 다음 도구들을 설치해야 합니다.
 
-### Step 1: 필수 도구 설치
+### 1단계: 필수 도구 설치
 1. **Git**: 코드의 버전을 관리하는 도구입니다. ([다운로드](https://git-scm.com))
    - 설치 확인: 터미널에 `git --version` 입력
 2. **Node.js 20+**: 웹 서버를 실행하는 엔진입니다. ([다운로드](https://nodejs.org))
@@ -23,7 +23,7 @@ KPubData 패밀리 소개:
 3. **GitHub 계정**: 코드를 올릴 저장소 계정이 필요합니다.
    - [SSH 키 설정](https://docs.github.com/ko/authentication/connecting-to-github-with-ssh)을 해두면 매번 로그인할 필요가 없어 편리합니다.
 
-### Step 2: Fork & Clone
+### 2단계: Fork & Clone
 이 저장소를 여러분의 개인 저장소로 복사(Fork)한 뒤, 내 컴퓨터로 내려받습니다.
 
 ```bash
@@ -35,7 +35,7 @@ cd kpubdata-studio
 git remote add upstream https://github.com/yeongseon/kpubdata-studio.git
 ```
 
-### Step 3: 개발 환경 구축
+### 3단계: 개발 환경 구축
 내려받은 폴더 안에서 다음 명령어를 순서대로 입력하세요.
 
 ```bash
@@ -99,7 +99,7 @@ flowchart TD
 1. **최신 코드 가져오기**: `git checkout main && git pull upstream main`
 2. **새 브랜치 만들기**: `git checkout -b feat/issue-번호-기능이름`
 3. **코드 수정 후 저장**: `git add .`
-4. **커밋(기록)**: `git commit -m "feat: 대시보드 페이지 추가"`
+4. **커밋(기록)**: `git commit -m "feat: add dashboard page"`
 5. **서버에 올리기**: `git push origin feat/issue-번호-기능이름`
 6. **PR 생성**: GitHub 웹사이트에서 `Compare & pull request` 버튼 클릭
 
