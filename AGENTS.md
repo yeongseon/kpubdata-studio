@@ -1,41 +1,41 @@
 # AGENTS.md — kpubdata-studio
 
-## Mission
+## 미션
 
-Implement KPubData Studio as the UI shell and workflow interface for `kpubdata-builder`.
+`kpubdata-builder`를 위한 UI 셸이자 워크플로 인터페이스로 KPubData Studio를 구현합니다.
 
-## Ground Rules
+## 기본 원칙
 
-- Studio must not reimplement builder logic
-- Prefer explicit UI state transitions
-- Keep generated specs portable
-- Surface validation and manifests clearly
-- Make preview a first-class feature
+- Studio는 builder 로직을 다시 구현하면 안 됩니다.
+- UI 상태 전이는 명시적으로 유지합니다.
+- 생성되는 스펙은 이식 가능해야 합니다.
+- 검증 결과와 manifest를 명확히 드러냅니다.
+- preview를 핵심 기능으로 다룹니다.
 
-## Language policy
+## 언어 정책
 
-- **Documentation**: Write in Korean by default. English expansion is planned for future releases.
-- **Code**: All code (variable names, function names, comments, docstrings) must be in English.
-- **Commit messages**: Always in English.
-- **Issue / PR titles and descriptions**: Korean is acceptable; English is also fine.
+- **Documentation**: 기본적으로 한글로 작성합니다. 영어 확장은 향후 릴리스를 위해 계획되어 있습니다.
+- **Code**: 코드(변수명, 함수명, 주석, docstring)는 한글 우선을 원칙으로 하되 필요 시 영어를 사용할 수 있습니다.
+- **Commit messages**: 항상 영어로 작성합니다.
+- **Issue / PR titles and descriptions**: 한글 사용이 가능하며, 영어도 괜찮습니다.
 
-## Branch rules
+## 브랜치 규칙
 
-- Default branch is `main`. **Never push directly to `main`.**
-- Always work on a feature branch and open a PR.
-- Branch naming: `feat/issue-<number>-<short-description>`, `fix/issue-<number>-<short-description>`, `docs/<short-description>`
-- Never force-push to `main`. Never delete `main`.
-- Never rename or delete branches you did not create.
-- If unsure about any git operation, **ask first — do not guess.**
+- 기본 브랜치는 `main`입니다. **절대 `main`에 직접 push하지 마세요.**
+- 항상 기능 브랜치에서 작업하고 PR을 엽니다.
+- 브랜치 이름 규칙: `feat/issue-<number>-<short-description>`, `fix/issue-<number>-<short-description>`, `docs/<short-description>`
+- `main`에 force-push하지 마세요. `main`을 삭제하지 마세요.
+- 직접 만들지 않은 브랜치를 이름 변경하거나 삭제하지 마세요.
+- git 작업이 확실하지 않다면 **추측하지 말고 먼저 물어보세요.**
 
-## Priorities
+## 우선순위
 
-1. information architecture
-2. build draft state
-3. builder API integration layer
-4. preview and validation views
-5. artifact viewer
-6. publish flow
+1. 정보 구조
+2. 빌드 초안 상태
+3. builder API 연동 계층
+4. 미리보기 및 검증 화면
+5. 아티팩트 뷰어
+6. 출판 흐름
 
 ---
 

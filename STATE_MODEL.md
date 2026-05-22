@@ -1,4 +1,4 @@
-# State Model — KPubData Studio
+# 상태 모델 — KPubData Studio
 
 ## "상태(State)란 무엇인가요?" (초보자용 설명)
 
@@ -9,17 +9,17 @@
 
 ---
 
-## 1. Draft State (편집 중인 상태)
+## 1. Draft 상태 (편집 중인 상태)
 
 사용자가 빌드 설정을 만들거나 수정하고 있는 임시 저장 단계입니다. 아직 실제로 데이터를 가져오지는 않습니다.
 
-### Statuses
+### 상태 목록
 - `new`: 방금 새로 만든 깨끗한 상태
 - `dirty`: 내용이 수정되었지만 아직 검증되지 않은 상태
 - `validated`: 모든 설정값이 올바른지 확인(검증)을 마친 상태
 - `invalid`: 설정값에 오류가 있어 수정이 필요한 상태
 
-### 상태 전이 흐름 (ASCII Diagram)
+### 상태 전이 흐름 (ASCII 다이어그램)
 ```text
 [new] --(수정)--> [dirty] --(검증 요청)--> [validated]
                      ^           |
@@ -45,18 +45,18 @@ stateDiagram-v2
 
 ---
 
-## 2. Build Run State (빌드 실행 중인 상태)
+## 2. Build Run 상태 (빌드 실행 중인 상태)
 
 '빌드 실행' 버튼을 눌러 실제로 데이터를 수집하고 파일을 만드는 과정의 상태입니다.
 
-### Statuses
+### 상태 목록
 - `queued`: 대기열에서 차례를 기다리는 중
 - `running`: 실제로 데이터를 수집하고 처리하는 중
 - `succeeded`: 모든 데이터 처리가 성공적으로 완료됨
 - `failed`: 작업 도중 오류가 발생하여 중단됨
 - `cancelled`: 사용자가 수동으로 작업을 멈춤
 
-### 상태 전이 흐름 (ASCII Diagram)
+### 상태 전이 흐름 (ASCII 다이어그램)
 ```text
 [queued] -> [running] --(성공)--> [succeeded]
                |
@@ -84,11 +84,11 @@ stateDiagram-v2
 
 ---
 
-## 3. Publish State (출판/공유 상태)
+## 3. Publish 상태 (출판/공유 상태)
 
 빌드 완료된 결과물을 다른 사람에게 공유하거나 외부 저장소(예: HuggingFace)로 보내는 단계입니다.
 
-### Statuses
+### 상태 목록
 - `not_started`: 출판 준비 전
 - `ready`: 출판 가능한 상태 (빌드 성공 후)
 - `publishing`: 데이터를 외부로 전송 중
@@ -108,7 +108,7 @@ stateDiagram-v2
 
 ---
 
-## 4. Complete Lifecycle (전체 생명주기)
+## 4. 전체 생명주기
 
 Draft부터 시작하여 Build Run을 거쳐 Publish까지 이르는 전체 흐름입니다.
 

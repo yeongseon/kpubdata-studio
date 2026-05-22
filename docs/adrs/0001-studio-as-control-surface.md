@@ -1,7 +1,7 @@
-# ADR 0001 — Studio as Control Surface
+# ADR 0001 — Studio를 제어 인터페이스로 다루기
 
-## Decision
-Treat Studio as a control surface for authoring and executing builder workflows, not as the execution engine.
+## 결정
+Studio는 실행 엔진이 아니라 builder 워크플로를 작성하고 실행하는 제어 인터페이스로 다룹니다.
 
-## Rationale
-This keeps build semantics centralized in `kpubdata-builder` and prevents duplicated logic.
+## 근거
+이렇게 하면 빌드 의미론을 `kpubdata-builder`에 집중시킬 수 있고, 로직 중복도 막을 수 있습니다.
