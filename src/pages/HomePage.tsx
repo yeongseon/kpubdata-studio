@@ -1,3 +1,8 @@
+/**
+ * Studio 홈 대시보드 화면.
+ *
+ * 사용자가 가장 먼저 보는 안내 화면으로, 최근 빌드 요약과 주요 워크플로 진입 버튼을 함께 보여준다.
+ */
 import { Link } from "react-router-dom";
 import type { BuildRun } from "@/shared/lib/types";
 
@@ -19,6 +24,11 @@ const quickActions = [
   },
 ];
 
+/**
+ * 최근 실행 개요와 빠른 액션을 보여주는 랜딩 페이지 컴포넌트.
+ *
+ * @returns Studio 대시보드 메인 화면.
+ */
 export function HomePage() {
   const recentBuilds: BuildRun[] = [];
 

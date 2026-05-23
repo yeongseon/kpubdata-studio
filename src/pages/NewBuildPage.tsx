@@ -1,3 +1,9 @@
+/**
+ * 새 빌드 스펙 초안을 작성하고 즉시 검증해보는 편집 화면.
+ *
+ * React Hook Form으로 입력 상태를 관리하고, zod 스키마와 검증 API 스텁을 이용해
+ * 사용자가 만든 초안이 공유 도메인 모델과 맞는지 빠르게 확인할 수 있게 한다.
+ */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -8,13 +14,21 @@ import type { BuildDraft, BuildSpec } from "@/shared/lib/types";
 const exportFormats = exportFormatSchema.options;
 
 interface BuildFormValues {
+  /** 빌드를 식별하는 데이터셋 고유 ID */
   datasetId: string;
+  /** 사용자가 읽을 제목 */
   title: string;
+  /** 빌드 목적과 확장 가이드를 담는 설명 */
   description: string;
+  /** 데이터를 제공하는 provider 이름 */
   provider: string;
+  /** provider 내부의 원본 dataset 식별자 */
   sourceDataset: string;
+  /** 문자열 형태로 입력받는 JSON 파라미터 본문 */
   sourceParams: string;
+  /** 결과물을 저장하거나 게시할 출력 경로 */
   outputPath: string;
+  /** 사용자가 선택한 export 대상 형식 목록 */
   exportFormats: Array<(typeof exportFormats)[number]>;
 }
 
@@ -29,6 +43,12 @@ const initialValues: BuildFormValues = {
   exportFormats: ["jsonl"],
 };
 
+/**
+ * 폼에서 입력한 원본 JSON 문자열을 `Record<string, string>` 형태로 정규화한다.
+ *
+ * @param sourceParams - 사용자가 textarea에 입력한 JSON 문자열.
+ * @returns 파싱된 파라미터 객체 또는 오류 메시지.
+ */
 function parseSourceParams(sourceParams: string) {
   try {
     const parsed = JSON.parse(sourceParams) as unknown;
@@ -46,6 +66,12 @@ function parseSourceParams(sourceParams: string) {
   }
 }
 
+/**
+ * 폼 입력값에 대한 `BuildSpec` 후보와 검증 결과.
+ *
+  * @param values - 현재 폼에 입력된 원시 값 집합.
+  * @returns 검증을 통과한 스펙 또는 사용자에게 보여줄 오류 메시지.
+ */
 function toBuildSpec(values: BuildFormValues): { spec?: BuildSpec; error?: string } {
   const parsedParams = parseSourceParams(values.sourceParams);
 
@@ -82,10 +108,18 @@ function toBuildSpec(values: BuildFormValues): { spec?: BuildSpec; error?: strin
   return { spec: result.data };
 }
 
+/**
+ * 빌드 초안 편집, 로컬 검증, 제출 미리보기를 담당하는 페이지 컴포넌트.
+ *
+ * @returns 새 빌드 편집 폼과 우측 상태 패널 UI.
+ */
 export function NewBuildPage() {
   const [validationState, setValidationState] = useState<{
+    /** 마지막 검증에서 수집된 오류 문자열 목록 */
     errors: string[];
+    /** 현재 스펙이 검증을 통과했는지 여부 */
     isValid: boolean;
+    /** 검증 요청의 진행 상태 */
     status: "idle" | "validating" | "validated";
   }>({
     errors: [],
@@ -123,6 +157,11 @@ export function NewBuildPage() {
     lastModified: new Date().toISOString(),
   };
 
+  /**
+   * 현재 폼 상태를 기준으로 로컬 스펙을 구성하고 검증 API 스텁을 호출한다.
+   *
+   * @returns 검증 완료 후 상태 업데이트를 수행하는 비동기 작업.
+   */
   async function validateCurrentSpec() {
     clearErrors();
     setValidationState({ errors: [], isValid: false, status: "validating" });

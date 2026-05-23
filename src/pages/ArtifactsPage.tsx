@@ -1,9 +1,19 @@
+/**
+ * 빌드 결과 아티팩트 확인 화면의 기본 골격을 제공하는 페이지.
+ *
+ * 생성 파일, manifest 요약, 다운로드 액션처럼 후속 기능이 들어갈 영역을 카드로 구분한다.
+ */
 const artifactCards = [
   "Generated files",
   "Manifest summary",
   "Download actions",
 ] as const;
 
+/**
+ * 아티팩트 카드 목록을 렌더링하는 페이지 컴포넌트.
+ *
+ * @returns 아티팩트 뷰어 스캐폴드 화면.
+ */
 export function ArtifactsPage() {
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">

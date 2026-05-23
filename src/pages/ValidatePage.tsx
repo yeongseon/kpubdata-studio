@@ -1,3 +1,8 @@
+/**
+ * 빌드 스펙 검증 결과를 구조적으로 배치할 워크스페이스 페이지.
+ *
+ * 오류, 경고, 다음 액션을 구역별로 분리해 사용자가 수정 우선순위를 이해하도록 돕는다.
+ */
 const validationSections = [
   {
     title: "Errors",
@@ -13,6 +18,11 @@ const validationSections = [
   },
 ];
 
+/**
+ * 검증 결과 카드 목록을 렌더링하는 페이지 컴포넌트.
+ *
+ * @returns 검증 워크스페이스 화면.
+ */
 export function ValidatePage() {
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
