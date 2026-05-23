@@ -1,0 +1,56 @@
+site_name: "KPubData Studio"
+site_url: "https://yeongseon.github.io/kpubdata-studio/"
+repo_url: "https://github.com/yeongseon/kpubdata-studio"
+repo_name: "yeongseon/kpubdata-studio"
+
+theme:
+  name: material
+  language: ko
+  palette:
+    primary: deep purple
+    accent: deep purple
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - 사용 가이드:
+      - API 규약: API_CONTRACT.md
+      - 상태 모델: STATE_MODEL.md
+      - 사용자 흐름: USER_FLOWS.md
+  - 아키텍처:
+      - 시스템 구조: ARCHITECTURE.md
+      - 정보 구조: INFORMATION_ARCHITECTURE.md
+      - UI 규격: UI_SPEC.md
+  - 개발 가이드:
+      - 기여 방법: CONTRIBUTING.md
+      - 에이전트 가이드: AGENTS.md
+  - 프로젝트:
+      - 요구사항 (PRD): PRD.md
+      - 로드맵: ROADMAP.md
+      - 변경 이력: CHANGELOG.md
+  - ADR:
+      - Studio as Control Surface: adrs/0001-studio-as-control-surface.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+  - javascripts/mermaid.js
