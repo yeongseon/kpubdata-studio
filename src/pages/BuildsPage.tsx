@@ -1,6 +1,16 @@
+/**
+ * 빌드 실행 이력 목록을 위한 스캐폴드 페이지.
+ *
+ * 향후 runs API와 polling 훅이 연결되면 대기/실행/완료 상태를 표 형태로 보여줄 예정이다.
+ */
 import { Link } from "react-router-dom";
 import type { BuildRun } from "@/shared/lib/types";
 
+/**
+ * 실행 이력 표와 새 빌드 진입 버튼을 보여주는 페이지 컴포넌트.
+ *
+ * @returns 빌드 실행 목록 화면.
+ */
 export function BuildsPage() {
   const runs: BuildRun[] = [];
 
@@ -32,6 +42,7 @@ export function BuildsPage() {
           <span>Action</span>
         </div>
 
+        // 데이터가 없을 때는 연결 포인트를 설명하는 빈 상태 메시지를 보여준다.
         {runs.length === 0 ? (
           <div className="px-6 py-14 text-center">
             <p className="text-lg font-medium tracking-tight">No build runs yet</p>

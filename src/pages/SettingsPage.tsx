@@ -1,5 +1,15 @@
+/**
+ * Studio 환경 설정 확인 화면.
+ *
+ * 현재는 환경 변수로 주입된 Builder API 엔드포인트를 노출해 연결 상태를 점검할 수 있게 한다.
+ */
 import { API_BASE } from "@/shared/config/env";
 
+/**
+ * 환경 기반 설정 값을 읽어 사용자에게 보여주는 페이지 컴포넌트.
+ *
+ * @returns 설정 스캐폴드 화면.
+ */
 export function SettingsPage() {
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">

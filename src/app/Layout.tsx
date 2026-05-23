@@ -1,3 +1,9 @@
+/**
+ * Studio의 공통 앱 셸과 내비게이션 레이아웃을 정의하는 파일.
+ *
+ * 좌측 사이드바, 상단 헤더, 테마 전환, 모바일 오버레이를 한곳에서 관리하며
+ * 실제 라우트 콘텐츠는 `Outlet`을 통해 주입한다.
+ */
 import { useEffect } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useUIStore } from "@/shared/hooks/useUIStore";
@@ -14,6 +20,12 @@ const utilityNavItems = [
   { to: "/preview", label: "Preview" },
 ] as const;
 
+/**
+ * 현재 테마 모드에 대응하는 DOM 테마 값.
+ *
+ * @param theme - UI 스토어에 저장된 현재 테마 모드.
+ * @returns DOM `data-theme` 속성에 기록할 최종 테마 값.
+ */
 function getResolvedTheme(theme: ReturnType<typeof useUIStore.getState>["theme"]):
   | "light"
   | "dark" {
@@ -26,6 +38,12 @@ function getResolvedTheme(theme: ReturnType<typeof useUIStore.getState>["theme"]
   return theme;
 }
 
+/**
+ * 사이드바 링크의 활성/비활성 상태에 맞는 공통 Tailwind 클래스를 만든다.
+ *
+ * @param isActive - 현재 라우트와 링크가 일치하는지 여부.
+ * @returns 시각 상태가 반영된 클래스 문자열.
+ */
 function navigationClassName({ isActive }: { isActive: boolean }) {
   return [
     "group flex items-start justify-between gap-3 rounded-3xl border px-4 py-3 text-left transition",
@@ -35,6 +53,11 @@ function navigationClassName({ isActive }: { isActive: boolean }) {
   ].join(" ");
 }
 
+/**
+ * Studio 모든 페이지에 공통으로 적용되는 앱 셸 컴포넌트.
+ *
+ * @returns 사이드바, 헤더, 본문 슬롯을 포함한 전체 레이아웃.
+ */
 export function Layout() {
   const closeSidebar = useUIStore((state) => state.closeSidebar);
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);

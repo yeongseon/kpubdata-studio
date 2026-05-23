@@ -1,5 +1,15 @@
+/**
+ * 빌드 결과 미리보기 패널 스캐폴드 페이지.
+ *
+ * 실제 preview API가 연결되면 컬럼 스키마와 샘플 행을 이 화면에 표시한다.
+ */
 const previewColumns = ["column", "type", "sample"] as const;
 
+/**
+ * 스키마/샘플 행 자리표시자 테이블을 렌더링한다.
+ *
+ * @returns 미리보기 워크스페이스 화면.
+ */
 export function PreviewPage() {
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
