@@ -42,7 +42,6 @@ export function BuildsPage() {
           <span>Action</span>
         </div>
 
-        // 데이터가 없을 때는 연결 포인트를 설명하는 빈 상태 메시지를 보여준다.
         {runs.length === 0 ? (
           <div className="px-6 py-14 text-center">
             <p className="text-lg font-medium tracking-tight">No build runs yet</p>
