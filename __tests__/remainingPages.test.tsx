@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { ArtifactsPage } from "@/pages/ArtifactsPage";
@@ -7,7 +8,7 @@ import { PreviewPage } from "@/pages/PreviewPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { ValidatePage } from "@/pages/ValidatePage";
 
-function renderPage(element: React.ReactNode) {
+function renderPage(element: ReactNode) {
   return render(<MemoryRouter>{element}</MemoryRouter>);
 }
 
