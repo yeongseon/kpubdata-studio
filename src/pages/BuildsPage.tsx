@@ -1,56 +1,47 @@
 /**
- * 빌드 실행 이력 목록을 위한 스캐폴드 페이지.
+ * 빌드 목록 페이지 (/builds).
  *
- * 향후 runs API와 polling 훅이 연결되면 대기/실행/완료 상태를 표 형태로 보여줄 예정이다.
+ * 전체 빌드와 실행 이력을 표로 보여준다(제안 §5.6). 실제 목록/상태는 #29 Builder API
+ * 연동 시 useBuilds()로 채운다.
  */
-import { Link } from "react-router-dom";
 import type { BuildRun } from "@/shared/lib/types";
+import { Card, EmptyState, LinkButton, PageHeader } from "@/shared/ui";
+
+const COLUMNS = ["빌드", "상태", "마지막 실행", "액션"] as const;
 
 /**
- * 실행 이력 표와 새 빌드 진입 버튼을 보여주는 페이지 컴포넌트.
+ * 빌드 실행 목록 표와 새 빌드 진입점을 보여주는 페이지.
  *
- * @returns 빌드 실행 목록 화면.
+ * @returns 빌드 목록 화면.
  */
 export function BuildsPage() {
   const runs: BuildRun[] = [];
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-            Runs
-          </p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-tight">Build run history</h2>
-          <p className="mt-2 max-w-2xl text-zinc-600 dark:text-zinc-300">
-            Scaffold table for queued, running, and completed build executions.
-          </p>
-        </div>
-        <Link
-          className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-          to="/builds/new"
-        >
-          New build draft
-        </Link>
-      </div>
+      <PageHeader
+        eyebrow="빌드"
+        title="빌드 목록"
+        description="전체 빌드와 대기·실행·완료 상태의 실행 이력을 확인하세요."
+        actions={<LinkButton to="/builds/new">새 빌드 만들기</LinkButton>}
+      />
 
-      <section className="overflow-hidden rounded-[2rem] border border-zinc-200/80 bg-white/80 shadow-lg shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950/70">
-        <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] gap-4 border-b border-zinc-200/80 px-6 py-4 text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          <span>Build</span>
-          <span>Status</span>
-          <span>Started</span>
-          <span>Action</span>
+      <Card className="overflow-hidden p-0">
+        <div className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] gap-4 border-b border-zinc-200/80 px-6 py-4 text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+          {COLUMNS.map((column) => (
+            <span key={column}>{column}</span>
+          ))}
         </div>
 
         {runs.length === 0 ? (
-          <div className="px-6 py-14 text-center">
-            <p className="text-lg font-medium tracking-tight">No build runs yet</p>
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              Students can connect `listBuilds` and polling hooks here to populate the table with live run status.
-            </p>
-          </div>
+          <EmptyState
+            title="아직 생성된 빌드가 없습니다"
+            description="첫 빌드를 만들면 여기에 상태와 실행 이력이 표시됩니다. (목록 API는 #29 연동 시 연결됩니다.)"
+            actionLabel="새 빌드 만들기"
+            actionHref="/builds/new"
+          />
         ) : null}
-      </section>
+      </Card>
     </main>
   );
 }

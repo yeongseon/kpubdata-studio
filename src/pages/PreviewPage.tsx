@@ -1,41 +1,33 @@
 /**
- * 빌드 결과 미리보기 패널 스캐폴드 페이지.
+ * 미리보기 페이지 (/preview, 레거시 딥링크).
  *
- * 실제 preview API가 연결되면 컬럼 스키마와 샘플 행을 이 화면에 표시한다.
+ * 미리보기는 이제 New Build 마법사의 ‘미리보기’ 단계에 통합되어 있다(제안 §5.3).
+ * 이 화면은 딥링크 호환을 위해 유지하며, 마법사로 안내한다.
  */
-const previewColumns = ["column", "type", "sample"] as const;
+import { Card, EmptyState, PageHeader } from "@/shared/ui";
 
 /**
- * 스키마/샘플 행 자리표시자 테이블을 렌더링한다.
+ * 미리보기 흐름을 마법사로 안내하는 레거시 페이지.
  *
- * @returns 미리보기 워크스페이스 화면.
+ * @returns 미리보기 안내 화면.
  */
 export function PreviewPage() {
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-          Preview
-        </p>
-        <h2 className="mt-2 text-3xl font-semibold tracking-tight">Preview panel scaffold</h2>
-        <p className="mt-3 max-w-2xl text-zinc-600 dark:text-zinc-300">
-          Placeholder table for dataset rows returned by the preview API stub.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="미리보기"
+        title="데이터 미리보기"
+        description="현재 설정으로 가져올 수 있는 샘플 데이터를 확인하는 단계입니다."
+      />
 
-      <section className="overflow-hidden rounded-[2rem] border border-zinc-200/80 bg-white/80 dark:border-zinc-800 dark:bg-zinc-950/70">
-        <div className="grid grid-cols-3 gap-4 border-b border-zinc-200/80 px-6 py-4 text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          {previewColumns.map((column) => (
-            <span key={column}>{column}</span>
-          ))}
-        </div>
-        <div className="px-6 py-14 text-center">
-          <p className="text-lg font-medium tracking-tight">No preview rows loaded</p>
-          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            Hook `previewBuild` into this page to render column schemas and sample rows after spec validation.
-          </p>
-        </div>
-      </section>
+      <Card className="p-0">
+        <EmptyState
+          title="미리보기는 새 빌드 만들기 안에서 진행됩니다"
+          description="샘플 행과 컬럼 스키마는 New Build 마법사의 ‘미리보기’ 단계에서 바로 확인할 수 있습니다."
+          actionLabel="새 빌드 만들기"
+          actionHref="/builds/new"
+        />
+      </Card>
     </main>
   );
 }
