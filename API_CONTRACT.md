@@ -263,6 +263,19 @@ flowchart TD
 
 ## 관련 문서
 
+## Builder 통합 현황 (#36)
+
+Studio는 Builder 계약 **v1.0.0**(builder #209의 `API_CONTRACT_VERSION`)을 대상으로 한다.
+계약 버전과 클라이언트 오퍼레이션 집합은 `__tests__/contractConformance.test.ts`가 고정해,
+한쪽이 바뀌면 CI에서 깨진다.
+
+- 클라이언트 계층: `src/shared/lib/builderApi.ts` (#29) — `apiFetch`/`ApiError`/계약 버전,
+  `VITE_USE_REAL_BUILDER` 플래그로 mock/실연동 전환.
+- 스펙 매핑 계층: `src/features/build-spec/specMapping.ts` (#37) — Studio camelCase
+  BuildSpec → Builder snake_case 스펙.
+- 현재 실연동: `GET /version`(SettingsPage), `POST /validate`(validateSpec).
+- 후속: preview/build/artifacts 실연동, 비동기 job(#39).
+
 ### 이 저장소 내 문서
 | 문서 | 설명 |
 | :--- | :--- |
