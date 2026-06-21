@@ -319,7 +319,11 @@ export function NewBuildPage() {
                   <Textarea
                     rows={8}
                     {...field}
-                    {...register("sourceParams", { required: "파라미터를 입력해주세요." })}
+                    {...register("sourceParams", {
+                      required: "파라미터를 입력해주세요.",
+                      // JSON 문법/객체 여부를 단계 이동(trigger) 시점에 바로 막고 필드에 표시한다.
+                      validate: (value) => parseSourceParams(value).error ?? true,
+                    })}
                   />
                 )}
               </FormField>
