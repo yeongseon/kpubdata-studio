@@ -6,6 +6,10 @@
 import { createBrowserRouter } from "react-router-dom";
 import { Layout } from "@/app/Layout";
 import { ArtifactsPage } from "@/pages/ArtifactsPage";
+import { BuildArtifactsPage } from "@/pages/BuildArtifactsPage";
+import { BuildDetailPage } from "@/pages/BuildDetailPage";
+import { BuildPublishPage } from "@/pages/BuildPublishPage";
+import { BuildRunPage } from "@/pages/BuildRunPage";
 import { BuildsPage } from "@/pages/BuildsPage";
 import { HomePage } from "@/pages/HomePage";
 import { NewBuildPage } from "@/pages/NewBuildPage";
@@ -35,6 +39,30 @@ export const router = createBrowserRouter([
         path: "builds/new",
         element: <NewBuildPage />,
       },
+      // Build 단위 중심 라우트 (제안 §3.3): 상세 → 편집/실행/결과물/게시.
+      {
+        path: "builds/:buildId",
+        element: <BuildDetailPage />,
+      },
+      {
+        // 편집은 New Build와 동일한 에디터를 재사용한다.
+        path: "builds/:buildId/edit",
+        element: <NewBuildPage />,
+      },
+      {
+        path: "builds/:buildId/run",
+        element: <BuildRunPage />,
+      },
+      {
+        path: "builds/:buildId/artifacts",
+        element: <BuildArtifactsPage />,
+      },
+      {
+        path: "builds/:buildId/publish",
+        element: <BuildPublishPage />,
+      },
+      // 레거시 단독 라우트: 내비게이션에서는 제거됐지만 딥링크 호환을 위해 유지한다.
+      // Validate/Preview는 New Build Wizard 내부 패널로 통합 예정(§5.3/§5.4).
       {
         path: "validate",
         element: <ValidatePage />,

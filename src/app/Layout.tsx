@@ -8,16 +8,14 @@ import { useEffect } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useUIStore } from "@/shared/hooks/useUIStore";
 
+// 내비게이션은 Build 중심으로 단순화한다(제안 §6.3). Validate/Preview는 독립 메뉴에서
+// 제거하고 New Build Wizard 내부 패널로 통합한다(§5.3/§5.4).
 const primaryNavItems = [
-  { to: "/builds/new", label: "New Build", description: "Create a fresh spec" },
-  { to: "/builds", label: "Runs", description: "Track executions" },
-  { to: "/artifacts", label: "Artifacts", description: "Inspect outputs" },
-  { to: "/settings", label: "Settings", description: "Configure Studio" },
-] as const;
-
-const utilityNavItems = [
-  { to: "/validate", label: "Validate" },
-  { to: "/preview", label: "Preview" },
+  { to: "/", label: "대시보드", description: "최근 빌드와 빠른 시작", end: true },
+  { to: "/builds", label: "빌드", description: "전체 빌드와 실행 이력", end: false },
+  { to: "/builds/new", label: "새 빌드 (New Build)", description: "새 스펙 만들기", end: false },
+  { to: "/artifacts", label: "결과물 (Artifacts)", description: "생성된 산출물", end: false },
+  { to: "/settings", label: "설정 (Settings)", description: "Studio 환경설정", end: false },
 ] as const;
 
 /**
@@ -97,10 +95,10 @@ export function Layout() {
                 KPubData Studio
               </p>
               <Link className="mt-2 block text-2xl font-semibold tracking-tight" to="/">
-                Workflow Atelier
+                공공데이터 빌드 스튜디오
               </Link>
               <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-                Draft, validate, preview, and ship builder specs from one shell.
+                데이터 소스 선택부터 미리보기(Preview), 검증, 결과물까지 한 흐름으로 진행하세요.
               </p>
             </div>
             <button
@@ -118,6 +116,7 @@ export function Layout() {
               {primaryNavItems.map((item) => (
                 <NavLink
                   className={navigationClassName}
+                  end={item.end}
                   key={item.to}
                   onClick={closeSidebar}
                   to={item.to}
@@ -127,48 +126,23 @@ export function Layout() {
                     <p className="mt-1 text-sm opacity-80">{item.description}</p>
                   </div>
                   <span className="mt-1 text-xs uppercase tracking-[0.25em] opacity-60">
-                    Open
+                    열기
                   </span>
                 </NavLink>
               ))}
-            </div>
-
-            <div className="rounded-3xl border border-dashed border-zinc-300/80 bg-zinc-50/70 p-4 dark:border-zinc-700 dark:bg-zinc-900/70">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                Workspace panels
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {utilityNavItems.map((item) => (
-                  <NavLink
-                    className={({ isActive }) =>
-                      [
-                        "rounded-full border px-3 py-2 text-sm transition",
-                        isActive
-                          ? "border-emerald-500 bg-emerald-500 text-white"
-                          : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200",
-                      ].join(" ")
-                    }
-                    key={item.to}
-                    onClick={closeSidebar}
-                    to={item.to}
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
             </div>
           </nav>
 
           <div className="rounded-3xl border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/70">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium">Theme</p>
+                <p className="text-sm font-medium">테마</p>
                 <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                  Keep the shell legible while scaffolding new workflows.
+                  작업 중에도 화면이 잘 보이도록 테마를 선택하세요.
                 </p>
               </div>
               <select
-                aria-label="Select theme"
+                aria-label="테마 선택"
                 className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 onChange={(event) => setTheme(event.target.value as "system" | "light" | "dark")}
                 value={theme}
@@ -195,10 +169,10 @@ export function Layout() {
                 </button>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                    Builder control surface
+                    Builder 제어 화면
                   </p>
                   <h1 className="text-lg font-semibold tracking-tight">
-                    Portable dataset workflows for students and maintainers
+                    학생과 메인테이너를 위한 공공데이터 빌드 워크플로
                   </h1>
                 </div>
               </div>
@@ -207,7 +181,7 @@ export function Layout() {
                 className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-400"
                 to="/builds/new"
               >
-                Start new build
+                새 빌드 만들기
               </Link>
             </div>
           </header>
