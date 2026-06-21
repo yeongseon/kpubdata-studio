@@ -6,7 +6,7 @@
  */
 import { Link } from "react-router-dom";
 import type { BuildRun } from "@/shared/lib/types";
-import { Button, Card, EmptyState, PageHeader, type StatusValue } from "@/shared/ui";
+import { Card, EmptyState, LinkButton, PageHeader, type StatusValue } from "@/shared/ui";
 
 // 상태 요약 카드. 수치는 Builder API 연동 전까지 0으로 둔다.
 const STATUS_SUMMARY: { status: StatusValue; label: string; count: number }[] = [
@@ -48,11 +48,7 @@ export function HomePage() {
         eyebrow="대시보드"
         title="공공데이터 수집부터 결과물 생성까지 한 번에 관리하세요"
         description="템플릿을 선택하고, 미리보기와 검증을 거쳐 안전하게 빌드를 실행할 수 있습니다."
-        actions={
-          <Button>
-            <Link to="/builds/new">새 빌드 만들기</Link>
-          </Button>
-        }
+        actions={<LinkButton to="/builds/new">새 빌드 만들기</LinkButton>}
       />
 
       {/* 상태 요약 카드 (§5.1) */}
