@@ -1,21 +1,42 @@
 /**
  * 빌드 실행(run) API 진입점.
  *
- * 실제 Builder 실행 요청이 붙기 전까지는 타입과 흐름만 유지하는 스텁 역할을 한다.
+ * 실연동 모드(`VITE_USE_REAL_BUILDER=true`)면 Builder `/build`를 호출하고, 아니면
+ * 결정적 mock 실행 결과를 반환한다. Builder의 /build는 현재 동기식이므로 비동기 job
+ * 폴링은 Builder 측 job 엔드포인트가 생기면 확장한다(#39).
  */
-import { API_BASE } from "@/shared/config/env";
+import { serializeSpec } from "@/features/build-spec/specMapping";
+import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type { BuildRun, BuildSpec } from "@/shared/lib/types";
 
+const MOCK_TIME = "1970-01-01T00:00:00.000Z";
+
 /**
- * 새 빌드 실행을 시작하고 실행 상태 객체를 반환한다.
+ * 새 빌드 실행을 시작하고 실행 결과를 반환한다.
  *
- * @param _spec - 실행할 빌드 스펙.
+ * @param spec - 실행할 빌드 스펙.
+ * @param signal - 취소용 AbortSignal(선택).
  * @returns 생성된 빌드 실행 정보.
- * @throws Error 아직 실제 실행 API 연동이 구현되지 않았을 때 발생한다.
  */
-export async function executeBuild(_spec: BuildSpec): Promise<BuildRun> {
-  void API_BASE;
-  throw new Error("Not implemented");
+export async function executeBuild(spec: BuildSpec, signal?: AbortSignal): Promise<BuildRun> {
+  if (!isRealBuilderEnabled()) {
+    return {
+      id: "mock-run",
+      spec,
+      status: "succeeded",
+      startedAt: MOCK_TIME,
+      finishedAt: MOCK_TIME,
+    };
+  }
+
+  const result = await builderApi.build(serializeSpec(spec), undefined, signal);
+  return {
+    id: result.run_id,
+    spec,
+    status: result.status === "ok" ? "succeeded" : "failed",
+    startedAt: MOCK_TIME,
+    finishedAt: MOCK_TIME,
+  };
 }
 
 /** 목록/이력 UI 개발용 결정적 mock 스펙을 만든다. */
@@ -39,7 +60,6 @@ function mockSpec(datasetId: string, title: string): BuildSpec {
  * @returns 빌드 실행 목록(mock).
  */
 export async function listBuilds(): Promise<BuildRun[]> {
-  void API_BASE;
   return [
     {
       id: "run-air-quality-3",
