@@ -237,8 +237,11 @@ export function NewBuildPage() {
   const draftStatus = validation.isValid ? "validated" : isDirty ? "dirty" : "new";
 
   // 템플릿을 선택하면 폼을 해당 값으로 채우고 기본 정보 단계로 넘어간다 (#11).
+  // 이전 템플릿에서 로드된 미리보기/검증 결과가 남지 않도록 함께 초기화한다.
   function selectTemplate(template: BuildTemplate) {
     reset(template.values);
+    setPreview({ status: "idle", rows: [], schema: {} });
+    setValidation({ status: "idle", isValid: false, errors: [] });
     setStep(1);
   }
 
