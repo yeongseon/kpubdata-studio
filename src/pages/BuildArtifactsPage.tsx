@@ -4,8 +4,8 @@
  * manifest 요약, 생성 파일 목록, 다운로드/게시 액션을 보여준다(제안 §5.7).
  * 실제 manifest/파일은 #30 manifest viewer + #29 API 연동 시 채운다.
  */
-import { Link, useParams } from "react-router-dom";
-import { Button, Card, EmptyState, PageHeader } from "@/shared/ui";
+import { useParams } from "react-router-dom";
+import { Card, EmptyState, LinkButton, PageHeader } from "@/shared/ui";
 
 /**
  * 빌드가 생성한 결과물과 manifest 요약을 보여주는 페이지.
@@ -21,11 +21,7 @@ export function BuildArtifactsPage() {
         eyebrow="결과물"
         title={`${buildId || "빌드"} 결과물`}
         description="빌드가 생성한 파일, manifest, 다운로드 링크를 확인하세요."
-        actions={
-          <Button>
-            <Link to={`/builds/${buildId}/publish`}>게시하기</Link>
-          </Button>
-        }
+        actions={<LinkButton to={`/builds/${buildId}/publish`}>게시하기</LinkButton>}
       />
 
       <Card>

@@ -4,8 +4,8 @@
  * 실행 상태 헤더, 단계별 진행률(Stepper), 로그 영역, 다음 행동을 보여준다(제안 §5.5).
  * 실제 진행 상태/로그는 #39 비동기 job 연동과 #29 API 연동 시 채운다.
  */
-import { Link, useParams } from "react-router-dom";
-import { Button, Card, EmptyState, PageHeader, StatusBadge, Stepper } from "@/shared/ui";
+import { useParams } from "react-router-dom";
+import { Button, Card, EmptyState, LinkButton, PageHeader, StatusBadge, Stepper } from "@/shared/ui";
 
 const RUN_STEPS = [
   { id: "queued", label: "대기" },
@@ -57,12 +57,12 @@ export function BuildRunPage() {
       </Card>
 
       <div className="flex flex-wrap gap-3">
-        <Button variant="secondary">
-          <Link to={`/builds/${buildId}/artifacts`}>결과물 보기</Link>
-        </Button>
-        <Button variant="ghost">
-          <Link to={`/builds/${buildId}/edit`}>스펙 수정</Link>
-        </Button>
+        <LinkButton variant="secondary" to={`/builds/${buildId}/artifacts`}>
+          결과물 보기
+        </LinkButton>
+        <LinkButton variant="ghost" to={`/builds/${buildId}/edit`}>
+          스펙 수정
+        </LinkButton>
       </div>
     </main>
   );

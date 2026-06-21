@@ -5,7 +5,7 @@
  * 실제 데이터는 #29 Builder API 연동 시 useBuild(buildId)로 채운다.
  */
 import { Link, useParams } from "react-router-dom";
-import { Button, Card, PageHeader, StatusBadge } from "@/shared/ui";
+import { Card, LinkButton, PageHeader, StatusBadge } from "@/shared/ui";
 
 const SUBPAGES = [
   { segment: "edit", label: "편집", description: "스펙 수정" },
@@ -28,11 +28,7 @@ export function BuildDetailPage() {
         eyebrow="빌드 상세"
         title={buildId || "빌드"}
         description="이 빌드의 상태를 확인하고 편집·실행·결과물·게시 단계로 이동하세요."
-        actions={
-          <Button>
-            <Link to={`/builds/${buildId}/run`}>실행하기</Link>
-          </Button>
-        }
+        actions={<LinkButton to={`/builds/${buildId}/run`}>실행하기</LinkButton>}
       />
 
       <Card className="flex flex-wrap items-center gap-3">
