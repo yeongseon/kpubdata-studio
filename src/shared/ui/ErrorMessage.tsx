@@ -4,13 +4,14 @@
  * 폼 필드 오류나 요약 오류를 role="alert"로 노출해 보조기기가 즉시 안내하도록 한다
  * (접근성, 제안 §12).
  */
+import type { ReactNode } from "react";
 import { cn } from "./cn";
 
 export interface ErrorMessageProps {
   /** aria-describedby로 연결하기 위한 id */
   id?: string;
   /** 오류 메시지 본문 */
-  children?: React.ReactNode;
+  children?: ReactNode;
   /** 추가 className */
   className?: string;
 }

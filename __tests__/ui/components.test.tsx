@@ -5,6 +5,7 @@ import {
   Button,
   EmptyState,
   FormField,
+  LinkButton,
   Stepper,
   StatusBadge,
   TextInput,
@@ -89,7 +90,7 @@ describe("FormField", () => {
 });
 
 describe("EmptyState", () => {
-  it("renders a CTA link to the action href", () => {
+  it("renders a single anchor CTA (no nested button) to the action href", () => {
     render(
       <MemoryRouter>
         <EmptyState
@@ -102,5 +103,26 @@ describe("EmptyState", () => {
     );
     const link = screen.getByRole("link", { name: "새 빌드 만들기" });
     expect(link).toHaveAttribute("href", "/builds/new");
+    // 링크가 버튼으로 감싸지지 않는다(상호작용 요소 중첩 회피).
+    expect(link.closest("button")).toBeNull();
+  });
+
+  it("renders no CTA when there is no action", () => {
+    render(<EmptyState title="결과가 없습니다" />);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+});
+
+describe("LinkButton", () => {
+  it("renders an anchor styled as a button", () => {
+    render(
+      <MemoryRouter>
+        <LinkButton to="/builds">목록</LinkButton>
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole("link", { name: "목록" });
+    expect(link).toHaveAttribute("href", "/builds");
+    expect(link).toHaveClass("rounded-full");
   });
 });

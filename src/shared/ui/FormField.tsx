@@ -63,7 +63,15 @@ export function FormField({
     <div className={cn("flex flex-col gap-1.5", className)}>
       <label htmlFor={id} className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
         {label}
-        {required ? <span className="ml-0.5 text-red-600">*</span> : null}
+        {required ? (
+          <>
+            {/* 시각적 별표는 보조기기에서 숨기고, 스크린리더에는 '(필수)'를 읽어준다. */}
+            <span aria-hidden="true" className="ml-0.5 text-red-600">
+              *
+            </span>
+            <span className="sr-only">(필수)</span>
+          </>
+        ) : null}
       </label>
       {children({ id, "aria-describedby": describedBy, invalid: Boolean(error) })}
       {help ? (

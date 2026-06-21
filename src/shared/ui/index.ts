@@ -4,6 +4,8 @@
  * 페이지/기능 모듈은 `@/shared/ui`에서 디자인 시스템 컴포넌트를 가져온다.
  */
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from "./Button";
+export { LinkButton, type LinkButtonProps } from "./LinkButton";
+export { buttonClassName } from "./buttonStyles";
 export { Card, type CardProps, type CardVariant } from "./Card";
 export { PageHeader, type PageHeaderProps } from "./PageHeader";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
