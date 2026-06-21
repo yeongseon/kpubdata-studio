@@ -1,34 +1,50 @@
 /**
- * 새 빌드 스펙 초안을 작성하고 즉시 검증해보는 편집 화면.
+ * 새 빌드 작성 마법사(New Build Wizard) 화면.
  *
- * React Hook Form으로 입력 상태를 관리하고, zod 스키마와 검증 API 스텁을 이용해
- * 사용자가 만든 초안이 공유 도메인 모델과 맞는지 빠르게 확인할 수 있게 한다.
+ * 단일 폼 대신 단계별 Stepper로 안내한다(제안 §5.2): 기본 정보 → 데이터 소스 →
+ * 파라미터 → 미리보기 → 출력 형식 → 검증·실행. React Hook Form으로 입력을 관리하고
+ * 각 단계 진행 전에 해당 단계 필드만 검증한다. Preview/Validate는 독립 페이지가 아니라
+ * 마법사 내부 단계로 통합되어 있다(§5.3/§5.4).
  */
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
+import { previewBuild } from "@/features/preview/api";
 import { validateSpec } from "@/features/validation/api";
 import { buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
-import type { BuildDraft, BuildSpec } from "@/shared/lib/types";
+import type { BuildSpec } from "@/shared/lib/types";
+import {
+  Button,
+  Card,
+  EmptyState,
+  FormField,
+  PageHeader,
+  Select,
+  StatusBadge,
+  Stepper,
+  TextInput,
+  Textarea,
+  type StepItem,
+} from "@/shared/ui";
 
 const exportFormats = exportFormatSchema.options;
 
+// Provider는 직접 입력 대신 선택형으로 제공한다(제안 §5.2.2). dataset 자동 로딩은
+// #29 Builder API 연동 시 추가한다.
+const PROVIDER_OPTIONS = [
+  { value: "datago", label: "data.go.kr (공공데이터포털)" },
+  { value: "kma", label: "기상청 (KMA)" },
+  { value: "seoul", label: "서울 열린데이터광장" },
+  { value: "kosis", label: "통계청 (KOSIS)" },
+] as const;
+
 interface BuildFormValues {
-  /** 빌드를 식별하는 데이터셋 고유 ID */
   datasetId: string;
-  /** 사용자가 읽을 제목 */
   title: string;
-  /** 빌드 목적과 확장 가이드를 담는 설명 */
   description: string;
-  /** 데이터를 제공하는 provider 이름 */
   provider: string;
-  /** provider 내부의 원본 dataset 식별자 */
   sourceDataset: string;
-  /** 문자열 형태로 입력받는 JSON 파라미터 본문 */
   sourceParams: string;
-  /** 결과물을 저장하거나 게시할 출력 경로 */
   outputPath: string;
-  /** 사용자가 선택한 export 대상 형식 목록 */
   exportFormats: Array<(typeof exportFormats)[number]>;
 }
 
@@ -43,38 +59,53 @@ const initialValues: BuildFormValues = {
   exportFormats: ["jsonl"],
 };
 
+const STEPS: StepItem[] = [
+  { id: "identity", label: "기본 정보" },
+  { id: "source", label: "데이터 소스" },
+  { id: "params", label: "파라미터" },
+  { id: "preview", label: "미리보기" },
+  { id: "output", label: "출력 형식" },
+  { id: "review", label: "검증·실행" },
+];
+
+// 각 단계에서 Next 진입 전에 검증할 폼 필드. Preview/Review 단계는 입력 필드가 없다.
+const STEP_FIELDS: Array<Array<keyof BuildFormValues>> = [
+  ["datasetId", "title", "description"],
+  ["provider", "sourceDataset"],
+  ["sourceParams"],
+  [],
+  ["exportFormats", "outputPath"],
+  [],
+];
+
 /**
- * 폼에서 입력한 원본 JSON 문자열을 `Record<string, string>` 형태로 정규화한다.
+ * textarea의 JSON 파라미터 문자열을 `Record<string, string>`으로 정규화한다.
  *
- * @param sourceParams - 사용자가 textarea에 입력한 JSON 문자열.
- * @returns 파싱된 파라미터 객체 또는 오류 메시지.
+ * @param sourceParams - 사용자가 입력한 JSON 문자열.
+ * @returns 파싱된 객체 또는 한국어 오류 메시지.
  */
 function parseSourceParams(sourceParams: string) {
   try {
     const parsed = JSON.parse(sourceParams) as unknown;
-
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { error: "Source params must be a JSON object." };
+      return { error: "파라미터는 JSON 객체여야 합니다. 예: {\"region\": \"seoul\"}" };
     }
-
     const entries = Object.entries(parsed);
     const values = Object.fromEntries(entries.map(([key, value]) => [key, String(value)]));
-
     return { data: values };
   } catch {
-    return { error: "Source params must be valid JSON." };
+    return { error: "파라미터가 올바른 JSON이 아닙니다. 형식을 확인하세요." };
   }
 }
 
 /**
- * 폼 입력값에 대한 `BuildSpec` 후보와 검증 결과.
+ * 폼 입력값으로 BuildSpec 후보를 만들고 zod로 검증한다.
  *
-  * @param values - 현재 폼에 입력된 원시 값 집합.
-  * @returns 검증을 통과한 스펙 또는 사용자에게 보여줄 오류 메시지.
+ * @param values - 현재 폼 입력값.
+ * @returns 검증을 통과한 스펙 또는 한국어 오류 메시지.
  */
 function toBuildSpec(values: BuildFormValues): { spec?: BuildSpec; error?: string } {
   const parsedParams = parseSourceParams(values.sourceParams);
-
   if (parsedParams.error) {
     return { error: parsedParams.error };
   }
@@ -84,357 +115,369 @@ function toBuildSpec(values: BuildFormValues): { spec?: BuildSpec; error?: strin
     title: values.title,
     description: values.description,
     sources: [
-      {
-        provider: values.provider,
-        dataset: values.sourceDataset,
-        params: parsedParams.data ?? {},
-      },
+      { provider: values.provider, dataset: values.sourceDataset, params: parsedParams.data ?? {} },
     ],
     exports: values.exportFormats.map((format) => ({
       format,
       options: format === "huggingface" ? { outputPath: values.outputPath } : undefined,
     })),
-    metadata: {
-      outputPath: values.outputPath,
-    },
+    metadata: { outputPath: values.outputPath },
   };
 
   const result = buildSpecSchema.safeParse(candidate);
-
   if (!result.success) {
-    return { error: result.error.issues[0]?.message ?? "Invalid build spec." };
+    return { error: result.error.issues[0]?.message ?? "빌드 스펙이 올바르지 않습니다." };
   }
-
   return { spec: result.data };
 }
 
+interface PreviewState {
+  status: "idle" | "loading" | "loaded" | "error";
+  rows: Record<string, unknown>[];
+  schema: Record<string, string>;
+  error?: string;
+}
+
+interface ValidationState {
+  status: "idle" | "validating" | "validated";
+  isValid: boolean;
+  errors: string[];
+}
+
 /**
- * 빌드 초안 편집, 로컬 검증, 제출 미리보기를 담당하는 페이지 컴포넌트.
+ * 단계별 New Build Wizard 페이지 컴포넌트.
  *
- * @returns 새 빌드 편집 폼과 우측 상태 패널 UI.
+ * @returns 마법사 UI.
  */
 export function NewBuildPage() {
-  const [validationState, setValidationState] = useState<{
-    /** 마지막 검증에서 수집된 오류 문자열 목록 */
-    errors: string[];
-    /** 현재 스펙이 검증을 통과했는지 여부 */
-    isValid: boolean;
-    /** 검증 요청의 진행 상태 */
-    status: "idle" | "validating" | "validated";
-  }>({
-    errors: [],
-    isValid: false,
+  const [step, setStep] = useState(0);
+  const [preview, setPreview] = useState<PreviewState>({ status: "idle", rows: [], schema: {} });
+  const [validation, setValidation] = useState<ValidationState>({
     status: "idle",
+    isValid: false,
+    errors: [],
   });
-  const [submittedSpec, setSubmittedSpec] = useState<BuildSpec | null>(null);
+
   const {
-    formState: { errors, isDirty, isSubmitting },
-    handleSubmit,
+    formState: { errors, isDirty },
     register,
-    setError,
-    clearErrors,
+    trigger,
     watch,
-  } = useForm<BuildFormValues>({
-    defaultValues: initialValues,
-    mode: "onChange",
-  });
+    getValues,
+  } = useForm<BuildFormValues>({ defaultValues: initialValues, mode: "onChange" });
 
   const values = watch();
   const specPreview = useMemo(() => toBuildSpec(values), [values]);
 
-  const initialSpec: BuildSpec = specPreview.spec ?? {
-    datasetId: "",
-    title: "",
-    description: "",
-    sources: [],
-    exports: [],
-    metadata: {},
-  };
+  const draftStatus = validation.isValid ? "validated" : isDirty ? "dirty" : "new";
 
-  const draft: BuildDraft = {
-    spec: initialSpec,
-    status: validationState.isValid ? "validated" : isDirty ? "dirty" : "new",
-    lastModified: new Date().toISOString(),
-  };
-
-  /**
-   * 현재 폼 상태를 기준으로 로컬 스펙을 구성하고 검증 API 스텁을 호출한다.
-   *
-   * @returns 검증 완료 후 상태 업데이트를 수행하는 비동기 작업.
-   */
-  async function validateCurrentSpec() {
-    clearErrors();
-    setValidationState({ errors: [], isValid: false, status: "validating" });
-
-    const nextSpec = toBuildSpec(watch());
-
-    if (nextSpec.error || !nextSpec.spec) {
-      setError("sourceParams", {
-        type: "manual",
-        message: nextSpec.error ?? "Unable to parse source parameters.",
-      });
-      setValidationState({
-        errors: [nextSpec.error ?? "Unable to parse source parameters."],
-        isValid: false,
-        status: "idle",
-      });
-      return;
-    }
-
-    const result = await validateSpec(nextSpec.spec);
-
-    if (!result.valid) {
-      setValidationState({ errors: result.errors, isValid: false, status: "validated" });
-      return;
-    }
-
-    setValidationState({ errors: [], isValid: true, status: "validated" });
-    setSubmittedSpec(nextSpec.spec);
+  async function goNext() {
+    const fields = STEP_FIELDS[step];
+    const ok = fields.length === 0 ? true : await trigger(fields);
+    if (!ok) return;
+    setStep((current) => Math.min(current + 1, STEPS.length - 1));
   }
 
-  const onSubmit = handleSubmit(async (formValues) => {
-    const nextSpec = toBuildSpec(formValues);
+  function goBack() {
+    setStep((current) => Math.max(current - 1, 0));
+  }
 
-    if (nextSpec.error || !nextSpec.spec) {
-      setError("sourceParams", {
-        type: "manual",
-        message: nextSpec.error ?? "Unable to parse source parameters.",
-      });
+  async function runPreview() {
+    const next = toBuildSpec(getValues());
+    if (next.error || !next.spec) {
+      setPreview({ status: "error", rows: [], schema: {}, error: next.error });
       return;
     }
+    setPreview({ status: "loading", rows: [], schema: {} });
+    try {
+      const result = await previewBuild(next.spec);
+      setPreview({ status: "loaded", rows: result.rows, schema: result.schema });
+    } catch (cause) {
+      setPreview({
+        status: "error",
+        rows: [],
+        schema: {},
+        error: cause instanceof Error ? cause.message : "미리보기에 실패했습니다.",
+      });
+    }
+  }
 
-    setSubmittedSpec(nextSpec.spec);
-  });
+  async function runValidate() {
+    const next = toBuildSpec(getValues());
+    if (next.error || !next.spec) {
+      setValidation({ status: "validated", isValid: false, errors: [next.error ?? "스펙 오류"] });
+      return;
+    }
+    setValidation({ status: "validating", isValid: false, errors: [] });
+    const result = await validateSpec(next.spec);
+    setValidation({ status: "validated", isValid: result.valid, errors: result.errors });
+  }
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-            New build
-          </p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-tight">Build draft editor scaffold</h2>
-          <p className="mt-3 max-w-2xl text-zinc-600 dark:text-zinc-300">
-            React Hook Form manages draft input while zod keeps the generated spec aligned with the shared domain model.
-          </p>
-        </div>
+      <PageHeader
+        eyebrow="새 빌드"
+        title="새 공공데이터 빌드 만들기"
+        description="데이터 소스, 파라미터, 출력 형식을 단계별로 설정합니다."
+        actions={<StatusBadge status={draftStatus} />}
+      />
 
-        <div className="flex flex-wrap gap-3">
-          <Link
-            className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-            to="/validate"
-          >
-            Open validation view
-          </Link>
-          <Link
-            className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-            to="/preview"
-          >
-            Open preview view
-          </Link>
-        </div>
-      </div>
+      <Card>
+        <Stepper steps={STEPS} current={step} onStepClick={setStep} />
+      </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(22rem,0.9fr)]">
-        <form
-          className="rounded-[2rem] border border-zinc-200/80 bg-white/80 p-6 shadow-lg shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950/70"
-          onSubmit={onSubmit}
-        >
-          <div className="grid gap-6 lg:grid-cols-2">
-            <section className="space-y-4 lg:col-span-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                  Build identity
-                </p>
-                <h3 className="mt-2 text-xl font-semibold tracking-tight">Dataset metadata</h3>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="space-y-2">
-                  <span className="text-sm font-medium">Dataset ID</span>
-                  <input
-                    className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none transition focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950"
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(20rem,0.8fr)]">
+        <Card>
+          {step === 0 ? (
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold tracking-tight">기본 정보</h3>
+              <FormField
+                id="datasetId"
+                label="데이터셋 ID"
+                required
+                help="공백 없이 영문 소문자·숫자·하이픈만. 예: kma-daily-observations"
+                error={errors.datasetId?.message}
+              >
+                {(field) => (
+                  <TextInput
                     placeholder="kma-daily-observations"
-                    {...register("datasetId", { required: "Dataset ID is required." })}
+                    {...field}
+                    {...register("datasetId", { required: "데이터셋 ID를 입력해주세요. 예: kma-daily-observations" })}
                   />
-                  {errors.datasetId ? (
-                    <span className="text-sm text-rose-500">{errors.datasetId.message}</span>
-                  ) : null}
-                </label>
-
-                <label className="space-y-2">
-                  <span className="text-sm font-medium">Title</span>
-                  <input
-                    className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none transition focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950"
-                    placeholder="KMA daily observations"
-                    {...register("title", { required: "Title is required." })}
+                )}
+              </FormField>
+              <FormField id="title" label="제목" required error={errors.title?.message}>
+                {(field) => (
+                  <TextInput
+                    placeholder="기상청 일별 관측"
+                    {...field}
+                    {...register("title", { required: "제목을 입력해주세요." })}
                   />
-                  {errors.title ? (
-                    <span className="text-sm text-rose-500">{errors.title.message}</span>
-                  ) : null}
-                </label>
-              </div>
-
-              <label className="space-y-2">
-                <span className="text-sm font-medium">Description</span>
-                <textarea
-                  className="min-h-32 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none transition focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950"
-                  placeholder="Explain what this build collects and how students should extend it."
-                  {...register("description", { required: "Description is required." })}
-                />
-                {errors.description ? (
-                  <span className="text-sm text-rose-500">{errors.description.message}</span>
-                ) : null}
-              </label>
-            </section>
-
-            <section className="space-y-4 lg:col-span-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                  Source selection
-                </p>
-                <h3 className="mt-2 text-xl font-semibold tracking-tight">Provider and dataset</h3>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="space-y-2">
-                  <span className="text-sm font-medium">Provider</span>
-                  <input
-                    className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none transition focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950"
-                    placeholder="datago"
-                    {...register("provider", { required: "Provider is required." })}
+                )}
+              </FormField>
+              <FormField
+                id="description"
+                label="설명"
+                required
+                help="이 빌드가 무엇을 수집하고 어떻게 활용하는지 적어주세요."
+                error={errors.description?.message}
+              >
+                {(field) => (
+                  <Textarea
+                    className="font-sans"
+                    {...field}
+                    {...register("description", { required: "설명을 입력해주세요." })}
                   />
-                  {errors.provider ? (
-                    <span className="text-sm text-rose-500">{errors.provider.message}</span>
-                  ) : null}
-                </label>
+                )}
+              </FormField>
+            </div>
+          ) : null}
 
-                <label className="space-y-2">
-                  <span className="text-sm font-medium">Dataset</span>
-                  <input
-                    className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none transition focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950"
+          {step === 1 ? (
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold tracking-tight">데이터 소스</h3>
+              <FormField id="provider" label="제공자 (Provider)" required error={errors.provider?.message}>
+                {(field) => (
+                  <Select {...field} {...register("provider", { required: "제공자를 선택해주세요." })}>
+                    <option value="">제공자 선택…</option>
+                    {PROVIDER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+              <FormField
+                id="sourceDataset"
+                label="데이터셋 (Dataset)"
+                required
+                help="제공자 내부의 데이터셋 코드. (자동 목록은 Builder API 연동 후 제공)"
+                error={errors.sourceDataset?.message}
+              >
+                {(field) => (
+                  <TextInput
                     placeholder="air-quality"
-                    {...register("sourceDataset", { required: "Dataset is required." })}
+                    {...field}
+                    {...register("sourceDataset", { required: "데이터셋을 입력해주세요." })}
                   />
-                  {errors.sourceDataset ? (
-                    <span className="text-sm text-rose-500">{errors.sourceDataset.message}</span>
-                  ) : null}
-                </label>
+                )}
+              </FormField>
+            </div>
+          ) : null}
+
+          {step === 2 ? (
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold tracking-tight">파라미터</h3>
+              <FormField
+                id="sourceParams"
+                label="요청 파라미터 (고급 / Advanced JSON)"
+                help='지역·기간 등 요청 파라미터를 JSON 객체로 입력하세요. 예: {"region": "gangnam"}'
+                error={errors.sourceParams?.message}
+              >
+                {(field) => (
+                  <Textarea
+                    rows={8}
+                    {...field}
+                    {...register("sourceParams", { required: "파라미터를 입력해주세요." })}
+                  />
+                )}
+              </FormField>
+            </div>
+          ) : null}
+
+          {step === 3 ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-semibold tracking-tight">미리보기</h3>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={preview.status === "loading"}
+                  onClick={() => void runPreview()}
+                >
+                  미리보기 새로고침
+                </Button>
               </div>
-
-              <label className="space-y-2 lg:col-span-2">
-                <span className="text-sm font-medium">Params (JSON object)</span>
-                <textarea
-                  className="min-h-32 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 font-mono text-sm outline-none transition focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950"
-                  {...register("sourceParams", { required: "Source params are required." })}
+              {preview.status === "idle" ? (
+                <EmptyState
+                  title="현재 설정으로 샘플 데이터를 확인하세요"
+                  description="‘미리보기 새로고침’을 누르면 Builder가 반환한 샘플 행과 스키마가 표시됩니다."
                 />
-                {errors.sourceParams ? (
-                  <span className="text-sm text-rose-500">{errors.sourceParams.message}</span>
-                ) : null}
-              </label>
-            </section>
-
-            <section className="space-y-4 lg:col-span-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                  Export targets
+              ) : null}
+              {preview.status === "error" ? (
+                <EmptyState
+                  title="미리보기를 불러오지 못했습니다"
+                  description={preview.error ?? "파라미터를 확인한 뒤 다시 시도하세요."}
+                />
+              ) : null}
+              {preview.status === "loaded" && preview.rows.length === 0 ? (
+                <EmptyState
+                  title="조건에 맞는 데이터가 없습니다"
+                  description="날짜 범위나 지역 조건을 조정해보세요. (현재 Preview API는 스텁이라 빈 결과를 반환합니다.)"
+                />
+              ) : null}
+              {preview.status === "loaded" && preview.rows.length > 0 ? (
+                <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                  {preview.rows.length}개 샘플 행 · {Object.keys(preview.schema).length}개 컬럼
                 </p>
-                <h3 className="mt-2 text-xl font-semibold tracking-tight">Output selection</h3>
-              </div>
+              ) : null}
+            </div>
+          ) : null}
 
-              <div className="grid gap-3 md:grid-cols-2">
-                {exportFormats.map((format) => (
-                  <label
-                    className="flex items-center gap-3 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/70"
-                    key={format}
-                  >
-                    <input type="checkbox" value={format} {...register("exportFormats")} />
-                    <span className="text-sm font-medium capitalize">{format}</span>
-                  </label>
-                ))}
-              </div>
-
-              <label className="space-y-2 lg:col-span-2">
-                <span className="text-sm font-medium">Output path</span>
-                <input
-                  className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none transition focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950"
-                  placeholder="artifacts/builds/air-quality"
-                  {...register("outputPath", { required: "Output path is required." })}
-                />
-                {errors.outputPath ? (
-                  <span className="text-sm text-rose-500">{errors.outputPath.message}</span>
+          {step === 4 ? (
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold tracking-tight">출력 형식</h3>
+              <fieldset>
+                <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                  결과물 형식 (최소 1개)
+                </legend>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {exportFormats.map((format) => (
+                    <label
+                      key={format}
+                      className="flex items-center gap-3 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/70"
+                    >
+                      <input
+                        type="checkbox"
+                        value={format}
+                        className="h-4 w-4 accent-zinc-900 dark:accent-white"
+                        {...register("exportFormats", {
+                          validate: (selected) =>
+                            (selected?.length ?? 0) > 0 || "출력 형식을 최소 1개 선택해주세요.",
+                        })}
+                      />
+                      <span className="text-sm font-medium capitalize">{format}</span>
+                    </label>
+                  ))}
+                </div>
+                {errors.exportFormats ? (
+                  <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+                    {errors.exportFormats.message}
+                  </p>
                 ) : null}
-              </label>
-            </section>
-          </div>
+              </fieldset>
+              <FormField
+                id="outputPath"
+                label="출력 경로 (Output path)"
+                required
+                error={errors.outputPath?.message}
+              >
+                {(field) => (
+                  <TextInput
+                    placeholder="artifacts/builds/air-quality"
+                    {...field}
+                    {...register("outputPath", { required: "출력 경로를 입력해주세요." })}
+                  />
+                )}
+              </FormField>
+            </div>
+          ) : null}
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            <button
-              className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-              disabled={isSubmitting || validationState.status === "validating"}
-              onClick={() => void validateCurrentSpec()}
-              type="button"
-            >
-              {validationState.status === "validating" ? "Validating…" : "Validate"}
-            </button>
-            <button
-              className="rounded-full bg-emerald-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-300"
-              disabled={!validationState.isValid || isSubmitting}
-              type="submit"
-            >
-              Save scaffold draft
-            </button>
+          {step === 5 ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-semibold tracking-tight">검증·실행</h3>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={validation.status === "validating"}
+                  onClick={() => void runValidate()}
+                >
+                  다시 검증
+                </Button>
+              </div>
+              {validation.status === "idle" ? (
+                <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                  ‘다시 검증’을 눌러 입력값과 빌드 설정을 확인하세요.
+                </p>
+              ) : null}
+              {validation.status === "validated" && validation.isValid ? (
+                <Card variant="success" className="p-4">
+                  <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+                    검증을 통과했습니다. 빌드를 실행할 수 있습니다.
+                  </p>
+                </Card>
+              ) : null}
+              {validation.errors.length > 0 ? (
+                <ul className="space-y-2">
+                  {validation.errors.map((error) => (
+                    <li
+                      key={error}
+                      role="alert"
+                      className="rounded-2xl bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-200"
+                    >
+                      {error}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <Button disabled={!validation.isValid}>빌드 실행 (연동 예정)</Button>
+            </div>
+          ) : null}
+
+          <div className="mt-8 flex items-center justify-between gap-3">
+            <Button variant="ghost" onClick={goBack} disabled={step === 0}>
+              이전
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="secondary">초안 저장</Button>
+              {step < STEPS.length - 1 ? (
+                <Button onClick={() => void goNext()}>다음</Button>
+              ) : null}
+            </div>
           </div>
-        </form>
+        </Card>
 
         <aside className="space-y-5">
-          <section className="rounded-[2rem] border border-zinc-200/80 bg-white/80 p-5 dark:border-zinc-800 dark:bg-zinc-950/70">
+          <Card>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-              Draft state
-            </p>
-            <p className="mt-3 text-lg font-medium tracking-tight">{draft.status}</p>
-            <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              Draft validation stays separate from server state so students can evolve the draft model later.
-            </p>
-          </section>
-
-          <section className="rounded-[2rem] border border-zinc-200/80 bg-white/80 p-5 dark:border-zinc-800 dark:bg-zinc-950/70">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                  Validation status
-                </p>
-                <p className="mt-2 text-lg font-medium tracking-tight">
-                  {validationState.isValid ? "Spec is ready" : "Validation pending"}
-                </p>
-              </div>
-              <span className="rounded-full border border-dashed border-zinc-300 px-3 py-1 text-xs uppercase tracking-[0.28em] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                {validationState.errors.length} issues
-              </span>
-            </div>
-            <ul className="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-300">
-              {validationState.errors.length > 0 ? (
-                validationState.errors.map((error) => (
-                  <li className="rounded-2xl bg-rose-50 px-3 py-2 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200" key={error}>
-                    {error}
-                  </li>
-                ))
-              ) : (
-                <li className="rounded-2xl bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
-                  Use the validate button to exercise the stubbed validation API.
-                </li>
-              )}
-            </ul>
-          </section>
-
-          <section className="rounded-[2rem] border border-zinc-200/80 bg-white/80 p-5 dark:border-zinc-800 dark:bg-zinc-950/70">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-              Generated spec preview
+              생성될 스펙 (Generated spec)
             </p>
             <pre className="mt-4 overflow-x-auto rounded-[1.5rem] bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
-              <code>{JSON.stringify(submittedSpec ?? specPreview.spec ?? draft.spec, null, 2)}</code>
+              <code>{JSON.stringify(specPreview.spec ?? values, null, 2)}</code>
             </pre>
-          </section>
+          </Card>
         </aside>
       </div>
     </main>
