@@ -1,31 +1,41 @@
 /**
  * Studio 홈 대시보드 화면.
  *
- * 사용자가 가장 먼저 보는 안내 화면으로, 최근 빌드 요약과 주요 워크플로 진입 버튼을 함께 보여준다.
+ * 사용자가 가장 먼저 보는 화면으로, 빌드 상태 요약, 최근 빌드, 빠른 시작 진입점을
+ * 보여준다(제안 §5.1). 실제 수치/목록은 #29 Builder API 연동 시 채운다.
  */
 import { Link } from "react-router-dom";
 import type { BuildRun } from "@/shared/lib/types";
+import { Button, Card, EmptyState, PageHeader, type StatusValue } from "@/shared/ui";
 
-const quickActions = [
+// 상태 요약 카드. 수치는 Builder API 연동 전까지 0으로 둔다.
+const STATUS_SUMMARY: { status: StatusValue; label: string; count: number }[] = [
+  { status: "draft", label: "초안", count: 0 },
+  { status: "running", label: "실행 중", count: 0 },
+  { status: "failed", label: "실패", count: 0 },
+  { status: "succeeded", label: "성공", count: 0 },
+];
+
+const QUICK_ACTIONS = [
   {
     href: "/builds/new",
-    label: "Create a new build",
-    description: "Start a draft spec with source, export, and output scaffolding.",
+    label: "새 빌드 만들기",
+    description: "데이터 소스·파라미터·출력 형식을 단계별로 설정합니다.",
   },
   {
-    href: "/validate",
-    label: "Review validation",
-    description: "Inspect schema and spec feedback before a run leaves draft state.",
+    href: "/builds",
+    label: "빌드 목록 보기",
+    description: "전체 빌드와 실행 이력을 확인합니다.",
   },
   {
     href: "/artifacts",
-    label: "Inspect artifacts",
-    description: "Reserve a space for generated files, manifests, and download links.",
+    label: "결과물 확인",
+    description: "생성된 파일과 manifest, 다운로드 링크를 봅니다.",
   },
 ];
 
 /**
- * 최근 실행 개요와 빠른 액션을 보여주는 랜딩 페이지 컴포넌트.
+ * 상태 요약·최근 빌드·빠른 시작을 보여주는 대시보드 페이지.
  *
  * @returns Studio 대시보드 메인 화면.
  */
@@ -34,68 +44,51 @@ export function HomePage() {
 
   return (
     <main className="flex flex-1 flex-col gap-8 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.9fr)]">
-        <div className="overflow-hidden rounded-[2rem] border border-zinc-200/80 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.22),_transparent_42%),linear-gradient(135deg,rgba(255,255,255,0.98),rgba(244,244,245,0.95))] p-7 shadow-xl shadow-zinc-950/5 dark:border-zinc-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.16),_transparent_38%),linear-gradient(135deg,rgba(9,9,11,0.98),rgba(24,24,27,0.96))]">
-          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-600 dark:text-emerald-400">
-            Studio dashboard
-          </p>
-          <h2 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl">
-            Build public-data workflows with a shell students can extend safely.
-          </h2>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-600 dark:text-zinc-300">
-            This scaffold keeps draft creation, validation, preview, and output review visible without hiding builder semantics behind heavy abstractions.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              className="rounded-full bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
-              to="/builds/new"
-            >
-              Open build editor
-            </Link>
-            <Link
-              className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-              to="/builds"
-            >
-              Browse runs
-            </Link>
-          </div>
-        </div>
+      <PageHeader
+        eyebrow="대시보드"
+        title="공공데이터 수집부터 결과물 생성까지 한 번에 관리하세요"
+        description="템플릿을 선택하고, 미리보기와 검증을 거쳐 안전하게 빌드를 실행할 수 있습니다."
+        actions={
+          <Button>
+            <Link to="/builds/new">새 빌드 만들기</Link>
+          </Button>
+        }
+      />
 
-        <section className="rounded-[2rem] border border-zinc-200/80 bg-white/80 p-6 shadow-lg shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950/80">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                Recent builds
-              </p>
-              <h3 className="mt-2 text-2xl font-semibold tracking-tight">No runs yet</h3>
-            </div>
-            <span className="rounded-full border border-dashed border-zinc-300 px-3 py-1 text-xs uppercase tracking-[0.28em] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-              {recentBuilds.length} queued
-            </span>
-          </div>
-          <p className="mt-4 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            Recent run history will appear here once students wire the runs API into the dashboard cards.
-          </p>
-        </section>
+      {/* 상태 요약 카드 (§5.1) */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {STATUS_SUMMARY.map((item) => (
+          <Card key={item.status} className="flex items-center justify-between">
+            <span className="text-sm text-zinc-600 dark:text-zinc-300">{item.label}</span>
+            <span className="text-2xl font-semibold tracking-tight">{item.count}</span>
+          </Card>
+        ))}
       </section>
 
+      {/* 최근 빌드 (§5.1) */}
       <section>
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-              Quick actions
-            </p>
-            <h3 className="mt-2 text-2xl font-semibold tracking-tight">
-              Start from the workflow step you need
-            </h3>
-          </div>
-        </div>
-        <div className="mt-5 grid gap-4 xl:grid-cols-3">
-          {quickActions.map((action) => (
+        <PageHeader eyebrow="최근 빌드" title="최근 실행" className="mb-4" />
+        <Card className="p-0">
+          {recentBuilds.length === 0 ? (
+            <EmptyState
+              title="아직 생성된 빌드가 없습니다"
+              description="공공데이터 템플릿으로 첫 빌드를 만들어보세요. 실행 이력은 Builder API 연동(#29) 후 여기에 표시됩니다."
+              actionLabel="새 빌드 만들기"
+              actionHref="/builds/new"
+            />
+          ) : null}
+        </Card>
+      </section>
+
+      {/* 빠른 시작 */}
+      <section>
+        <PageHeader eyebrow="빠른 시작" title="필요한 단계에서 바로 시작하세요" className="mb-4" />
+        <div className="grid gap-4 xl:grid-cols-3">
+          {QUICK_ACTIONS.map((action) => (
             <Link
-              className="rounded-[1.75rem] border border-zinc-200/80 bg-white/80 p-5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg hover:shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950/80 dark:hover:border-zinc-700"
               key={action.href}
               to={action.href}
+              className="rounded-[1.75rem] border border-zinc-200/80 bg-white/80 p-5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg hover:shadow-zinc-950/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/80 dark:hover:border-zinc-700"
             >
               <p className="text-lg font-medium tracking-tight">{action.label}</p>
               <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
