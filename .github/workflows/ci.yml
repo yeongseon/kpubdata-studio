@@ -8,6 +8,11 @@ on:
   push:
     branches: [main]
 
+# 최소 권한 원칙: 이 워크플로는 코드를 읽고 검사만 하므로 GITHUB_TOKEN에 읽기 권한만 부여한다.
+# (의존성 설치 단계의 공급망 공격 시 피해 범위를 줄인다.)
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
