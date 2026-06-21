@@ -11,24 +11,37 @@ function renderWizard() {
   );
 }
 
+// 마법사는 템플릿 단계에서 시작한다(#11). 식별 단계로 넘어가는 헬퍼.
+function skipTemplateStep() {
+  fireEvent.click(screen.getByRole("button", { name: "다음" }));
+}
+
 describe("New Build Wizard", () => {
-  it("starts on the first step", () => {
+  it("starts on the template step", () => {
     renderWizard();
+    expect(screen.getByRole("heading", { name: "템플릿 선택" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /대기오염 정보/ })).toBeInTheDocument();
+  });
+
+  it("selecting a template prefills the form and advances to identity", () => {
+    renderWizard();
+    fireEvent.click(screen.getByRole("button", { name: /대기오염 정보/ }));
+
     expect(screen.getByRole("heading", { name: "기본 정보" })).toBeInTheDocument();
-    // 스텝퍼 + 헤딩 모두에 "기본 정보"가 나타난다(최소 2곳).
-    expect(screen.getAllByText("기본 정보").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByLabelText(/데이터셋 ID/)).toHaveValue("datago-air-quality");
   });
 
   it("blocks advancing while required fields are empty", async () => {
     renderWizard();
+    skipTemplateStep(); // 템플릿 → 기본 정보
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     expect(await screen.findByText(/데이터셋 ID를 입력해주세요/)).toBeInTheDocument();
-    // 검증 실패로 1단계 헤딩에 머문다.
     expect(screen.getByRole("heading", { name: "기본 정보" })).toBeInTheDocument();
   });
 
   it("advances to the source step once identity fields are filled", async () => {
     renderWizard();
+    skipTemplateStep();
     fireEvent.change(screen.getByLabelText(/데이터셋 ID/), { target: { value: "kma-daily" } });
     fireEvent.change(screen.getByLabelText(/제목/), { target: { value: "기상청 일별" } });
     fireEvent.change(screen.getByLabelText(/설명/), { target: { value: "일별 관측 데이터" } });
@@ -41,24 +54,21 @@ describe("New Build Wizard", () => {
 
   it("blocks the params step when the JSON is invalid", async () => {
     renderWizard();
-    // 1단계: 기본 정보
+    skipTemplateStep();
     fireEvent.change(screen.getByLabelText(/데이터셋 ID/), { target: { value: "kma-daily" } });
     fireEvent.change(screen.getByLabelText(/제목/), { target: { value: "기상청 일별" } });
     fireEvent.change(screen.getByLabelText(/설명/), { target: { value: "일별 관측" } });
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
 
-    // 2단계: 데이터 소스
     await screen.findByRole("heading", { name: "데이터 소스" });
     fireEvent.change(screen.getByLabelText(/제공자/), { target: { value: "datago" } });
     fireEvent.change(screen.getByLabelText(/데이터셋/), { target: { value: "air-quality" } });
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
 
-    // 3단계: 파라미터 — 잘못된 JSON 입력 후 다음 시도
     await screen.findByRole("heading", { name: "파라미터" });
     fireEvent.change(screen.getByLabelText(/요청 파라미터/), { target: { value: "{not json" } });
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
 
-    // JSON 오류가 필드에 표시되고 단계 이동이 막힌다.
     expect(await screen.findByText(/올바른 JSON이 아닙니다/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "파라미터" })).toBeInTheDocument();
   });

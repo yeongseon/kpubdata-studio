@@ -59,7 +59,70 @@ const initialValues: BuildFormValues = {
   exportFormats: ["jsonl"],
 };
 
+// 빌드 시작 템플릿(제안 §5.2.1). 선택 시 폼을 해당 값으로 채우고 다음 단계로 넘어간다.
+interface BuildTemplate {
+  id: string;
+  name: string;
+  description: string;
+  values: BuildFormValues;
+}
+
+const TEMPLATES: BuildTemplate[] = [
+  {
+    id: "blank",
+    name: "빈 빌드",
+    description: "아무 값 없이 처음부터 직접 설정합니다.",
+    values: initialValues,
+  },
+  {
+    id: "air_quality",
+    name: "대기오염 정보",
+    description: "data.go.kr 대기오염 측정 데이터로 시작합니다.",
+    values: {
+      datasetId: "datago-air-quality",
+      title: "대기오염 정보",
+      description: "data.go.kr 대기오염 측정 데이터셋",
+      provider: "datago",
+      sourceDataset: "air-quality",
+      sourceParams: '{"sidoName": "서울"}',
+      outputPath: "artifacts/builds/air-quality",
+      exportFormats: ["jsonl"],
+    },
+  },
+  {
+    id: "weather",
+    name: "기상 관측",
+    description: "기상청 일별 관측 데이터로 시작합니다.",
+    values: {
+      datasetId: "kma-daily-observations",
+      title: "기상청 일별 관측",
+      description: "기상청 일별 지상 관측 데이터셋",
+      provider: "kma",
+      sourceDataset: "daily-observations",
+      sourceParams: '{"stn": "108"}',
+      outputPath: "artifacts/builds/kma-daily",
+      exportFormats: ["jsonl", "parquet"],
+    },
+  },
+  {
+    id: "population",
+    name: "인구 통계",
+    description: "통계청(KOSIS) 인구 통계로 시작합니다.",
+    values: {
+      datasetId: "kosis-population",
+      title: "인구 통계",
+      description: "통계청 KOSIS 인구 통계 데이터셋",
+      provider: "kosis",
+      sourceDataset: "population",
+      sourceParams: '{"region": "11"}',
+      outputPath: "artifacts/builds/population",
+      exportFormats: ["jsonl"],
+    },
+  },
+];
+
 const STEPS: StepItem[] = [
+  { id: "template", label: "템플릿" },
   { id: "identity", label: "기본 정보" },
   { id: "source", label: "데이터 소스" },
   { id: "params", label: "파라미터" },
@@ -68,8 +131,9 @@ const STEPS: StepItem[] = [
   { id: "review", label: "검증·실행" },
 ];
 
-// 각 단계에서 Next 진입 전에 검증할 폼 필드. Preview/Review 단계는 입력 필드가 없다.
+// 각 단계에서 Next 진입 전에 검증할 폼 필드. Template/Preview/Review 단계는 입력 필드가 없다.
 const STEP_FIELDS: Array<Array<keyof BuildFormValues>> = [
+  [],
   ["datasetId", "title", "description"],
   ["provider", "sourceDataset"],
   ["sourceParams"],
@@ -164,12 +228,19 @@ export function NewBuildPage() {
     trigger,
     watch,
     getValues,
+    reset,
   } = useForm<BuildFormValues>({ defaultValues: initialValues, mode: "onChange" });
 
   const values = watch();
   const specPreview = useMemo(() => toBuildSpec(values), [values]);
 
   const draftStatus = validation.isValid ? "validated" : isDirty ? "dirty" : "new";
+
+  // 템플릿을 선택하면 폼을 해당 값으로 채우고 기본 정보 단계로 넘어간다 (#11).
+  function selectTemplate(template: BuildTemplate) {
+    reset(template.values);
+    setStep(1);
+  }
 
   async function goNext() {
     const fields = STEP_FIELDS[step];
@@ -230,6 +301,30 @@ export function NewBuildPage() {
         <Card>
           {step === 0 ? (
             <div className="space-y-4">
+              <h3 className="text-xl font-semibold tracking-tight">템플릿 선택</h3>
+              <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                자주 쓰는 공공데이터 조합으로 시작하거나 빈 빌드로 처음부터 설정하세요.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {TEMPLATES.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => selectTemplate(template)}
+                    className="rounded-2xl border border-zinc-200/80 bg-white/80 p-4 text-left transition hover:border-zinc-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/70"
+                  >
+                    <p className="text-base font-semibold tracking-tight">{template.name}</p>
+                    <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+                      {template.description}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {step === 1 ? (
+            <div className="space-y-4">
               <h3 className="text-xl font-semibold tracking-tight">기본 정보</h3>
               <FormField
                 id="datasetId"
@@ -273,7 +368,7 @@ export function NewBuildPage() {
             </div>
           ) : null}
 
-          {step === 1 ? (
+          {step === 2 ? (
             <div className="space-y-4">
               <h3 className="text-xl font-semibold tracking-tight">데이터 소스</h3>
               <FormField id="provider" label="제공자 (Provider)" required error={errors.provider?.message}>
@@ -306,7 +401,7 @@ export function NewBuildPage() {
             </div>
           ) : null}
 
-          {step === 2 ? (
+          {step === 3 ? (
             <div className="space-y-4">
               <h3 className="text-xl font-semibold tracking-tight">파라미터</h3>
               <FormField
@@ -330,7 +425,7 @@ export function NewBuildPage() {
             </div>
           ) : null}
 
-          {step === 3 ? (
+          {step === 4 ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-semibold tracking-tight">미리보기</h3>
@@ -369,7 +464,7 @@ export function NewBuildPage() {
             </div>
           ) : null}
 
-          {step === 4 ? (
+          {step === 5 ? (
             <div className="space-y-4">
               <h3 className="text-xl font-semibold tracking-tight">출력 형식</h3>
               <fieldset>
@@ -418,7 +513,7 @@ export function NewBuildPage() {
             </div>
           ) : null}
 
-          {step === 5 ? (
+          {step === 6 ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-semibold tracking-tight">검증·실행</h3>
