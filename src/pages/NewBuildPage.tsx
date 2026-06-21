@@ -245,6 +245,12 @@ export function NewBuildPage() {
     setStep(1);
   }
 
+  // 템플릿을 선택하면 폼을 해당 값으로 채우고 기본 정보 단계로 넘어간다 (#11).
+  function selectTemplate(template: BuildTemplate) {
+    reset(template.values);
+    setStep(1);
+  }
+
   async function goNext() {
     const fields = STEP_FIELDS[step];
     const ok = fields.length === 0 ? true : await trigger(fields);
