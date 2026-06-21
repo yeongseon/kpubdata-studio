@@ -216,6 +216,9 @@ interface ValidationState {
  * @returns 마법사 UI.
  */
 export function NewBuildPage() {
+  // /builds/:buildId/edit 로 진입한 경우(편집 모드). 기존 스펙 로드는 Builder 연동(#29)
+  // 이후 지원하므로, 지금은 안내만 표시한다.
+  const { buildId } = useParams();
   const [step, setStep] = useState(0);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle", rows: [], schema: {} });
   const [validation, setValidation] = useState<ValidationState>({
@@ -250,23 +253,26 @@ export function NewBuildPage() {
     setStep(1);
   }
 
-  // 템플릿을 선택하면 폼을 해당 값으로 채우고 기본 정보 단계로 넘어간다 (#11).
-  function selectTemplate(template: BuildTemplate) {
-    reset(template.values);
-    setStep(1);
-  }
-
   // 현재 입력을 localStorage 초안으로 저장한다 (#10).
+  // 방금 저장한 값을 기준으로 reset 하여 dirty 상태를 정리하고, 같은 세션에서 복원 배너가
+  // 뜨지 않도록 draftAvailable은 건드리지 않는다(배너는 새 마운트 시 복원용).
   function saveCurrentDraft() {
-    saveDraft(getValues());
-    setDraftAvailable(true);
+    const current = getValues();
+    saveDraft(current);
+    reset(current);
     setDraftSaved(true);
   }
 
   // 저장된 초안을 복원해 기본 정보 단계로 이동한다.
   function restoreDraft() {
     const saved = loadDraft<BuildFormValues>();
-    if (saved) reset(saved);
+    if (!saved) {
+      // 깨진 값이 남아 배너가 반복되지 않도록 정리하고, 이동/숨김은 하지 않는다.
+      clearDraft();
+      setDraftAvailable(false);
+      return;
+    }
+    reset(saved);
     setDraftAvailable(false);
     setStep(1);
   }
@@ -621,7 +627,7 @@ export function NewBuildPage() {
             </Button>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={saveCurrentDraft}>
-                {draftSaved ? "저장됨 ✓" : "초안 저장"}
+                {draftSaved && !isDirty ? "저장됨 ✓" : "초안 저장"}
               </Button>
               {step < STEPS.length - 1 ? (
                 <Button onClick={() => void goNext()}>다음</Button>
