@@ -11,6 +11,7 @@ import { useForm } from "react-hook-form";
 import { useParams } from "react-router-dom";
 import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
 import { previewBuild } from "@/features/preview/api";
+import { useBuildJob } from "@/features/runs/useBuildJob";
 import { validateSpec } from "@/features/validation/api";
 import { buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
 import type { BuildSpec } from "@/shared/lib/types";
@@ -229,6 +230,7 @@ export function NewBuildPage() {
   // 저장된 초안이 있으면 복원 배너를 보여준다 (#10). 마운트 시 한 번만 확인한다.
   const [draftAvailable, setDraftAvailable] = useState(() => hasDraft());
   const [draftSaved, setDraftSaved] = useState(false);
+  const job = useBuildJob();
 
   const {
     formState: { errors, isDirty },
@@ -617,7 +619,35 @@ export function NewBuildPage() {
                   ))}
                 </ul>
               ) : null}
-              <Button disabled={!validation.isValid}>빌드 실행 (연동 예정)</Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  disabled={!validation.isValid || job.status === "running" || !specPreview.spec}
+                  loading={job.status === "running"}
+                  onClick={() => {
+                    if (specPreview.spec) void job.start(specPreview.spec);
+                  }}
+                >
+                  빌드 실행
+                </Button>
+                {job.status === "running" ? (
+                  <Button variant="secondary" onClick={job.cancel}>
+                    취소
+                  </Button>
+                ) : null}
+                {job.status === "succeeded" ? (
+                  <span className="text-sm text-emerald-700 dark:text-emerald-300">
+                    빌드 성공 (run {job.run?.id})
+                  </span>
+                ) : null}
+                {job.status === "failed" ? (
+                  <span role="alert" className="text-sm text-red-700 dark:text-red-300">
+                    {job.error}
+                  </span>
+                ) : null}
+                {job.status === "cancelled" ? (
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400">실행이 취소되었습니다.</span>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
