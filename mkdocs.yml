@@ -5,6 +5,7 @@ repo_name: "yeongseon/kpubdata-studio"
 
 theme:
   name: material
+  custom_dir: overrides
   language: ko
   palette:
     primary: deep purple
@@ -51,6 +52,7 @@ markdown_extensions:
   - toc:
       permalink: true
 
+# Mermaid CDN 스크립트는 SRI(integrity) 적용을 위해 overrides/main.html에서 직접 로드한다
+# (#34). extra_javascript 문자열 항목은 integrity 속성을 실을 수 없기 때문이다.
 extra_javascript:
-  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
   - javascripts/mermaid.js
