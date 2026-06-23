@@ -1,45 +1,33 @@
 /**
- * 빌드 결과 아티팩트 확인 화면의 기본 골격을 제공하는 페이지.
+ * 결과물 랜딩 페이지 (/artifacts).
  *
- * 생성 파일, manifest 요약, 다운로드 액션처럼 후속 기능이 들어갈 영역을 카드로 구분한다.
+ * 결과물은 빌드 단위로 관리되므로(제안 §5.7), 이 전역 화면은 빌드 선택으로 안내한다.
+ * 빌드별 상세 결과물은 /builds/:buildId/artifacts 에서 확인한다.
  */
-const artifactCards = [
-  "Generated files",
-  "Manifest summary",
-  "Download actions",
-] as const;
+import { Card, EmptyState, PageHeader } from "@/shared/ui";
 
 /**
- * 아티팩트 카드 목록을 렌더링하는 페이지 컴포넌트.
+ * 빌드별 결과물 화면으로 안내하는 전역 결과물 랜딩 페이지.
  *
- * @returns 아티팩트 뷰어 스캐폴드 화면.
+ * @returns 결과물 랜딩 화면.
  */
 export function ArtifactsPage() {
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-          Artifacts
-        </p>
-        <h2 className="mt-2 text-3xl font-semibold tracking-tight">Artifact viewer scaffold</h2>
-        <p className="mt-3 max-w-2xl text-zinc-600 dark:text-zinc-300">
-          Reserve space for manifests, generated file paths, and output-specific actions.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="결과물"
+        title="생성된 결과물"
+        description="결과물은 빌드 단위로 관리됩니다. 빌드를 선택하면 파일·manifest·다운로드를 볼 수 있습니다."
+      />
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        {artifactCards.map((card) => (
-          <section
-            className="rounded-[1.75rem] border border-zinc-200/80 bg-white/80 p-5 dark:border-zinc-800 dark:bg-zinc-950/70"
-            key={card}
-          >
-            <h3 className="text-lg font-medium tracking-tight">{card}</h3>
-            <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              Placeholder content for future artifact API integration.
-            </p>
-          </section>
-        ))}
-      </div>
+      <Card className="p-0">
+        <EmptyState
+          title="빌드를 선택하세요"
+          description="빌드 목록에서 빌드를 연 뒤 ‘결과물’ 탭에서 파일과 manifest를 확인할 수 있습니다."
+          actionLabel="빌드 목록으로"
+          actionHref="/builds"
+        />
+      </Card>
     </main>
   );
 }
