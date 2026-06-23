@@ -8,6 +8,8 @@
  */
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
+import { useParams } from "react-router-dom";
+import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
 import { previewBuild } from "@/features/preview/api";
 import { validateSpec } from "@/features/validation/api";
 import { buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
@@ -214,6 +216,9 @@ interface ValidationState {
  * @returns 마법사 UI.
  */
 export function NewBuildPage() {
+  // /builds/:buildId/edit 로 진입한 경우(편집 모드). 기존 스펙 로드는 Builder 연동(#29)
+  // 이후 지원하므로, 지금은 안내만 표시한다.
+  const { buildId } = useParams();
   const [step, setStep] = useState(0);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle", rows: [], schema: {} });
   const [validation, setValidation] = useState<ValidationState>({
@@ -221,6 +226,9 @@ export function NewBuildPage() {
     isValid: false,
     errors: [],
   });
+  // 저장된 초안이 있으면 복원 배너를 보여준다 (#10). 마운트 시 한 번만 확인한다.
+  const [draftAvailable, setDraftAvailable] = useState(() => hasDraft());
+  const [draftSaved, setDraftSaved] = useState(false);
 
   const {
     formState: { errors, isDirty },
@@ -243,6 +251,36 @@ export function NewBuildPage() {
     setPreview({ status: "idle", rows: [], schema: {} });
     setValidation({ status: "idle", isValid: false, errors: [] });
     setStep(1);
+  }
+
+  // 현재 입력을 localStorage 초안으로 저장한다 (#10).
+  // 방금 저장한 값을 기준으로 reset 하여 dirty 상태를 정리하고, 같은 세션에서 복원 배너가
+  // 뜨지 않도록 draftAvailable은 건드리지 않는다(배너는 새 마운트 시 복원용).
+  function saveCurrentDraft() {
+    const current = getValues();
+    saveDraft(current);
+    reset(current);
+    setDraftSaved(true);
+  }
+
+  // 저장된 초안을 복원해 기본 정보 단계로 이동한다.
+  function restoreDraft() {
+    const saved = loadDraft<BuildFormValues>();
+    if (!saved) {
+      // 깨진 값이 남아 배너가 반복되지 않도록 정리하고, 이동/숨김은 하지 않는다.
+      clearDraft();
+      setDraftAvailable(false);
+      return;
+    }
+    reset(saved);
+    setDraftAvailable(false);
+    setStep(1);
+  }
+
+  // 저장된 초안을 삭제하고 배너를 숨긴다.
+  function discardDraft() {
+    clearDraft();
+    setDraftAvailable(false);
   }
 
   async function goNext() {
@@ -295,6 +333,31 @@ export function NewBuildPage() {
         description="데이터 소스, 파라미터, 출력 형식을 단계별로 설정합니다."
         actions={<StatusBadge status={draftStatus} />}
       />
+
+      {buildId ? (
+        <Card variant="dashed" className="p-4">
+          <p className="text-sm text-zinc-700 dark:text-zinc-200">
+            기존 빌드 <span className="font-medium">{buildId}</span> 편집은 Builder 연동(#29) 후
+            지원됩니다. 지금은 새 빌드로 작성됩니다.
+          </p>
+        </Card>
+      ) : null}
+
+      {draftAvailable ? (
+        <Card variant="dashed" className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-zinc-700 dark:text-zinc-200">
+            저장된 초안이 있습니다. 이어서 편집할까요?
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={restoreDraft}>
+              불러오기
+            </Button>
+            <Button size="sm" variant="ghost" onClick={discardDraft}>
+              삭제
+            </Button>
+          </div>
+        </Card>
+      ) : null}
 
       <Card>
         <Stepper steps={STEPS} current={step} onStepClick={setStep} />
@@ -563,7 +626,9 @@ export function NewBuildPage() {
               이전
             </Button>
             <div className="flex gap-2">
-              <Button variant="secondary">초안 저장</Button>
+              <Button variant="secondary" onClick={saveCurrentDraft}>
+                {draftSaved && !isDirty ? "저장됨 ✓" : "초안 저장"}
+              </Button>
               {step < STEPS.length - 1 ? (
                 <Button onClick={() => void goNext()}>다음</Button>
               ) : null}
