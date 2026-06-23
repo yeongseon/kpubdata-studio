@@ -52,6 +52,8 @@ describe("executeBuild (#39)", () => {
     const run = await executeBuild(spec);
     expect(run.id).toBe("run42");
     expect(run.status).toBe("succeeded");
+    // 실연동 모드는 1970 고정값이 아니라 실제 실행 시각을 기록한다.
+    expect(run.startedAt).not.toBe("1970-01-01T00:00:00.000Z");
   });
 });
 

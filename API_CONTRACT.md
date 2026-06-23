@@ -27,6 +27,12 @@ graph LR
 
 ## 2. API 엔드포인트 상세
 
+> ⚠️ **이 섹션은 초기 설계 스캐폴드입니다.** 여기 적힌 `/providers`·`/builds`·
+> `/builds/:id/status` 등은 설계 시안이며, Studio가 **실제로 호출하는 엔드포인트와
+> 와이어 형태**는 아래 [Builder 통합 현황](#builder-통합-현황-36) 및
+> `src/shared/lib/builderApi.ts`(`/version`·`/validate`·`/build`·`/artifacts/{run_id}`)를
+> 기준으로 합니다. 두 섹션이 다르면 통합 현황 쪽이 최신입니다.
+
 ### 2.0 기능 기반 API 구조
 
 Studio는 엔드포인트를 페이지에서 직접 호출하지 않고, 기능별 API 진입점을 통해 Builder API를 사용합니다.

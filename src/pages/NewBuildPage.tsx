@@ -321,8 +321,17 @@ export function NewBuildPage() {
       return;
     }
     setValidation({ status: "validating", isValid: false, errors: [] });
-    const result = await validateSpec(next.spec);
-    setValidation({ status: "validated", isValid: result.valid, errors: result.errors });
+    try {
+      const result = await validateSpec(next.spec);
+      setValidation({ status: "validated", isValid: result.valid, errors: result.errors });
+    } catch (cause) {
+      // 네트워크/5xx/파싱 실패를 화면에서 확인할 수 있게 오류로 반영한다(미처리 rejection 방지).
+      setValidation({
+        status: "validated",
+        isValid: false,
+        errors: [cause instanceof Error ? cause.message : "검증 요청에 실패했습니다."],
+      });
+    }
   }
 
   return (
