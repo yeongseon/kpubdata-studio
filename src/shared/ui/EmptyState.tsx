@@ -60,7 +60,9 @@ export function EmptyState({
               {actionLabel}
             </LinkButton>
           ) : (
-            <Button onClick={onAction}>{actionLabel}</Button>
+            <Button size="lg" onClick={onAction}>
+              {actionLabel}
+            </Button>
           )}
         </div>
       ) : null}
