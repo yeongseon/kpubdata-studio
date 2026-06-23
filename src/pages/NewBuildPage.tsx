@@ -621,7 +621,8 @@ export function NewBuildPage() {
             </div>
           ) : null}
 
-          <div className="mt-8 flex items-center justify-between gap-3">
+          {/* 모바일에서는 하단 sticky action bar로 고정해 긴 폼에서도 이전/다음이 항상 보이게 한다(§13). */}
+          <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-8 flex items-center justify-between gap-3 border-t border-zinc-200/80 bg-white/95 px-6 py-3 backdrop-blur sm:static sm:mx-0 sm:mb-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none dark:border-zinc-800 dark:bg-zinc-950/95 sm:dark:bg-transparent">
             <Button variant="ghost" onClick={goBack} disabled={step === 0}>
               이전
             </Button>
@@ -638,12 +639,19 @@ export function NewBuildPage() {
 
         <aside className="space-y-5">
           <Card>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-              생성될 스펙 (Generated spec)
-            </p>
-            <pre className="mt-4 overflow-x-auto rounded-[1.5rem] bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
-              <code>{JSON.stringify(specPreview.spec ?? values, null, 2)}</code>
-            </pre>
+            {/* 모바일에서 공간을 아끼도록 기본 접힘(details). 데스크톱(xl)에서는 별도 컬럼에
+                표시되며 필요 시 펼친다(§13). */}
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+                생성될 스펙 (Generated spec)
+                <span className="text-base transition group-open:rotate-180" aria-hidden="true">
+                  ⌄
+                </span>
+              </summary>
+              <pre className="mt-4 overflow-x-auto rounded-[1.5rem] bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
+                <code>{JSON.stringify(specPreview.spec ?? values, null, 2)}</code>
+              </pre>
+            </details>
           </Card>
         </aside>
       </div>
