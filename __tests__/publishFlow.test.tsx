@@ -5,15 +5,19 @@ import { checkPublishReadiness, publishBuild } from "@/features/publish/api";
 import { BuildPublishPage } from "@/pages/BuildPublishPage";
 
 describe("publish api (#9)", () => {
-  it("returns a HuggingFace URL when publishing there", async () => {
+  it("publishes (mock) without a result url until Builder integration", async () => {
     const res = await publishBuild("run-1", "huggingface");
     expect(res.status).toBe("published");
-    expect(res.url).toContain("huggingface.co/datasets/run-1");
+    // mock 단계에서는 깨진 링크를 만들지 않도록 url을 비워 둔다.
+    expect(res.url).toBeUndefined();
   });
 
-  it("has no url for a local publish", async () => {
-    const res = await publishBuild("run-1", "local");
-    expect(res.url).toBeUndefined();
+  it("throws AbortError when called with an already-aborted signal", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(publishBuild("run-1", "local", controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
   });
 
   it("flags missing title and license in readiness check", () => {
@@ -26,7 +30,7 @@ describe("publish api (#9)", () => {
 });
 
 describe("BuildPublishPage (#9)", () => {
-  it("publishes the selected destination and shows the result link", async () => {
+  it("publishes the selected destination and shows the published state", async () => {
     render(
       <MemoryRouter initialEntries={["/builds/run-7/publish"]}>
         <Routes>
@@ -38,7 +42,7 @@ describe("BuildPublishPage (#9)", () => {
     fireEvent.click(screen.getByLabelText(/HuggingFace/));
     fireEvent.click(screen.getByRole("button", { name: "게시" }));
 
-    const link = await screen.findByRole("link", { name: "결과 보기" });
-    expect(link).toHaveAttribute("href", expect.stringContaining("huggingface.co/datasets/run-7"));
+    expect(await screen.findByText("게시됨")).toBeInTheDocument();
+    expect(screen.getByText(/게시가 완료되었습니다/)).toBeInTheDocument();
   });
 });

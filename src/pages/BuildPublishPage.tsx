@@ -106,7 +106,9 @@ export function BuildPublishPage() {
                 결과 보기
               </a>
             ) : (
-              <span className="text-zinc-600 dark:text-zinc-300">로컬에 생성되었습니다.</span>
+              <span className="text-zinc-600 dark:text-zinc-300">
+                게시가 완료되었습니다. 실제 결과 링크는 Builder 연동 후 표시됩니다.
+              </span>
             )}
           </span>
         ) : null}

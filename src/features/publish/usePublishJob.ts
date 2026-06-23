@@ -7,10 +7,10 @@
 import { useCallback, useRef, useState } from "react";
 import { publishBuild, type PublishDestination, type PublishResult } from "@/features/publish/api";
 
-export type PublishStatus = "idle" | "publishing" | "published" | "failed" | "cancelled";
+export type PublishJobStatus = "idle" | "publishing" | "published" | "failed" | "cancelled";
 
 export interface PublishJob {
-  status: PublishStatus;
+  status: PublishJobStatus;
   result?: PublishResult;
   error?: string;
   start: (buildId: string, destination: PublishDestination) => Promise<void>;
@@ -23,7 +23,7 @@ export interface PublishJob {
  * @returns PublishJob 상태와 제어 함수.
  */
 export function usePublishJob(): PublishJob {
-  const [status, setStatus] = useState<PublishStatus>("idle");
+  const [status, setStatus] = useState<PublishJobStatus>("idle");
   const [result, setResult] = useState<PublishResult>();
   const [error, setError] = useState<string>();
   const controllerRef = useRef<AbortController | null>(null);

@@ -31,14 +31,13 @@ export async function publishBuild(
   destination: PublishDestination,
   signal?: AbortSignal,
 ): Promise<PublishResult> {
-  void signal;
-  const url =
-    destination === "huggingface"
-      ? `https://huggingface.co/datasets/${buildId}`
-      : destination === "github"
-        ? `https://github.com/yeongseon/${buildId}/releases/latest`
-        : undefined;
-  return { status: "published", url };
+  // 이미 취소된 신호로 호출되면 취소 흐름이 일관되게 동작하도록 AbortError를 던진다.
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  void buildId;
+  void destination;
+  // Builder publish 엔드포인트 전까지는 실제 결과 URL이 없으므로 url을 비워 둔다(깨진 링크 방지).
+  // Builder가 게시 결과 URL을 반환하면 이 함수에서 result.url에 채운다.
+  return { status: "published" };
 }
 
 /** 게시 전 메타데이터 점검(필수 라이선스/제목 등). 누락 항목 메시지를 반환한다. */
