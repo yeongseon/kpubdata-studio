@@ -71,12 +71,22 @@ export function Layout() {
     closeSidebar();
   }, [closeSidebar]);
 
+  // 모바일 사이드바가 열려 있을 때 ESC로 닫을 수 있게 한다(접근성, 제안 §12.2).
+  useEffect(() => {
+    if (!isSidebarOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeSidebar();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isSidebarOpen, closeSidebar]);
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
         {isSidebarOpen ? (
           <button
-            aria-label="Close navigation overlay"
+            aria-label="내비게이션 닫기"
             className="fixed inset-0 z-30 bg-zinc-950/45 lg:hidden"
             onClick={closeSidebar}
             type="button"
@@ -102,7 +112,7 @@ export function Layout() {
               </p>
             </div>
             <button
-              aria-label="Close sidebar"
+              aria-label="사이드바 닫기"
               className="rounded-full border border-zinc-200 p-2 text-zinc-500 lg:hidden dark:border-zinc-800 dark:text-zinc-300"
               onClick={closeSidebar}
               type="button"
@@ -160,7 +170,7 @@ export function Layout() {
             <div className="flex items-center justify-between gap-4 px-5 py-4 sm:px-8">
               <div className="flex items-center gap-3">
                 <button
-                  aria-label="Toggle sidebar"
+                  aria-label="사이드바 열기/닫기"
                   className="inline-flex rounded-full border border-zinc-200 bg-white p-2 text-zinc-700 shadow-sm lg:hidden dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
                   onClick={toggleSidebar}
                   type="button"
