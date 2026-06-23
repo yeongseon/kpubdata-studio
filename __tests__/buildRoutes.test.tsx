@@ -35,9 +35,11 @@ describe("build-centric routes", () => {
     expect(screen.getByText("수집")).toBeInTheDocument();
   });
 
-  it("renders the artifacts page with a manifest section", () => {
+  it("renders the artifacts page with a manifest section", async () => {
     renderAt("/builds/abc/artifacts", <BuildArtifactsPage />);
-    expect(screen.getByText("Manifest 요약")).toBeInTheDocument();
+    // manifest는 비동기로 로드되므로 로드 후 요약이 나타난다.
+    expect(await screen.findByText("Manifest 요약")).toBeInTheDocument();
+    expect(screen.getByText(/12,304/)).toBeInTheDocument();
   });
 
   it("renders the publish page with destination options", () => {
