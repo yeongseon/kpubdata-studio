@@ -13,10 +13,11 @@ function renderPage(element: ReactNode) {
 }
 
 describe("remaining pages", () => {
-  it("BuildsPage shows the Korean heading and an empty-state CTA", () => {
+  it("BuildsPage shows the Korean heading and loads run history", async () => {
     renderPage(<BuildsPage />);
     expect(screen.getByRole("heading", { name: "빌드 목록" })).toBeInTheDocument();
-    expect(screen.getByText("아직 생성된 빌드가 없습니다")).toBeInTheDocument();
+    // mock 실행 이력이 로드된다.
+    expect(await screen.findByText("대기오염 정보")).toBeInTheDocument();
   });
 
   it("SettingsPage shows the API base URL section", () => {

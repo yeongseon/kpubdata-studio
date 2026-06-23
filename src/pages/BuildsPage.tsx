@@ -1,21 +1,59 @@
 /**
  * 빌드 목록 페이지 (/builds).
  *
- * 전체 빌드와 실행 이력을 표로 보여준다(제안 §5.6). 실제 목록/상태는 #29 Builder API
- * 연동 시 useBuilds()로 채운다.
+ * 전체 빌드 실행 이력을 표로 보여주고, 제목 검색과 시작 시각 정렬을 제공한다(제안 §5.6/§12).
+ * 현재 목록은 mock이며 #29 Builder API 연동 시 실제 데이터로 교체된다.
  */
+import { useEffect, useMemo, useState } from "react";
+import { listBuilds } from "@/features/runs/api";
 import type { BuildRun } from "@/shared/lib/types";
-import { Card, EmptyState, LinkButton, PageHeader } from "@/shared/ui";
+import {
+  Button,
+  Card,
+  EmptyState,
+  LinkButton,
+  PageHeader,
+  StatusBadge,
+  TextInput,
+  type StatusValue,
+} from "@/shared/ui";
 
-const COLUMNS = ["빌드", "상태", "마지막 실행", "액션"] as const;
+function formatTime(iso?: string): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("ko-KR");
+}
 
 /**
- * 빌드 실행 목록 표와 새 빌드 진입점을 보여주는 페이지.
+ * 빌드 실행 목록 표(검색/정렬)와 새 빌드 진입점을 보여주는 페이지.
  *
  * @returns 빌드 목록 화면.
  */
 export function BuildsPage() {
-  const runs: BuildRun[] = [];
+  const [runs, setRuns] = useState<BuildRun[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [newestFirst, setNewestFirst] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    listBuilds().then((result) => {
+      if (active) setRuns(result);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const visible = useMemo(() => {
+    if (!runs) return [];
+    const filtered = runs.filter((run) =>
+      run.spec.title.toLowerCase().includes(query.trim().toLowerCase()),
+    );
+    return [...filtered].sort((a, b) => {
+      const diff = a.startedAt.localeCompare(b.startedAt);
+      return newestFirst ? -diff : diff;
+    });
+  }, [runs, query, newestFirst]);
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
@@ -26,21 +64,67 @@ export function BuildsPage() {
         actions={<LinkButton to="/builds/new">새 빌드 만들기</LinkButton>}
       />
 
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="sm:max-w-xs sm:flex-1">
+          <label htmlFor="build-search" className="sr-only">
+            빌드 제목 검색
+          </label>
+          <TextInput
+            id="build-search"
+            placeholder="제목으로 검색…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <Button variant="secondary" size="sm" onClick={() => setNewestFirst((prev) => !prev)}>
+          시작 시각 {newestFirst ? "최신순 ↓" : "오래된순 ↑"}
+        </Button>
+      </div>
+
       <Card className="overflow-hidden p-0">
         <div className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] gap-4 border-b border-zinc-200/80 px-6 py-4 text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          {COLUMNS.map((column) => (
-            <span key={column}>{column}</span>
-          ))}
+          <span>빌드</span>
+          <span>상태</span>
+          <span>마지막 실행</span>
+          <span>액션</span>
         </div>
 
-        {runs.length === 0 ? (
+        {runs === null ? (
+          <div className="px-6 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            불러오는 중입니다…
+          </div>
+        ) : visible.length === 0 ? (
           <EmptyState
-            title="아직 생성된 빌드가 없습니다"
-            description="첫 빌드를 만들면 여기에 상태와 실행 이력이 표시됩니다. (목록 API는 #29 연동 시 연결됩니다.)"
+            title={query ? "검색 결과가 없습니다" : "아직 생성된 빌드가 없습니다"}
+            description={
+              query
+                ? "다른 검색어로 시도해보세요."
+                : "첫 빌드를 만들면 여기에 상태와 실행 이력이 표시됩니다."
+            }
             actionLabel="새 빌드 만들기"
             actionHref="/builds/new"
           />
-        ) : null}
+        ) : (
+          <ul>
+            {visible.map((run) => (
+              <li
+                key={run.id}
+                className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] items-center gap-4 border-b border-zinc-100 px-6 py-3 text-sm last:border-0 dark:border-zinc-900"
+              >
+                <span className="font-medium">{run.spec.title}</span>
+                <span>
+                  <StatusBadge status={run.status as StatusValue} />
+                </span>
+                <span className="text-zinc-600 dark:text-zinc-300">{formatTime(run.startedAt)}</span>
+                <span>
+                  <LinkButton variant="secondary" size="sm" to={`/builds/${run.id}`}>
+                    보기
+                  </LinkButton>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </main>
   );
