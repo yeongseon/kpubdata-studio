@@ -5,8 +5,24 @@
  * 실제 라우트 콘텐츠는 `Outlet`을 통해 주입한다.
  */
 import { useEffect } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useUIStore } from "@/shared/hooks/useUIStore";
+
+/**
+ * 현재 라우트에 맞는 헤더 CTA(라벨/이동 경로)를 고른다(제안 §6.4).
+ *
+ * 새 빌드 작성 화면에서는 중복되는 '새 빌드 만들기' 대신 '빌드 목록'으로 안내하고,
+ * 그 외 화면에서는 새 빌드 작성으로 유도한다.
+ *
+ * @param pathname - 현재 경로.
+ * @returns 헤더 CTA의 라벨과 이동 경로.
+ */
+function headerCtaFor(pathname: string): { to: string; label: string } {
+  if (pathname === "/builds/new") return { to: "/builds", label: "빌드 목록" };
+  if (pathname.startsWith("/builds/") && pathname.endsWith("/run"))
+    return { to: pathname.replace(/\/run$/, "/artifacts"), label: "결과물 보기" };
+  return { to: "/builds/new", label: "새 빌드 만들기" };
+}
 
 // 내비게이션은 Build 중심으로 단순화한다(제안 §6.3). Validate/Preview는 독립 메뉴에서
 // 제거하고 New Build Wizard 내부 패널로 통합한다(§5.3/§5.4).
@@ -62,6 +78,8 @@ export function Layout() {
   const setTheme = useUIStore((state) => state.setTheme);
   const theme = useUIStore((state) => state.theme);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
+  const { pathname } = useLocation();
+  const headerCta = headerCtaFor(pathname);
 
   useEffect(() => {
     document.documentElement.dataset.theme = getResolvedTheme(theme);
@@ -189,9 +207,9 @@ export function Layout() {
 
               <Link
                 className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-400"
-                to="/builds/new"
+                to={headerCta.to}
               >
-                새 빌드 만들기
+                {headerCta.label}
               </Link>
             </div>
           </header>
