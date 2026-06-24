@@ -21,6 +21,14 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
 ]);
 
 export default eslintConfig;
