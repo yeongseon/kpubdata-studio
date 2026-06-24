@@ -76,13 +76,43 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   if (!response.ok) {
     const message =
-      (parsed && typeof parsed === "object" && "error" in parsed
-        ? String((parsed as { error: unknown }).error)
-        : undefined) ?? `Builder API 오류 (HTTP ${response.status})`;
+      extractErrorMessage(parsed) ?? `Builder API 오류 (HTTP ${response.status})`;
     throw new ApiError(response.status, message, parsed);
   }
 
   return parsed as T;
+}
+
+/**
+ * Builder의 비정상 응답 본문에서 사람이 읽을 메시지를 추출한다.
+ *
+ * 우선순위(하위 호환 유지):
+ *   1) 최상위 `error` 필드(있으면 그대로 사용 — builder PR이 추가 중).
+ *   2) `outcomes[].error` — 실패한 소스별 사유(join). /build 502의 실제 와이어 형태.
+ *
+ * @param parsed - 파싱된 응답 본문(unknown).
+ * @returns 추출한 메시지 또는 undefined.
+ */
+export function extractErrorMessage(parsed: unknown): string | undefined {
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const record = parsed as { error?: unknown; outcomes?: unknown };
+
+  if (record.error != null && record.error !== "") {
+    return String(record.error);
+  }
+
+  if (Array.isArray(record.outcomes)) {
+    const reasons = record.outcomes
+      .map((outcome) =>
+        outcome && typeof outcome === "object" && "error" in outcome
+          ? (outcome as { error?: unknown }).error
+          : undefined,
+      )
+      .filter((reason): reason is string => typeof reason === "string" && reason.length > 0);
+    if (reasons.length > 0) return reasons.join("; ");
+  }
+
+  return undefined;
 }
 
 // --- 응답 와이어 타입 (Builder service 실제 구현 기준) ---
@@ -117,6 +147,13 @@ export interface ArtifactsResponse {
   files: string[];
 }
 
+export interface PreviewResponse {
+  status: string;
+  /** 미리보기 샘플 레코드(소스별, Builder 구현에 따라 형태가 달라질 수 있어 느슨하게 둔다). */
+  preview: unknown;
+  api_version: string;
+}
+
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
   /** GET /version — 계약 버전 확인(메타). */
@@ -125,6 +162,10 @@ export const builderApi = {
   /** POST /validate — BuildSpec YAML 검증. */
   validate: (specYaml: string, signal?: AbortSignal) =>
     apiFetch<ValidateResponse>("/validate", { method: "POST", body: { spec: specYaml }, signal }),
+
+  /** POST /preview — BuildSpec 기반 샘플 미리보기. */
+  preview: (specYaml: string, signal?: AbortSignal) =>
+    apiFetch<PreviewResponse>("/preview", { method: "POST", body: { spec: specYaml }, signal }),
 
   /** POST /build — 빌드 실행. run_id 생략 가능. */
   build: (specYaml: string, runId?: string, signal?: AbortSignal) =>

@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { API_CONTRACT_VERSION, builderApi } from "@/shared/lib/builderApi";
 
 // Studio 클라이언트가 호출하는 Builder service 오퍼레이션(현재 구현 기준).
-const EXPECTED_OPERATIONS = ["version", "validate", "build", "artifacts"] as const;
+const EXPECTED_OPERATIONS = ["version", "validate", "preview", "build", "artifacts"] as const;
 
 describe("Builder API contract conformance (#36)", () => {
   it("pins the contract version Studio targets (must match builder #209)", () => {

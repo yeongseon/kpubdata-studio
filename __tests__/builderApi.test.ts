@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch, builderApi } from "@/shared/lib/builderApi";
+import {
+  ApiError,
+  apiFetch,
+  builderApi,
+  extractErrorMessage,
+} from "@/shared/lib/builderApi";
 
 function mockResponse(status: number, body: unknown): Response {
   return {
@@ -26,6 +31,20 @@ describe("builderApi client (#29)", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain("/version");
     expect(init.method).toBe("GET");
+  });
+
+  it("preview() POSTs spec to /preview (#75)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { status: "ok", preview: [], api_version: "1.0.0" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await builderApi.preview("dataset_id: x");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/preview");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ spec: "dataset_id: x" });
   });
 
   it("build() POSTs spec + run_id as JSON", async () => {
@@ -62,5 +81,50 @@ describe("builderApi client (#29)", () => {
     const error = await apiFetch("/version").catch((cause) => cause);
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(0);
+  });
+
+  it("surfaces outcomes[].error on a 502 with no top-level error (#75)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        mockResponse(502, {
+          status: "failed",
+          outcomes: [{ source_key: "datago", status: "failed", error: "source 502" }],
+        }),
+      ),
+    );
+
+    const error = await apiFetch("/build", { method: "POST", body: { spec: "" } }).catch(
+      (cause) => cause,
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).message).toBe("source 502");
+  });
+});
+
+describe("extractErrorMessage (#75)", () => {
+  it("extracts the real reason from outcomes[].error (no top-level error)", () => {
+    expect(
+      extractErrorMessage({
+        status: "failed",
+        outcomes: [{ source_key: "datago", status: "failed", error: "인증 실패" }],
+      }),
+    ).toBe("인증 실패");
+  });
+
+  it("joins multiple outcome errors with a semicolon", () => {
+    expect(
+      extractErrorMessage({ outcomes: [{ error: "A" }, { error: null }, { error: "B" }] }),
+    ).toBe("A; B");
+  });
+
+  it("prefers a top-level error over outcomes (backward compat)", () => {
+    expect(extractErrorMessage({ error: "top", outcomes: [{ error: "ignored" }] })).toBe("top");
+  });
+
+  it("returns undefined when no structured reason is present", () => {
+    expect(extractErrorMessage({ status: "failed", outcomes: [] })).toBeUndefined();
+    expect(extractErrorMessage(undefined)).toBeUndefined();
+    expect(extractErrorMessage("oops")).toBeUndefined();
   });
 });
