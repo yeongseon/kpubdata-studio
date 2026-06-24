@@ -34,9 +34,14 @@ export async function validateSpec(
 
   try {
     const result = await builderApi.validate(serializeSpec(spec));
-    return { valid: result.status === "valid", errors: [] };
+    // 2xx로 invalid/error가 올 수도 있으므로 status별로 사유를 매핑한다.
+    if (result.status === "valid") return { valid: true, errors: [] };
+    if (result.status === "invalid") {
+      return { valid: false, errors: result.problems.map(String) };
+    }
+    return { valid: false, errors: [result.error] };
   } catch (cause) {
-    // Builder는 검증 실패를 400 + {status:"invalid", problems}으로 돌려준다.
+    // Builder가 검증 실패를 400 + {status:"invalid", problems}으로 돌려주는 경우도 처리한다.
     if (cause instanceof ApiError) {
       const invalid = asInvalidDetails(cause.details);
       if (invalid) return { valid: false, errors: invalid.problems };

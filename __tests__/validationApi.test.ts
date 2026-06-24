@@ -48,6 +48,31 @@ describe("validateSpec wiring (#29/#37)", () => {
     expect(result).toEqual({ valid: true, errors: [] });
   });
 
+  it("maps a 2xx invalid response to valid=false with problems", async () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        mockResponse(200, { status: "invalid", problems: ["소스를 최소 1개 추가해주세요."] }),
+      ),
+    );
+
+    const result = await validateSpec(spec);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(["소스를 최소 1개 추가해주세요."]);
+  });
+
+  it("maps a 2xx error response to valid=false with the error message", async () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(mockResponse(200, { status: "error", error: "스펙 로드 실패" })),
+    );
+
+    const result = await validateSpec(spec);
+    expect(result).toEqual({ valid: false, errors: ["스펙 로드 실패"] });
+  });
+
   it("maps a 400 invalid response to valid=false with problems", async () => {
     vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
     vi.stubGlobal(
