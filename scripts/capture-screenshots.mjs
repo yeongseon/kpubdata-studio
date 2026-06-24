@@ -61,10 +61,16 @@ async function main() {
   // 출력 디렉터리 준비
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-  // Vite 개발 서버 시작 (MOCK 모드: VITE_USE_REAL_BUILDER 미설정)
+  // Vite 개발 서버 시작 (MOCK 모드 강제)
+  // 사용자 셸/CI에 VITE_USE_REAL_BUILDER=true 가 설정돼 있으면 Vite가 이를
+  // 주입해 앱이 REAL 빌더 모드로 부팅된다. 스크린샷은 항상 오프라인/목 모드여야
+  // 하므로, 스폰되는 Vite 서버 환경에서 이 값을 명시적으로 false로 강제한다.
   console.log("Vite 개발 서버를 시작합니다…");
   const server = await createServer({
     root: ROOT,
+    define: {
+      "import.meta.env.VITE_USE_REAL_BUILDER": JSON.stringify("false"),
+    },
     server: { port: 5173 },
     // 빌드 오류가 화면에 overlay로 뜨지 않게 한다
     clearScreen: false,
@@ -96,12 +102,8 @@ async function main() {
       await page.addInitScript(
         /* eslint-disable no-undef */
         (t) => {
-          // data-theme을 설정해 Tailwind dark: 변형이 적용되도록 한다
-          Object.defineProperty(document, "readyState", { writable: true });
-          const observer = new MutationObserver(() => {
-            document.documentElement.dataset.theme = t;
-          });
-          observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+          // 초기 로드 시 data-theme을 한 번만 설정해 Tailwind dark: 변형이 적용되도록 한다.
+          // readyState를 덮어쓰거나 자기 자신을 다시 트리거하는 MutationObserver는 쓰지 않는다.
           document.documentElement.dataset.theme = t;
         },
         /* eslint-enable no-undef */
@@ -112,7 +114,11 @@ async function main() {
         const url = `${base}${screen.route}`;
         console.log(`  캡처 중: ${screen.label} → ${url}`);
 
-        await page.goto(url, { waitUntil: "networkidle" });
+        // Vite dev 서버는 HMR WebSocket이 계속 열려 있어 "networkidle"이 불안정하다.
+        // domcontentloaded로 이동한 뒤 안정적인 selector(main)를 명시적으로 기다려
+        // 렌더 완료를 보장한다.
+        await page.goto(url, { waitUntil: "domcontentloaded" });
+        await page.waitForSelector("main", { timeout: 15000 });
 
         // React Router가 렌더링을 마칠 시간을 준다
         await page.waitForTimeout(300);
