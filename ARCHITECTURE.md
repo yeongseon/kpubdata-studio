@@ -208,7 +208,7 @@ graph LR
 
 ### 상태 소유권 규칙
 - Zustand는 UI 상태와 초안 상태를 소유합니다.
-- TanStack Query는 서버 상태와 캐싱을 소유합니다.
+- TanStack Query는 서버 상태와 캐싱을 소유하도록 채택이 진행 중(in progress)입니다. 현재는 `QueryClientProvider`만 마운트되어 있고 `useQuery`/`useMutation` 훅은 사용되지 않습니다.
 
 ### Builder/backend가 소유하는 상태
 - 빌드 실행 상태

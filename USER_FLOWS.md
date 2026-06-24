@@ -60,6 +60,7 @@ sequenceDiagram
     User->>Dash: 빌드 목록 확인
     User->>Dash: 특정 빌드 선택
     Dash->>Detail: 빌드 정보 로드
+    Note over Detail,BAPI: GET /artifacts/{run_id}는 실연동(real-builder) 모드에서만 호출됩니다.<br/>현재 브랜치에서는 features/artifacts/api/getBuildManifest()가 mock manifest를 반환합니다.
     Detail->>BAPI: GET /artifacts/{run_id}
     BAPI-->>Detail: 파일 목록 JSON
     Detail-->>User: 아티팩트 목록 표시

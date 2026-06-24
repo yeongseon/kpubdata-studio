@@ -37,7 +37,7 @@ flowchart TD
 - **상호작용**:
   - `[ + New Build ]`: 새로운 빌드 작성 페이지(`/builds/new`)로 이동합니다.
   - `[ View ]`: 해당 빌드의 상세 결과 페이지로 이동합니다.
-- **API**: `GET /artifacts/{run_id}` (특정 빌드 결과물 조회), 빌드 목록은 현재 로컬 상태에서 조회합니다.
+- **API**: 현재 호출 없음(로컬/정적). Home 대시보드는 API를 호출하지 않고 로컬/정적 상태만 렌더링합니다. 빌드 결과물 조회(`GET /artifacts/{run_id}`)는 빌드 상세/결과물 화면(Build Detail / Artifacts)의 책임이며, 실제 연동 시 해당 화면에서 호출합니다.
 
 > **계획(planned)/미구현**: 빌드 목록 조회(`GET /builds`)는 현재 Builder API에 존재하지 않습니다.
 
@@ -126,6 +126,7 @@ graph LR
         RunS[Build Run Tracking]
         ArtifactsS[Artifact Viewer]
         PublishS[Publish Page]
+        SettingsS[Settings]
     end
 
     subgraph APIEndpoints [Builder API 엔드포인트]
@@ -136,7 +137,7 @@ graph LR
         GET_Artifacts[GET /artifacts/{run_id}]
     end
 
-    HomeS --> GET_Version
+    SettingsS --> GET_Version
     EditorS --> POST_Validate
     EditorS --> POST_Preview
     EditorS --> POST_Build
@@ -161,10 +162,11 @@ graph LR
 
 | 화면명 | 주요 기능 | 호출 API |
 | :--- | :--- | :--- |
-| Home | 전체 현황 파악 | `GET /version` (계약 버전 확인) |
+| Home | 전체 현황 파악 | 현재 호출 없음(로컬/정적) |
 | Editor | 빌드 설정 기획 및 검증 | `POST /validate`, `POST /preview` |
 | Run | 빌드 실행 (동기) | `POST /build` |
 | Artifacts | 결과물 확인 및 다운로드 | `GET /artifacts/{run_id}` |
+| Settings | 환경 설정 및 연결 확인 | `GET /version` (계약 버전 확인, 실연동 모드) |
 | Publish | 외부 저장소 배포 | **계획(planned)/미구현** |
 
 ---
