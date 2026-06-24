@@ -29,13 +29,15 @@ export async function executeBuild(spec: BuildSpec, signal?: AbortSignal): Promi
     };
   }
 
+  // 실연동 모드에서는 실제 실행 시각을 기록한다(이력/상세 화면에서 잘못된 1970 값 방지).
+  const startedAt = new Date().toISOString();
   const result = await builderApi.build(serializeSpec(spec), undefined, signal);
   return {
     id: result.run_id,
     spec,
     status: result.status === "ok" ? "succeeded" : "failed",
-    startedAt: MOCK_TIME,
-    finishedAt: MOCK_TIME,
+    startedAt,
+    finishedAt: new Date().toISOString(),
   };
 }
 

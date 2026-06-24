@@ -42,9 +42,10 @@ describe("build-centric routes", () => {
     expect(screen.getByText(/12,304/)).toBeInTheDocument();
   });
 
-  it("renders the publish page with destination options", () => {
+  it("renders the publish page with destination options and an enabled publish button", () => {
     renderAt("/builds/abc/publish", <BuildPublishPage />);
     expect(screen.getByText("HuggingFace Dataset")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /게시/ })).toBeDisabled();
+    // buildId가 있으면 게시 버튼이 활성화되어 실제 게시를 수행한다 (#9).
+    expect(screen.getByRole("button", { name: "게시" })).toBeEnabled();
   });
 });

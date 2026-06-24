@@ -4,11 +4,11 @@
  * manifest 요약, 생성 파일 목록, manifest 원본(JSON)을 보여준다(제안 §5.7, #30).
  * 현재 manifest는 mock이며 #29 Builder API 연동 시 실제 데이터로 교체된다.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getBuildManifest } from "@/features/artifacts/api";
 import type { BuildManifest } from "@/shared/lib/types";
-import { Card, EmptyState, LinkButton, PageHeader } from "@/shared/ui";
+import { Card, EmptyState, ErrorState, LinkButton, PageHeader, SkeletonTable } from "@/shared/ui";
 
 interface ManifestState {
   status: "loading" | "loaded" | "error";
@@ -32,7 +32,7 @@ export function BuildArtifactsPage() {
   const { buildId = "" } = useParams();
   const [state, setState] = useState<ManifestState>({ status: "loading" });
 
-  useEffect(() => {
+  const load = useCallback(() => {
     const controller = new AbortController();
     setState({ status: "loading" });
     getBuildManifest(buildId, controller.signal)
@@ -49,6 +49,8 @@ export function BuildArtifactsPage() {
     return () => controller.abort();
   }, [buildId]);
 
+  useEffect(() => load(), [load]);
+
   const manifest = state.manifest;
   const formats = manifest
     ? [...new Set(manifest.artifactPaths.map((path) => describeFile(path).format))]
@@ -64,14 +66,18 @@ export function BuildArtifactsPage() {
       />
 
       {state.status === "loading" ? (
-        <Card>
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">manifest를 불러오는 중입니다…</p>
+        <Card className="p-0">
+          <SkeletonTable rows={4} />
         </Card>
       ) : null}
 
       {state.status === "error" ? (
-        <Card variant="error">
-          <p className="text-sm text-red-700 dark:text-red-300">{state.error}</p>
+        <Card variant="error" className="p-0">
+          <ErrorState
+            title="결과물을 불러오지 못했습니다"
+            message={state.error}
+            onRetry={() => load()}
+          />
         </Card>
       ) : null}
 

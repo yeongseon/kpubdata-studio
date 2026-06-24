@@ -1,5 +1,7 @@
 # 사용자 흐름 — KPubData Studio
 
+> **참고**: 주요 화면의 스크린샷은 [화면 스크린샷](screenshots.md) 페이지에서 확인할 수 있습니다.
+
 ## 1. 새 빌드 위저드
 데이터를 기획하고 첫 빌드를 성공시키기까지의 과정입니다.
 
@@ -31,8 +33,8 @@ sequenceDiagram
     Studio->>BAPI: POST /validate (Spec)
     BAPI-->>Studio: 검증 결과 (OK/Error)
     User->>Studio: '빌드 실행' 클릭
-    Studio->>BAPI: POST /builds/run (Spec)
-    BAPI-->>Studio: 빌드 ID 반환 (queued)
+    Studio->>BAPI: POST /build (Spec, synchronous)
+    BAPI-->>Studio: 빌드 결과 반환 {status, run_id, outcomes, manifest}
 ```
 
 ### 사용자가 경험하는 시나리오 예시
@@ -60,11 +62,12 @@ sequenceDiagram
     User->>Dash: 빌드 목록 확인
     User->>Dash: 특정 빌드 선택
     Dash->>Detail: 빌드 정보 로드
-    Detail->>BAPI: GET /builds/:id/manifest
-    BAPI-->>Detail: Manifest JSON
-    Detail-->>User: 설정 및 아티팩트 목록 표시
+    Note over Detail,BAPI: GET /artifacts/{run_id}는 실연동(real-builder) 모드에서만 호출됩니다.<br/>현재 브랜치에서는 features/artifacts/api/getBuildManifest()가 mock manifest를 반환합니다.
+    Detail->>BAPI: GET /artifacts/{run_id}
+    BAPI-->>Detail: 파일 목록 JSON
+    Detail-->>User: 아티팩트 목록 표시
     User->>Detail: '다시 빌드(Rerun)' 클릭
-    Detail->>BAPI: POST /builds/run (기존 Spec)
+    Detail->>BAPI: POST /build (기존 Spec, synchronous)
 ```
 
 ---
@@ -89,11 +92,8 @@ sequenceDiagram
     User->>Select: 성공한 빌드 선택
     User->>Review: 메타데이터(설명/라이선스) 확인/수정
     User->>Review: '출판' 버튼 클릭
-    Review->>BAPI: POST /builds/:id/publish
-    BAPI->>Ext: 아티팩트 및 메타데이터 전송
-    Ext-->>BAPI: 성공 응답
-    BAPI-->>Review: 출판 완료 알림
-    Review-->>User: 결과 링크 및 카드 표시
+    Note over Review,BAPI: POST /builds/:id/publish — 계획(planned)/미구현
+    Review-->>User: (현재 출판 기능 미구현 안내)
 ```
 
 ---

@@ -16,4 +16,6 @@ export { TextInput, type TextInputProps } from "./TextInput";
 export { Textarea, type TextareaProps } from "./Textarea";
 export { Select, type SelectProps } from "./Select";
 export { ErrorMessage, type ErrorMessageProps } from "./ErrorMessage";
+export { ErrorState, type ErrorStateProps } from "./ErrorState";
+export { Skeleton, SkeletonTable, type SkeletonProps, type SkeletonTableProps } from "./Skeleton";
 export { cn, type ClassValue } from "./cn";

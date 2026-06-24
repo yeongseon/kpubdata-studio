@@ -12,6 +12,7 @@ import {
   builderApi,
   isRealBuilderEnabled,
 } from "@/shared/lib/builderApi";
+import { WorkspaceSwitcher } from "@/features/workspace/WorkspaceSwitcher";
 import { Card, PageHeader, StatusBadge } from "@/shared/ui";
 
 interface ConnectionState {
@@ -53,6 +54,16 @@ export function SettingsPage() {
         title="환경 설정"
         description="Builder API 엔드포인트와 연결 상태를 확인합니다. 실제 저장 기능은 이후 연동됩니다."
       />
+
+      <Card>
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+          워크스페이스 (Workspace)
+        </p>
+        <p className="mt-2 mb-4 text-sm text-zinc-600 dark:text-zinc-300">
+          개인/팀 워크스페이스를 전환합니다. 팀 공유·멤버십 연동은 후속(v0.3)에서 확장됩니다.
+        </p>
+        <WorkspaceSwitcher />
+      </Card>
 
       <Card>
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
