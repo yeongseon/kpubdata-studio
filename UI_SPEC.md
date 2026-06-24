@@ -37,7 +37,9 @@ flowchart TD
 - **상호작용**:
   - `[ + New Build ]`: 새로운 빌드 작성 페이지(`/builds/new`)로 이동합니다.
   - `[ View ]`: 해당 빌드의 상세 결과 페이지로 이동합니다.
-- **API**: `GET /builds` (최근 빌드 목록 조회)
+- **API**: `GET /artifacts/{run_id}` (특정 빌드 결과물 조회), 빌드 목록은 현재 로컬 상태에서 조회합니다.
+
+> **계획(planned)/미구현**: 빌드 목록 조회(`GET /builds`)는 현재 Builder API에 존재하지 않습니다.
 
 ---
 
@@ -83,9 +85,10 @@ graph TD
   - `[ Validate ]`: 현재 설정이 올바른지 확인합니다. (Validation Panel 업데이트)
   - `[ Run Build ]`: 검증이 완료된 상태에서만 활성화되며, 누르면 실제 빌드가 시작됩니다.
 - **API**:
-  - `GET /providers`: 제공 기관 목록 조회
   - `POST /validate`: 설정값 검증
   - `POST /preview`: 샘플 데이터 미리보기
+
+> **계획(planned)/미구현**: `GET /providers` 엔드포인트는 현재 Builder API에 존재하지 않습니다. 제공 기관 목록은 현재 Studio 내에 하드코딩된 목록으로 제공됩니다.
 
 ---
 
@@ -107,7 +110,9 @@ graph TD
 ```
 - **상호작용**:
   - `[ Cancel Build ]`: 실행 중인 작업을 즉시 중단합니다.
-- **API**: `GET /builds/:id/status` (상태 주기적 확인), `DELETE /builds/:id` (취소)
+- **API**: `POST /build` (동기 빌드 실행, 완료까지 블로킹)
+
+> **계획(planned)/미구현**: 비동기 상태 폴링(`GET /builds/:id/status`) 및 취소(`DELETE /builds/:id`)는 현재 구현되어 있지 않습니다. 현재 `POST /build`는 동기식으로 동작합니다.
 
 ---
 
@@ -124,22 +129,20 @@ graph LR
     end
 
     subgraph APIEndpoints [Builder API 엔드포인트]
-        GET_Builds[GET /builds]
+        GET_Version[GET /version]
         POST_Validate[POST /validate]
         POST_Preview[POST /preview]
-        POST_Run[POST /builds/run]
-        GET_Status[GET /builds/:id/status]
-        GET_Manifest[GET /builds/:id/manifest]
-        POST_Publish[POST /builds/:id/publish]
+        POST_Build[POST /build]
+        GET_Artifacts[GET /artifacts/{run_id}]
     end
 
-    HomeS --> GET_Builds
+    HomeS --> GET_Version
     EditorS --> POST_Validate
     EditorS --> POST_Preview
-    EditorS --> POST_Run
-    RunS --> GET_Status
-    ArtifactsS --> GET_Manifest
-    PublishS --> POST_Publish
+    EditorS --> POST_Build
+    ArtifactsS --> GET_Artifacts
+    RunS --> POST_Build
+    PublishS -.->|계획/미구현| GET_Artifacts
 ```
 
 > 라우팅은 React Router가 담당하며, 각 화면은 `src/pages/`에서 조립되고 실제 API 호출은 `src/features/*/api/index.ts`를 통해 수행됩니다.
@@ -158,11 +161,11 @@ graph LR
 
 | 화면명 | 주요 기능 | 호출 API |
 | :--- | :--- | :--- |
-| Home | 전체 현황 파악 | `listBuilds` |
-| Editor | 빌드 설정 기획 및 검증 | `validateSpec`, `previewBuild` |
-| Run | 실시간 빌드 추적 | `getBuildStatus`, `cancelBuild` |
-| Artifacts | 결과물 확인 및 다운로드 | `listArtifacts`, `readManifest` |
-| Publish | 외부 저장소 배포 | `triggerPublish` |
+| Home | 전체 현황 파악 | `GET /version` (계약 버전 확인) |
+| Editor | 빌드 설정 기획 및 검증 | `POST /validate`, `POST /preview` |
+| Run | 빌드 실행 (동기) | `POST /build` |
+| Artifacts | 결과물 확인 및 다운로드 | `GET /artifacts/{run_id}` |
+| Publish | 외부 저장소 배포 | **계획(planned)/미구현** |
 
 ---
 
