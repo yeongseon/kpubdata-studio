@@ -7,7 +7,7 @@
  */
 import { useCallback, useRef, useState } from "react";
 import { executeBuild } from "@/features/runs/api";
-import { ApiError } from "@/shared/lib/builderApi";
+import { ApiError, extractErrorMessage } from "@/shared/lib/builderApi";
 import type { BuildRun, BuildSpec } from "@/shared/lib/types";
 
 export type BuildJobStatus = "idle" | "running" | "succeeded" | "failed" | "cancelled";
@@ -54,7 +54,13 @@ export function useBuildJob(): BuildJob {
         return;
       }
       setStatus("failed");
-      setError(cause instanceof ApiError ? cause.message : "빌드 실행에 실패했습니다.");
+      // /build 502는 최상위 error 없이 outcomes[].error로 실패 사유를 돌려준다.
+      // 우선순위: 최상위 error(하위 호환) → outcomes[].error → ApiError 메시지 → 일반 메시지.
+      const message =
+        cause instanceof ApiError
+          ? (extractErrorMessage(cause.details) ?? cause.message)
+          : "빌드 실행에 실패했습니다.";
+      setError(message);
     }
   }, []);
 

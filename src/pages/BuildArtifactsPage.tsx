@@ -33,22 +33,20 @@ export function BuildArtifactsPage() {
   const [state, setState] = useState<ManifestState>({ status: "loading" });
 
   const load = useCallback(() => {
-    let active = true;
+    const controller = new AbortController();
     setState({ status: "loading" });
-    getBuildManifest(buildId)
+    getBuildManifest(buildId, controller.signal)
       .then((manifest) => {
-        if (active) setState({ status: "loaded", manifest });
+        if (!controller.signal.aborted) setState({ status: "loaded", manifest });
       })
       .catch((cause: unknown) => {
-        if (active)
-          setState({
-            status: "error",
-            error: cause instanceof Error ? cause.message : "manifest를 불러오지 못했습니다.",
-          });
+        if (controller.signal.aborted) return;
+        setState({
+          status: "error",
+          error: cause instanceof Error ? cause.message : "manifest를 불러오지 못했습니다.",
+        });
       });
-    return () => {
-      active = false;
-    };
+    return () => controller.abort();
   }, [buildId]);
 
   useEffect(() => load(), [load]);

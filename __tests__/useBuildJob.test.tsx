@@ -70,11 +70,22 @@ describe("useBuildJob (#39)", () => {
     expect(result.current.run?.id).toBe("mock-run");
   });
 
-  it("marks the job failed when the build errors (real mode, 502)", async () => {
+  it("surfaces the per-source reason from outcomes[].error on a real 502 (#75)", async () => {
     vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    // 실제 builder /build 502 와이어 형태: 최상위 error 없음, outcomes[].error에 사유.
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(mockResponse(502, { error: "upstream source failed" })),
+      vi.fn().mockResolvedValue(
+        mockResponse(502, {
+          status: "failed",
+          run_id: "run-fail",
+          manifest: "",
+          api_version: "1.0.0",
+          outcomes: [
+            { source_key: "datago:air", status: "failed", error: "upstream source failed" },
+          ],
+        }),
+      ),
     );
 
     const { result } = renderHook(() => useBuildJob());
@@ -83,6 +94,28 @@ describe("useBuildJob (#39)", () => {
     });
 
     expect(result.current.status).toBe("failed");
-    expect(result.current.error).toContain("upstream source failed");
+    expect(result.current.error).toBe("upstream source failed");
+  });
+
+  it("prefers a top-level error over outcomes when present (backward compat, #75)", async () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        mockResponse(502, {
+          status: "failed",
+          error: "top-level build error",
+          outcomes: [{ source_key: "datago:air", status: "failed", error: "ignored reason" }],
+        }),
+      ),
+    );
+
+    const { result } = renderHook(() => useBuildJob());
+    await act(async () => {
+      await result.current.start(spec);
+    });
+
+    expect(result.current.status).toBe("failed");
+    expect(result.current.error).toBe("top-level build error");
   });
 });

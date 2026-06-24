@@ -96,12 +96,19 @@ export function SettingsPage() {
           ) : connection.status === "checking" ? (
             <p className="text-zinc-600 dark:text-zinc-300">Builder 연결을 확인하는 중입니다…</p>
           ) : connection.status === "ok" ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge status="succeeded" />
-              <span className="text-zinc-700 dark:text-zinc-200">
-                Builder API 버전 {connection.apiVersion}
-                {connection.apiVersion !== API_CONTRACT_VERSION ? " (버전 불일치 주의)" : ""}
-              </span>
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge status="succeeded" />
+                <span className="text-zinc-700 dark:text-zinc-200">
+                  Builder API 버전 {connection.apiVersion}
+                </span>
+              </div>
+              {connection.apiVersion !== API_CONTRACT_VERSION ? (
+                <p role="alert" className="text-sm text-amber-700 dark:text-amber-400">
+                  계약 버전 불일치 주의: Builder {connection.apiVersion} ≠ Studio{" "}
+                  {API_CONTRACT_VERSION}. 일부 응답 형태가 호환되지 않을 수 있습니다.
+                </p>
+              ) : null}
             </div>
           ) : connection.status === "error" ? (
             <div className="flex flex-wrap items-center gap-2">
