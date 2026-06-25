@@ -44,4 +44,23 @@ describe("New Build wizard — run build (#39 wiring)", () => {
 
     expect(await screen.findByText(/빌드 성공/)).toBeInTheDocument();
   });
+
+  it("resets validation so an edited (unvalidated) spec cannot be run (#72)", async () => {
+    await goToReviewAndValidate();
+    expect(screen.getByRole("button", { name: "빌드 실행" })).toBeEnabled();
+
+    // 검증 이후 출력 형식 단계로 돌아가 입력을 수정한다.
+    fireEvent.click(screen.getByRole("button", { name: "이전" }));
+    await screen.findByRole("heading", { name: "출력 형식" });
+    fireEvent.change(screen.getByLabelText(/출력 경로/), {
+      target: { value: "artifacts/builds/edited" },
+    });
+
+    // 검증·실행 단계로 다시 이동하면 검증 결과가 초기화되어 실행이 막혀야 한다.
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    await screen.findByRole("heading", { name: "검증·실행" });
+
+    expect(screen.queryByText("검증을 통과했습니다. 빌드를 실행할 수 있습니다.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "빌드 실행" })).toBeDisabled();
+  });
 });

@@ -43,9 +43,20 @@ const STATUS_META: Record<StatusValue, StatusMeta> = {
   published: { label: "게시됨", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" },
 };
 
+/** 알 수 없는 상태값에 사용할 중립 배지 스타일 */
+const FALLBACK_META: StatusMeta = {
+  label: "",
+  className: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
+};
+
 export interface StatusBadgeProps {
-  /** 표시할 상태값 */
-  status: StatusValue;
+  /**
+   * 표시할 상태값.
+   *
+   * 알려진 `StatusValue`면 해당 라벨/색상으로, 그 외 임의 문자열이면 원본 라벨을 가진
+   * 중립 배지로 안전하게 표시한다(매핑 누락 시 크래시 방지).
+   */
+  status: StatusValue | (string & {});
   /** 추가 className */
   className?: string;
 }
@@ -53,11 +64,14 @@ export interface StatusBadgeProps {
 /**
  * 상태값에 대응하는 한국어 라벨과 색상을 가진 배지를 렌더링한다.
  *
+ * 알 수 없는 상태값은 원본 문자열을 라벨로 사용하는 중립 배지로 폴백한다.
+ *
  * @param props - status와 추가 className.
  * @returns 상태 배지 엘리먼트.
  */
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const meta = STATUS_META[status];
+  const known = STATUS_META[status as StatusValue] as StatusMeta | undefined;
+  const meta = known ?? { ...FALLBACK_META, label: status };
   const isLive = status === "running" || status === "publishing";
 
   return (
