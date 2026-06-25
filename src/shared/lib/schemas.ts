@@ -40,6 +40,26 @@ export const buildSpecSchema = z.object({
   metadata: recordSchema,
 });
 
+/**
+ * New Build Wizard 폼 입력값(localStorage 초안으로 저장되는 실제 형태)을 검증하는 스키마.
+ *
+ * 저장된 초안(#84)을 복원할 때 형태가 깨졌거나 오래된 버전인 경우를 안전하게 걸러내기 위해
+ * 사용한다. 빌드 실행용 스펙(`buildSpecSchema`)이 아니라 폼 입력 형태를 기술한다.
+ */
+export const buildFormValuesSchema = z.object({
+  datasetId: z.string(),
+  title: z.string(),
+  description: z.string(),
+  provider: z.string(),
+  sourceDataset: z.string(),
+  sourceParams: z.string(),
+  outputPath: z.string(),
+  exportFormats: z.array(exportFormatSchema),
+});
+
+/** `buildFormValuesSchema`를 통과한 폼 입력 타입 추론 결과 */
+export type BuildFormValuesInput = z.infer<typeof buildFormValuesSchema>;
+
 /** `buildSpecSchema`를 통과한 입력 타입 추론 결과 */
 export type BuildSpecInput = z.infer<typeof buildSpecSchema>;
 /** `exportTargetSchema`를 통과한 입력 타입 추론 결과 */

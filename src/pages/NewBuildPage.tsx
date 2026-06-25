@@ -13,7 +13,7 @@ import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spe
 import { previewBuild } from "@/features/preview/api";
 import { useBuildJob } from "@/features/runs/useBuildJob";
 import { validateSpec } from "@/features/validation/api";
-import { buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
+import { buildFormValuesSchema, buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
 import type { BuildSpec } from "@/shared/lib/types";
 import {
   Button,
@@ -287,7 +287,8 @@ export function NewBuildPage() {
 
   // 저장된 초안을 복원해 기본 정보 단계로 이동한다.
   function restoreDraft() {
-    const saved = loadDraft<BuildFormValues>();
+    // 저장된 초안을 버전·스키마로 검증해 복원한다. 버전 불일치/손상 시 null을 받는다(#84).
+    const saved = loadDraft<BuildFormValues>(buildFormValuesSchema);
     if (!saved) {
       // 깨진 값이 남아 배너가 반복되지 않도록 정리하고, 이동/숨김은 하지 않는다.
       clearDraft();
