@@ -4,6 +4,7 @@
  * 공통 `Layout` 아래에 홈, 빌드 초안, 검증, 미리보기, 설정 같은 작업실 화면을 배치한다.
  */
 import { createBrowserRouter } from "react-router-dom";
+import { RouteErrorBoundary } from "@/app/ErrorBoundary";
 import { Layout } from "@/app/Layout";
 import { ArtifactsPage } from "@/pages/ArtifactsPage";
 import { BuildArtifactsPage } from "@/pages/BuildArtifactsPage";
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
   {
     path: "/",
     element: <Layout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       {
         index: true,
