@@ -37,6 +37,11 @@ describe("StatusBadge", () => {
     render(<StatusBadge status="running" />);
     expect(screen.getByText("실행 중")).toBeInTheDocument();
   });
+
+  it("falls back to a neutral badge showing the raw label for an unknown status (#70)", () => {
+    render(<StatusBadge status="publish_failed" />);
+    expect(screen.getByText("publish_failed")).toBeInTheDocument();
+  });
 });
 
 describe("Stepper", () => {

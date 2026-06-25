@@ -6,7 +6,7 @@
  * 각 단계 진행 전에 해당 단계 필드만 검증한다. Preview/Validate는 독립 페이지가 아니라
  * 마법사 내부 단계로 통합되어 있다(§5.3/§5.4).
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useParams } from "react-router-dom";
 import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
@@ -244,6 +244,25 @@ export function NewBuildPage() {
   const values = watch();
   const specPreview = useMemo(() => toBuildSpec(values), [values]);
 
+  // 마지막으로 검증한 폼 입력의 스냅샷. 검증 이후 입력이 바뀌면 검증 결과를 초기화하기 위해
+  // 비교 기준으로 사용한다(stale validation 방지, #72).
+  const validatedSnapshotRef = useRef<string | null>(null);
+
+  // 검증을 통과/완료한 뒤 watch된 폼 값이 바뀌면, 검증되지 않은(수정된) 스펙이 그대로
+  // 실행되지 않도록 검증 상태를 idle/invalid로 되돌린다(#72).
+  useEffect(() => {
+    if (validation.status === "idle") return;
+    const current = JSON.stringify(values);
+    if (validatedSnapshotRef.current === null) {
+      validatedSnapshotRef.current = current;
+      return;
+    }
+    if (current !== validatedSnapshotRef.current) {
+      validatedSnapshotRef.current = null;
+      setValidation({ status: "idle", isValid: false, errors: [] });
+    }
+  }, [values, validation.status]);
+
   const draftStatus = validation.isValid ? "validated" : isDirty ? "dirty" : "new";
 
   // 템플릿을 선택하면 폼을 해당 값으로 채우고 기본 정보 단계로 넘어간다 (#11).
@@ -252,6 +271,7 @@ export function NewBuildPage() {
     reset(template.values);
     setPreview({ status: "idle", rows: [], schema: {} });
     setValidation({ status: "idle", isValid: false, errors: [] });
+    validatedSnapshotRef.current = null;
     setStep(1);
   }
 
@@ -317,6 +337,9 @@ export function NewBuildPage() {
   }
 
   async function runValidate() {
+    // 검증 대상 입력의 스냅샷을 기록한다. 이후 폼이 바뀌면 effect가 이를 감지해 검증 상태를
+    // 초기화한다(#72).
+    validatedSnapshotRef.current = JSON.stringify(getValues());
     const next = toBuildSpec(getValues());
     if (next.error || !next.spec) {
       setValidation({ status: "validated", isValid: false, errors: [next.error ?? "스펙 오류"] });
