@@ -5,7 +5,7 @@
  * 제공한다. Builder의 /build가 동기식인 현재는 단일 호출을 감싸지만, Builder에 job
  * 제출/폴링 엔드포인트가 생기면 이 훅 내부만 폴링으로 확장하면 된다(호출부 변경 없음).
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { executeBuild } from "@/features/runs/api";
 import { ApiError, extractErrorMessage } from "@/shared/lib/builderApi";
 import type { BuildRun, BuildSpec } from "@/shared/lib/types";
@@ -61,6 +61,9 @@ export function useBuildJob(): BuildJob {
           ? (extractErrorMessage(cause.details) ?? cause.message)
           : "빌드 실행에 실패했습니다.";
       setError(message);
+    } finally {
+      // 실행이 끝나면(성공/실패/취소) 더 이상 유효하지 않은 컨트롤러 참조를 정리한다.
+      if (controllerRef.current === controller) controllerRef.current = null;
     }
   }, []);
 
@@ -68,6 +71,9 @@ export function useBuildJob(): BuildJob {
     controllerRef.current?.abort();
     setStatus((current) => (current === "running" ? "cancelled" : current));
   }, []);
+
+  // 언마운트 시 진행 중인 실행을 중단해 unmount 이후 setState를 방지한다(#73).
+  useEffect(() => () => controllerRef.current?.abort(), []);
 
   return { status, run, error, start, cancel };
 }

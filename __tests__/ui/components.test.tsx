@@ -61,6 +61,11 @@ describe("Stepper", () => {
     render(<Stepper steps={steps} current={1} />);
     expect(screen.getByText("템플릿").closest("li")).not.toHaveAttribute("aria-current");
   });
+
+  it("clamps an out-of-range current so aria-current stays on the last step (#74)", () => {
+    render(<Stepper steps={steps} current={5} />);
+    expect(screen.getByText("검증").closest("li")).toHaveAttribute("aria-current", "step");
+  });
 });
 
 describe("FormField", () => {
