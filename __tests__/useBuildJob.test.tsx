@@ -118,4 +118,29 @@ describe("useBuildJob (#39)", () => {
     expect(result.current.status).toBe("failed");
     expect(result.current.error).toBe("top-level build error");
   });
+
+  it("aborts an in-flight build on unmount (#73)", async () => {
+    // executeBuild를 영원히 보류되는(pending) 호출로 대체하고, 전달된 AbortSignal을 캡처한다.
+    let capturedSignal: AbortSignal | undefined;
+    const executeBuildMock = vi
+      .spyOn(await import("@/features/runs/api"), "executeBuild")
+      .mockImplementation(
+        (_spec, signal) =>
+          new Promise(() => {
+            capturedSignal = signal;
+          }),
+      );
+
+    const { result, unmount } = renderHook(() => useBuildJob());
+    act(() => {
+      void result.current.start(spec);
+    });
+
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
+    executeBuildMock.mockRestore();
+  });
 });

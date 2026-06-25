@@ -436,7 +436,6 @@ export function NewBuildPage() {
               >
                 {(field) => (
                   <Textarea
-                    className="font-sans"
                     {...field}
                     {...register("description", { required: "설명을 입력해주세요." })}
                   />
@@ -489,6 +488,7 @@ export function NewBuildPage() {
               >
                 {(field) => (
                   <Textarea
+                    mono
                     rows={8}
                     {...field}
                     {...register("sourceParams", {

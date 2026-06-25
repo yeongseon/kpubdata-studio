@@ -56,11 +56,14 @@ export function Stepper({
   onStepClick,
   className,
 }: StepperProps) {
+  // current가 범위를 벗어나면(예: 마지막 단계 이후의 terminal 값) 마지막 단계로 고정해
+  // 어떤 단계도 current로 표시되지 않아 aria-current가 사라지는 문제를 막는다(#74).
+  const clampedCurrent = steps.length === 0 ? 0 : Math.min(Math.max(current, 0), steps.length - 1);
   return (
     <ol className={cn("flex w-full items-center gap-2 overflow-x-auto", className)}>
       {steps.map((step, index) => {
-        const state = resolveState(index, current, errorSteps);
-        const clickable = Boolean(onStepClick) && index < current;
+        const state = resolveState(index, clampedCurrent, errorSteps);
+        const clickable = Boolean(onStepClick) && index < clampedCurrent;
         const circle = (
           <span
             className={cn(
