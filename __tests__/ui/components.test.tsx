@@ -37,6 +37,11 @@ describe("StatusBadge", () => {
     render(<StatusBadge status="running" />);
     expect(screen.getByText("실행 중")).toBeInTheDocument();
   });
+
+  it("falls back to a neutral badge showing the raw label for an unknown status (#70)", () => {
+    render(<StatusBadge status="publish_failed" />);
+    expect(screen.getByText("publish_failed")).toBeInTheDocument();
+  });
 });
 
 describe("Stepper", () => {
@@ -55,6 +60,11 @@ describe("Stepper", () => {
   it("does not mark non-current steps", () => {
     render(<Stepper steps={steps} current={1} />);
     expect(screen.getByText("템플릿").closest("li")).not.toHaveAttribute("aria-current");
+  });
+
+  it("clamps an out-of-range current so aria-current stays on the last step (#74)", () => {
+    render(<Stepper steps={steps} current={5} />);
+    expect(screen.getByText("검증").closest("li")).toHaveAttribute("aria-current", "step");
   });
 });
 

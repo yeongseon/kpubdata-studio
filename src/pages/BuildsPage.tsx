@@ -4,24 +4,36 @@
  * 전체 빌드 실행 이력을 표로 보여주고, 제목 검색과 시작 시각 정렬을 제공한다(제안 §5.6/§12).
  * 현재 목록은 mock이며 #29 Builder API 연동 시 실제 데이터로 교체된다.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { listBuilds } from "@/features/runs/api";
 import type { BuildRun } from "@/shared/lib/types";
 import {
   Button,
   Card,
   EmptyState,
+  ErrorState,
   LinkButton,
   PageHeader,
   StatusBadge,
   TextInput,
-  type StatusValue,
 } from "@/shared/ui";
+
+interface BuildsState {
+  status: "loading" | "loaded" | "error";
+  runs?: BuildRun[];
+  error?: string;
+}
 
 function formatTime(iso?: string): string {
   if (!iso) return "—";
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("ko-KR");
+}
+
+/** ISO 시작 시각을 timestamp로 정렬하기 위한 안전한 변환(파싱 실패 시 0). */
+function startedAtMillis(iso: string): number {
+  const ms = new Date(iso).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
 }
 
 /**
@@ -30,27 +42,39 @@ function formatTime(iso?: string): string {
  * @returns 빌드 목록 화면.
  */
 export function BuildsPage() {
-  const [runs, setRuns] = useState<BuildRun[] | null>(null);
+  const [state, setState] = useState<BuildsState>({ status: "loading" });
   const [query, setQuery] = useState("");
   const [newestFirst, setNewestFirst] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let active = true;
-    listBuilds().then((result) => {
-      if (active) setRuns(result);
-    });
+    setState({ status: "loading" });
+    listBuilds()
+      .then((result) => {
+        if (active) setState({ status: "loaded", runs: result });
+      })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setState({
+          status: "error",
+          error: cause instanceof Error ? cause.message : "빌드 목록을 불러오지 못했습니다.",
+        });
+      });
     return () => {
       active = false;
     };
   }, []);
 
+  useEffect(() => load(), [load]);
+
+  const runs = state.runs;
   const visible = useMemo(() => {
     if (!runs) return [];
     const filtered = runs.filter((run) =>
       run.spec.title.toLowerCase().includes(query.trim().toLowerCase()),
     );
     return [...filtered].sort((a, b) => {
-      const diff = a.startedAt.localeCompare(b.startedAt);
+      const diff = startedAtMillis(a.startedAt) - startedAtMillis(b.startedAt);
       return newestFirst ? -diff : diff;
     });
   }, [runs, query, newestFirst]);
@@ -89,10 +113,16 @@ export function BuildsPage() {
           <span>액션</span>
         </div>
 
-        {runs === null ? (
+        {state.status === "loading" ? (
           <div className="px-6 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
             불러오는 중입니다…
           </div>
+        ) : state.status === "error" ? (
+          <ErrorState
+            title="빌드 목록을 불러오지 못했습니다"
+            message={state.error}
+            onRetry={() => load()}
+          />
         ) : visible.length === 0 ? (
           <EmptyState
             title={query ? "검색 결과가 없습니다" : "아직 생성된 빌드가 없습니다"}
@@ -113,7 +143,7 @@ export function BuildsPage() {
               >
                 <span className="font-medium">{run.spec.title}</span>
                 <span>
-                  <StatusBadge status={run.status as StatusValue} />
+                  <StatusBadge status={run.status} />
                 </span>
                 <span className="text-zinc-600 dark:text-zinc-300">{formatTime(run.startedAt)}</span>
                 <span>
