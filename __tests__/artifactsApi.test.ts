@@ -35,14 +35,15 @@ describe("getBuildManifest (#75)", () => {
     const manifest = await getBuildManifest("run-99");
 
     expect(String(fetchMock.mock.calls[0][0])).toContain("/artifacts/run-99");
-    expect(manifest.buildId).toBe("run-99");
-    expect(manifest.artifactPaths).toEqual([
+    expect(manifest.build_id).toBe("run-99");
+    expect(manifest.outputs).toEqual([
       "artifacts/builds/run-99/data.jsonl",
       "artifacts/builds/run-99/README.md",
     ]);
     // /artifacts가 제공하지 않는 필드는 안전한 기본값(페이지가 깨지지 않음).
-    expect(manifest.recordCount).toBe(0);
-    expect(manifest.sources).toEqual([]);
+    expect(manifest.row_counts).toEqual({});
+    expect(manifest.provenance).toEqual([]);
+    expect(manifest.inputs_fingerprint).toBeNull();
   });
 
   it("returns the mock manifest without network in mock mode", async () => {
@@ -52,7 +53,8 @@ describe("getBuildManifest (#75)", () => {
     const manifest = await getBuildManifest("mock-build");
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(manifest.buildId).toBe("mock-build");
-    expect(manifest.recordCount).toBeGreaterThan(0);
+    expect(manifest.build_id).toBe("mock-build");
+    const total = Object.values(manifest.row_counts).reduce((sum, n) => sum + n, 0);
+    expect(total).toBeGreaterThan(0);
   });
 });
