@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/*
+ * Tailwind `dark:` 변형을 사용자가 선택한 테마(`<html data-theme>`)에 연동한다 (#96).
+ * 기본값(prefers-color-scheme)만으로는 SettingsPage에서 고른 light/dark가 `dark:` 유틸리티에
+ * 반영되지 않으므로, 명시적 `data-theme="dark"` 또는 (속성 미설정 + OS 다크)일 때 활성화한다.
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme]), :root:not([data-theme]) *) {
+      @slot;
+    }
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
