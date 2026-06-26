@@ -53,8 +53,12 @@ export function BuildArtifactsPage() {
 
   const manifest = state.manifest;
   const formats = manifest
-    ? [...new Set(manifest.artifactPaths.map((path) => describeFile(path).format))]
+    ? [...new Set(manifest.outputs.map((path) => describeFile(path).format))]
     : [];
+  // Builder는 소스별 row_counts(dict)를 주므로 UI 요약에서는 합계로 보여준다.
+  const totalRecords = manifest
+    ? Object.values(manifest.row_counts).reduce((sum, count) => sum + count, 0)
+    : 0;
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
@@ -91,7 +95,7 @@ export function BuildArtifactsPage() {
               <div>
                 <dt className="text-zinc-500 dark:text-zinc-400">레코드 수</dt>
                 <dd className="text-zinc-800 dark:text-zinc-100">
-                  {manifest.recordCount.toLocaleString("ko-KR")}
+                  {totalRecords.toLocaleString("ko-KR")}
                 </dd>
               </div>
               <div>
@@ -101,12 +105,12 @@ export function BuildArtifactsPage() {
               <div>
                 <dt className="text-zinc-500 dark:text-zinc-400">소스</dt>
                 <dd className="text-zinc-800 dark:text-zinc-100">
-                  {manifest.sources.map((s) => `${s.provider}.${s.dataset}`).join(", ")}
+                  {manifest.provenance.map((p) => `${p.provider}.${p.dataset}`).join(", ")}
                 </dd>
               </div>
               <div>
                 <dt className="text-zinc-500 dark:text-zinc-400">빌드 ID</dt>
-                <dd className="break-all text-zinc-800 dark:text-zinc-100">{manifest.buildId}</dd>
+                <dd className="break-all text-zinc-800 dark:text-zinc-100">{manifest.build_id}</dd>
               </div>
             </dl>
           </Card>
@@ -117,11 +121,11 @@ export function BuildArtifactsPage() {
               <span>형식</span>
               <span>액션</span>
             </div>
-            {manifest.artifactPaths.length === 0 ? (
+            {manifest.outputs.length === 0 ? (
               <EmptyState title="생성된 파일이 없습니다" />
             ) : (
               <ul>
-                {manifest.artifactPaths.map((path) => {
+                {manifest.outputs.map((path) => {
                   const { name, format } = describeFile(path);
                   return (
                     <li
