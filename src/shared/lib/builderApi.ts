@@ -39,28 +39,119 @@ interface RequestOptions {
   method?: "GET" | "POST";
   body?: unknown;
   signal?: AbortSignal;
+  /** 자동 타임아웃(ms). 미지정 시 DEFAULT_TIMEOUT_MS. 0 이하이면 타임아웃 비활성화. */
+  timeoutMs?: number;
+  /** 네트워크 오류·5xx 발생 시 추가 재시도 횟수(지수 백오프). 미지정 시 DEFAULT_RETRIES. */
+  retries?: number;
+}
+
+/** 자동 타임아웃 기본값(ms). Builder /build는 외부 API를 호출해 느릴 수 있어 넉넉히 잡는다. */
+export const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** 네트워크 오류·5xx에 대한 기본 재시도 횟수(최초 시도 외 추가 횟수). */
+export const DEFAULT_RETRIES = 2;
+
+/** 타임아웃으로 요청이 중단됐는지 식별하는 ApiError 상태값. */
+const TIMEOUT_STATUS = 408;
+
+/** 재시도 사이 지수 백오프 지연(ms)을 만든다. */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 사용자 취소 signal과 타임아웃 signal을 결합해, 둘 중 먼저 발화하는 쪽이 요청을 중단하게 한다.
+ *
+ * @param signal - 호출자가 넘긴 취소 signal(선택).
+ * @param timeoutMs - 자동 타임아웃(ms). 0 이하이면 타임아웃 없이 signal만 사용한다.
+ * @returns 결합된 signal과, 타임아웃 타이머를 해제하는 cleanup 함수.
+ */
+function withTimeout(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal | undefined; cleanup: () => void } {
+  if (timeoutMs <= 0) return { signal, cleanup: () => {} };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException("Timeout", "TimeoutError")), timeoutMs);
+  const cleanup = () => clearTimeout(timer);
+
+  if (!signal) return { signal: controller.signal, cleanup };
+  if (signal.aborted) {
+    cleanup();
+    return { signal, cleanup: () => {} };
+  }
+  // 사용자 취소가 발생하면 타임아웃 컨트롤러도 함께 중단해 fetch를 즉시 끊는다.
+  signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
+  return { signal: controller.signal, cleanup };
+}
+
+/** 타임아웃 때문에 발생한 abort인지 판별한다(사용자 취소와 구분). */
+function isTimeoutAbort(cause: unknown): boolean {
+  return cause instanceof DOMException && cause.name === "TimeoutError";
 }
 
 /**
  * Builder API에 JSON 요청을 보내고 JSON 응답을 파싱한다.
  *
+ * 네트워크 일시 장애와 5xx에는 지수 백오프로 제한 재시도하고(#94), 응답이 없을 경우
+ * UI가 무한 대기에 빠지지 않도록 자동 타임아웃을 건다(#94). 호출자 취소 signal은 그대로 존중한다.
+ *
  * @param path - 선행 슬래시를 포함한 엔드포인트 경로(예: "/version").
- * @param options - 메서드/바디/취소 시그널.
+ * @param options - 메서드/바디/취소 시그널/타임아웃/재시도.
  * @returns 파싱된 응답 본문.
- * @throws ApiError 응답이 2xx가 아니거나 네트워크/파싱 오류가 발생한 경우.
+ * @throws ApiError 응답이 2xx가 아니거나 네트워크/파싱/타임아웃 오류가 발생한 경우.
  */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, signal } = options;
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      method,
-      signal,
-      headers: { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  } catch (cause) {
-    throw new ApiError(0, "Builder API에 연결하지 못했습니다.", cause);
+  const {
+    method = "GET",
+    body,
+    signal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    retries = DEFAULT_RETRIES,
+  } = options;
+
+  let response: Response | undefined;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const { signal: combined, cleanup } = withTimeout(signal, timeoutMs);
+    try {
+      response = await fetch(`${API_BASE}${path}`, {
+        method,
+        signal: combined,
+        headers: { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (cause) {
+      cleanup();
+      // 호출자가 명시적으로 취소한 경우엔 재시도하지 않고 그대로 전파한다.
+      if (signal?.aborted) throw cause;
+      if (isTimeoutAbort(cause)) {
+        if (attempt < retries) {
+          await delay(500 * 2 ** attempt);
+          continue;
+        }
+        throw new ApiError(TIMEOUT_STATUS, "Builder API 응답이 시간 내에 오지 않았습니다.", cause);
+      }
+      // 네트워크 오류: 남은 재시도가 있으면 백오프 후 다시 시도한다.
+      if (attempt < retries) {
+        await delay(500 * 2 ** attempt);
+        continue;
+      }
+      throw new ApiError(0, "Builder API에 연결하지 못했습니다.", cause);
+    }
+    cleanup();
+
+    // 5xx는 일시 장애일 수 있어 제한 재시도한다. 4xx는 즉시 처리(재시도 무의미).
+    if (response.status >= 500 && attempt < retries) {
+      await delay(500 * 2 ** attempt);
+      response = undefined;
+      continue;
+    }
+    break;
+  }
+
+  if (!response) {
+    throw new ApiError(0, "Builder API에 연결하지 못했습니다.");
   }
 
   const text = await response.text();
@@ -147,11 +238,32 @@ export interface ArtifactsResponse {
   files: string[];
 }
 
-export interface PreviewResponse {
+/** /preview 응답의 소스별 컬럼 스키마 항목(service app.py 기준). */
+export interface PreviewColumn {
+  name: string;
+  dtype: string;
+  nullable: boolean;
+  unique_count: number;
+}
+
+/** /preview 응답의 소스별 미리보기 항목(service app.py 기준). */
+export interface PreviewSource {
+  source_key: string;
   status: string;
-  /** 미리보기 샘플 레코드(소스별, Builder 구현에 따라 형태가 달라질 수 있어 느슨하게 둔다). */
-  preview: unknown;
-  api_version: string;
+  error: string | null;
+  schema: PreviewColumn[];
+  sample: Record<string, unknown>[];
+  total_rows: number;
+}
+
+/**
+ * POST /preview 응답 와이어 형태(builder service app.py 기준).
+ *
+ * `{ dataset_id, previews: [...] }` — 소스별로 스키마와 샘플 행을 담는다.
+ */
+export interface PreviewResponse {
+  dataset_id: string;
+  previews: PreviewSource[];
 }
 
 /** Builder service 엔드포인트를 감싼 클라이언트. */
