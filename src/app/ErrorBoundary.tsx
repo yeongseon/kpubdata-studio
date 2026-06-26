@@ -81,3 +81,74 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return this.props.children;
   }
 }
+
+/**
+ * 단일 feature 영역에서만 보여줄 한국어 폴백 카드 (#97).
+ *
+ * 전역 폴백과 달리 화면 전체를 차지하지 않으며, 셸(사이드바/헤더)을 유지한 채 해당 feature
+ * 영역만 오류 UI로 대체한다. 새로고침 대신 영역만 다시 그리는 ‘다시 시도’를 제공한다.
+ *
+ * @param feature - 오류가 난 기능 이름(예: "미리보기").
+ * @param onRetry - 경계 상태를 초기화해 하위 트리를 다시 렌더하는 콜백.
+ * @returns 영역 한정 오류 안내 UI.
+ */
+function FeatureErrorFallback({ feature, onRetry }: { feature: string; onRetry: () => void }) {
+  return (
+    <main
+      role="alert"
+      className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center"
+    >
+      <p className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+        {feature} 화면에 문제가 발생했습니다
+      </p>
+      <p className="max-w-md text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+        이 영역만 일시적으로 표시할 수 없습니다. 사이드바와 다른 메뉴는 정상적으로 사용할 수 있어요.
+        잠시 후 다시 시도해주세요.
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="inline-flex items-center justify-center rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+      >
+        다시 시도
+      </button>
+    </main>
+  );
+}
+
+interface FeatureErrorBoundaryProps {
+  /** 폴백 메시지에 노출할 기능 이름 */
+  feature: string;
+  /** 보호할 feature 하위 트리 */
+  children: ReactNode;
+}
+
+/**
+ * 개별 feature(라우트 세그먼트)의 렌더 예외를 잡아 해당 영역만 폴백으로 대체하는 경계 (#97).
+ *
+ * 전역 `ErrorBoundary`까지 버블업해 앱 전체가 빈 화면이 되는 것을 막아, 한 기능의 오류가
+ * 나머지 셸(내비게이션/헤더)에 영향을 주지 않게 한다. ‘다시 시도’ 시 경계 상태만 초기화한다.
+ */
+export class FeatureErrorBoundary extends Component<
+  FeatureErrorBoundaryProps,
+  ErrorBoundaryState
+> {
+  state: ErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error(`Feature error (${this.props.feature}):`, error, info.componentStack);
+  }
+
+  private readonly handleRetry = () => this.setState({ hasError: false });
+
+  render(): ReactNode {
+    if (this.state.hasError) {
+      return <FeatureErrorFallback feature={this.props.feature} onRetry={this.handleRetry} />;
+    }
+    return this.props.children;
+  }
+}
