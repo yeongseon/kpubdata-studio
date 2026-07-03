@@ -34,10 +34,16 @@ const exportFormats = exportFormatSchema.options;
 // Provider는 직접 입력 대신 선택형으로 제공한다(제안 §5.2.2). dataset 자동 로딩은
 // #29 Builder API 연동 시 추가한다.
 const PROVIDER_OPTIONS = [
-  { value: "datago", label: "data.go.kr (공공데이터포털)" },
-  { value: "kma", label: "기상청 (KMA)" },
+  { value: "bok", label: "한국은행 ECOS (BOK)" },
+  { value: "datago", label: "공공데이터포털 (data.go.kr)" },
+  { value: "kosis", label: "통계청 KOSIS" },
+  { value: "krx", label: "한국거래소 (KRX)" },
+  { value: "law", label: "국가법령정보센터" },
+  { value: "localdata", label: "지역정보포털 (LocalData)" },
+  { value: "lofin", label: "지방재정365 (LOFIN)" },
+  { value: "semas", label: "소상공인시장진흥공단 (SEMAS)" },
   { value: "seoul", label: "서울 열린데이터광장" },
-  { value: "kosis", label: "통계청 (KOSIS)" },
+  { value: "sgis", label: "통계지리정보서비스 (SGIS)" },
 ] as const;
 
 interface BuildFormValues {
@@ -93,17 +99,17 @@ const TEMPLATES: BuildTemplate[] = [
     },
   },
   {
-    id: "weather",
-    name: "기상 관측",
-    description: "기상청 일별 관측 데이터로 시작합니다.",
+    id: "interest_rate",
+    name: "기준금리 추이",
+    description: "한국은행 ECOS 기준금리 시계열 데이터로 시작합니다.",
     values: {
-      datasetId: "kma-daily-observations",
-      title: "기상청 일별 관측",
-      description: "기상청 일별 지상 관측 데이터셋",
-      provider: "kma",
-      sourceDataset: "daily-observations",
-      sourceParams: '{"stn": "108"}',
-      outputPath: "artifacts/builds/kma-daily",
+      datasetId: "bok-interest-rate",
+      title: "기준금리 추이",
+      description: "한국은행 ECOS 기준금리 시계열 데이터셋",
+      provider: "bok",
+      sourceDataset: "interest-rate",
+      sourceParams: '{"stat_code": "722Y001"}',
+      outputPath: "artifacts/builds/bok-interest-rate",
       exportFormats: ["jsonl", "parquet"],
     },
   },
@@ -554,7 +560,7 @@ export function NewBuildPage() {
               {preview.status === "loaded" && preview.rows.length === 0 ? (
                 <EmptyState
                   title="조건에 맞는 데이터가 없습니다"
-                  description="날짜 범위나 지역 조건을 조정해보세요. (현재 Preview API는 스텁이라 빈 결과를 반환합니다.)"
+                  description="날짜 범위나 지역 조건을 조정한 뒤 '미리보기 새로고침'을 눌러 다시 시도하세요."
                 />
               ) : null}
               {preview.status === "loaded" && preview.rows.length > 0 ? (
