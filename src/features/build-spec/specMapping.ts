@@ -16,7 +16,7 @@ import type { BuildSpec, ExportTarget } from "@/shared/lib/types";
 interface BuilderExport {
   kind: string;
   output_path: string;
-  options?: Record<string, string>;
+  options?: Record<string, unknown>;
 }
 
 /** Builder가 기대하는 BuildSpec(snake_case). */
@@ -43,7 +43,7 @@ const FORMAT_EXTENSION: Record<ExportTarget["format"], string> = {
 
 /** export별 output_path를 파생한다. huggingface는 디렉터리, 그 외는 파일 경로. */
 function deriveOutputPath(spec: BuildSpec, target: ExportTarget): string {
-  const base = spec.metadata.outputPath || `artifacts/builds/${spec.datasetId}`;
+  const base = spec.metadata["outputPath"] ?? `artifacts/builds/${spec.datasetId}`;
   if (target.format === "huggingface") return target.options?.outputPath ?? base;
   return `${base}/data.${FORMAT_EXTENSION[target.format]}`;
 }
