@@ -52,7 +52,7 @@ export interface ExportTarget {
   /** 결과물을 어떤 형식으로 내보낼지 결정하는 식별자 */
   format: "markdown" | "jsonl" | "parquet" | "huggingface";
   /** 특정 export 형식에만 필요한 추가 옵션 집합 */
-  options?: Record<string, string>;
+  options?: Record<string, unknown>;
 }
 
 /** manifest 스키마 요약의 단일 컬럼 정보(Builder schema_summary.py FieldSummary). */

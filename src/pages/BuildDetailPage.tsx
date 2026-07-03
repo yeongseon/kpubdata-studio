@@ -5,7 +5,7 @@
  * 실제 데이터는 #29 Builder API 연동 시 useBuild(buildId)로 채운다.
  */
 import { Link, useParams } from "react-router-dom";
-import { Card, LinkButton, PageHeader, StatusBadge } from "@/shared/ui";
+import { Card, LinkButton, PageHeader, Skeleton } from "@/shared/ui";
 
 const SUBPAGES = [
   { segment: "edit", label: "편집", description: "스펙 수정" },
@@ -33,7 +33,7 @@ export function BuildDetailPage() {
 
       <Card className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-zinc-600 dark:text-zinc-300">현재 상태</span>
-        <StatusBadge status="draft" />
+        <Skeleton className="h-5 w-16 rounded-full" />
         <span className="text-sm text-zinc-500 dark:text-zinc-400">
           Builder API 연동(#29) 후 실제 상태가 표시됩니다.
         </span>

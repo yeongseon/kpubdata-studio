@@ -16,7 +16,7 @@ import type { BuildSpec, ExportTarget } from "@/shared/lib/types";
 interface BuilderExport {
   kind: string;
   output_path: string;
-  options?: Record<string, string>;
+  options?: Record<string, unknown>;
 }
 
 /** Builder가 기대하는 BuildSpec(snake_case). */
@@ -43,8 +43,11 @@ const FORMAT_EXTENSION: Record<ExportTarget["format"], string> = {
 
 /** export별 output_path를 파생한다. huggingface는 디렉터리, 그 외는 파일 경로. */
 function deriveOutputPath(spec: BuildSpec, target: ExportTarget): string {
-  const base = spec.metadata.outputPath || `artifacts/builds/${spec.datasetId}`;
-  if (target.format === "huggingface") return target.options?.outputPath ?? base;
+  const base = spec.metadata["outputPath"] ?? `artifacts/builds/${spec.datasetId}`;
+  if (target.format === "huggingface") {
+    const outputPath = target.options?.outputPath;
+    return typeof outputPath === "string" ? outputPath : base;
+  }
   return `${base}/data.${FORMAT_EXTENSION[target.format]}`;
 }
 
@@ -82,4 +85,29 @@ export function toBuilderSpec(spec: BuildSpec): BuilderSpec {
  */
 export function serializeSpec(spec: BuildSpec): string {
   return JSON.stringify(toBuilderSpec(spec));
+}
+
+/**
+ * Builder BuildSpec(snake_case)을 Studio BuildSpec(camelCase)으로 역변환한다.
+ *
+ * toBuilderSpec()의 역연산. Builder에서 저장된 스펙을 불러와 Studio에서
+ * 재편집할 때 사용한다.
+ */
+export function fromBuilderSpec(spec: BuilderSpec): BuildSpec {
+  return {
+    datasetId: spec.dataset_id,
+    title: spec.title,
+    description: spec.description,
+    sources: spec.sources.map((source) => ({
+      provider: source.provider,
+      dataset: source.dataset,
+      params: source.params,
+      ...(source.alias ? { alias: source.alias } : {}),
+    })),
+    exports: spec.exports.map((e) => ({
+      format: e.kind as ExportTarget["format"],
+      ...(e.options ? { options: e.options } : {}),
+    })),
+    metadata: spec.metadata,
+  };
 }
