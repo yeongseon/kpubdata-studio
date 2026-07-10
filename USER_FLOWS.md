@@ -1,4 +1,6 @@
-# 사용자 흐름 — KPubData Studio
+# 사용자 흐름 · 기능처리도 — KPubData Studio
+
+> 이 문서는 KPubData Studio의 **기능처리도(機能處理圖)**를 겸합니다. 앞부분(§1~§3)은 사용자 여정(journey) 관점의 흐름을, [§4 기능별 처리 흐름](#4)은 검증·미리보기·출판 각 **기능 단위**의 요청/응답 처리 시퀀스를 정리합니다. Builder API 계약은 [API_CONTRACT.md](./API_CONTRACT.md)를 참고하세요.
 
 > **참고**
 >
@@ -119,7 +121,78 @@ sequenceDiagram
 
 ---
 
-## 4. 에러 시나리오
+## 4. 기능별 처리 흐름 (기능처리도)
+
+사용자 여정과 무관하게, 핵심 기능 각각이 Studio UI→Builder API로 어떻게 요청/응답을 처리하는지 **기능 단위**로 분리해 정리합니다. 서비스 구현과 계약은 Builder가 소유하며(Studio는 요청만 함), 상세 계약은 [API_CONTRACT.md](./API_CONTRACT.md)를 따릅니다.
+
+### 4.1 검증 (validate)
+
+명세(Spec)가 실행 가능한지 Builder에 확인을 요청합니다. 네트워크 수집 없이 명세만 검사합니다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 사용자
+    participant Studio as Studio UI
+    participant BAPI as Builder API
+    User->>Studio: '검증' 클릭
+    Studio->>BAPI: POST /validate (Spec)
+    alt 검증 통과
+        BAPI-->>Studio: {ok: true}
+        Studio-->>User: '빌드 실행' 버튼 활성화
+    else 검증 실패
+        BAPI-->>Studio: {ok: false, problems[]}
+        Studio-->>User: 잘못된 입력창 강조 + 문제별 해결 안내
+    end
+```
+
+### 4.2 미리보기 (preview)
+
+산출물 파일을 기록하지 않고, 각 소스의 스키마와 샘플 행만 Builder에서 받아 표로 보여줍니다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 사용자
+    participant Studio as Studio UI
+    participant BAPI as Builder API
+    User->>Studio: '미리보기' 클릭
+    Studio->>BAPI: POST /preview (Spec, limit)
+    alt 미리보기 성공
+        BAPI-->>Studio: {previews[]: schema + sample rows}
+        Studio-->>User: 소스별 스키마·샘플 표 표시
+    else 일부 소스 실패
+        BAPI-->>Studio: {previews[]: status=failed, error}
+        Studio-->>User: 실패 소스 오류 메시지 표시
+    end
+```
+
+### 4.3 출판 (publish)
+
+성공한 빌드의 산출물을 외부 대상(HuggingFace 등)으로 게시합니다. **현재 계획(planned) 단계**로, Studio는 요청만 하고 실행은 Builder가 수행합니다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 사용자
+    participant Studio as Studio UI
+    participant BAPI as Builder API
+    participant Ext as External Service (HF)
+    User->>Studio: 목적지 선택 + '출판' 클릭
+    Studio->>BAPI: POST /builds/:id/publish (planned)
+    Note over BAPI,Ext: Builder가 산출물을 대상으로 전송
+    alt 게시 성공
+        BAPI-->>Studio: {reference, artifact_count}
+        Studio-->>User: 게시 참조(링크) 표시
+    else 미구현/실패
+        BAPI-->>Studio: 미구현 또는 오류
+        Studio-->>User: 안내 메시지 표시
+    end
+```
+
+---
+
+## 5. 에러 시나리오
 
 ### 빌드 실패
 - **발생 원인**: 공공데이터 API 서버 장애, 혹은 잘못된 파라미터 값 입력.
@@ -138,7 +211,7 @@ sequenceDiagram
 
 ---
 
-## 5. 에러 복구 흐름
+## 6. 에러 복구 흐름
 
 ```mermaid
 flowchart TD
