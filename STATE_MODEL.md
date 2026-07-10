@@ -19,13 +19,7 @@
 - `validated`: 모든 설정값이 올바른지 확인(검증)을 마친 상태
 - `invalid`: 설정값에 오류가 있어 수정이 필요한 상태
 
-### 상태 전이 흐름 (ASCII 다이어그램)
-```text
-[new] --(수정)--> [dirty] --(검증 요청)--> [validated]
-                     ^           |
-                     |           | (오류 발견)
-                     +-----------+-------- [invalid]
-```
+### 상태 전이 흐름
 
 ```mermaid
 stateDiagram-v2
@@ -56,14 +50,7 @@ stateDiagram-v2
 - `failed`: 작업 도중 오류가 발생하여 중단됨
 - `cancelled`: 사용자가 수동으로 작업을 멈춤
 
-### 상태 전이 흐름 (ASCII 다이어그램)
-```text
-[queued] -> [running] --(성공)--> [succeeded]
-               |
-               +--(실패)--> [failed]
-               |
-               +--(취소)--> [cancelled]
-```
+### 상태 전이 흐름
 
 ```mermaid
 stateDiagram-v2
@@ -94,6 +81,8 @@ stateDiagram-v2
 - `publishing`: 데이터를 외부로 전송 중
 - `published`: 전송이 완료되어 공개된 상태
 - `publish_failed`: 전송 도중 오류 발생
+
+### 상태 전이 흐름
 
 ```mermaid
 stateDiagram-v2
