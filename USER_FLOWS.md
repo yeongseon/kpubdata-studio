@@ -127,7 +127,7 @@ flowchart TD
     Type --> ValFail[검증 실패]
 
     BuildFail --> BuildLog[빌드 로그 분석]
-    BuildLog --> EditSpec[명세(Spec) 수정]
+    BuildLog --> EditSpec["명세(Spec) 수정"]
     EditSpec --> Retry[재시도]
 
     NetFail --> Offline[오프라인 모드 알림]

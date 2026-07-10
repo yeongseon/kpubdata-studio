@@ -58,11 +58,11 @@ graph TD
 
 ```mermaid
 graph LR
-    Root[/] --> Dashboard[HomePage]
-    Root --> Builds[/builds]
+    Root["/"] --> Dashboard[HomePage]
+    Root --> Builds["/builds"]
 
     Builds --> BuildList[BuildsPage]
-    Builds --> New[/new]
+    Builds --> New["/new"]
 ```
 
 | 경로 | 화면 내용 | 폴더 위치 |
