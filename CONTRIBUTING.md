@@ -64,7 +64,7 @@ npx tsc --noEmit
 우리는 `main` 브랜치에 직접 코드를 올리지 않습니다. 반드시 기능별 브랜치를 만들어 작업합니다.
 
 ```mermaid
-gitgraph
+gitGraph
     commit id: "initial"
     branch feat/issue-5-dashboard-page
     checkout feat/issue-5-dashboard-page

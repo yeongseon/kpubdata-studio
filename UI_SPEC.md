@@ -4,8 +4,8 @@
 
 ```mermaid
 flowchart TD
-    Home[Home / Dashboard] -->|Create New| Editor[Build Editor]
-    Home -->|View Recent| Run[Build Run / History]
+    Home["Home / Dashboard"] -->|Create New| Editor[Build Editor]
+    Home -->|View Recent| Run["Build Run / History"]
     Editor -->|Validate/Run| Run
     Run -->|Success| Artifacts[Artifact Viewer]
     Artifacts -->|Share| Publish[Publish Page]
@@ -48,17 +48,17 @@ flowchart TD
 
 ```mermaid
 graph TD
-    subgraph EditorPage [Build Editor Page]
-        Header[Editor Header: Validate/Run Buttons]
-        subgraph MainContent [Main Configuration Area]
+    subgraph EditorPage ["Build Editor Page"]
+        Header["Editor Header: Validate/Run Buttons"]
+        subgraph MainContent ["Main Configuration Area"]
             direction LR
-            SourceArea[1. Source: Provider/Dataset/Params]
-            ExportArea[2. Export Config: Format/Target]
+            SourceArea["1. Source: Provider/Dataset/Params"]
+            ExportArea["2. Export Config: Format/Target"]
         end
-        subgraph FeedbackArea [Feedback Panels]
+        subgraph FeedbackArea ["Feedback Panels"]
             direction LR
-            PreviewPanel[3. Preview Panel: Data Table]
-            ValidationPanel[4. Validation Panel: Errors/Warnings]
+            PreviewPanel["3. Preview Panel: Data Table"]
+            ValidationPanel["4. Validation Panel: Errors/Warnings"]
         end
         Header --> MainContent
         MainContent --> FeedbackArea
@@ -120,7 +120,7 @@ graph TD
 
 ```mermaid
 graph LR
-    subgraph Screens [Studio 화면]
+    subgraph Screens ["Studio 화면"]
         HomeS[Home Dashboard]
         EditorS[Build Editor]
         RunS[Build Run Tracking]
@@ -129,12 +129,12 @@ graph LR
         SettingsS[Settings]
     end
 
-    subgraph APIEndpoints [Builder API 엔드포인트]
-        GET_Version[GET /version]
-        POST_Validate[POST /validate]
-        POST_Preview[POST /preview]
-        POST_Build[POST /build]
-        GET_Artifacts[GET /artifacts/{run_id}]
+    subgraph APIEndpoints ["Builder API 엔드포인트"]
+        GET_Version["GET /version"]
+        POST_Validate["POST /validate"]
+        POST_Preview["POST /preview"]
+        POST_Build["POST /build"]
+        GET_Artifacts["GET /artifacts/{run_id}"]
     end
 
     SettingsS --> GET_Version
