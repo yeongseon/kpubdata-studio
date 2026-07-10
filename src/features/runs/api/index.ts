@@ -12,6 +12,23 @@ import type { BuildRun, BuildSpec } from "@/shared/lib/types";
 const MOCK_TIME = "1970-01-01T00:00:00.000Z";
 
 /**
+ * BuildSpec으로부터 경로 안전한 run_id를 생성한다.
+ *
+ * Builder는 run_id를 산출물 디렉터리 이름으로 사용하므로 안전한 세그먼트
+ * (영숫자/하이픈)만 남긴다. dataset id와 타임스탬프를 결합해 사람이 식별 가능하면서도
+ * 충돌하지 않는 값을 만든다.
+ */
+export function generateRunId(datasetId: string): string {
+  const slug = datasetId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  const base = slug.length > 0 ? slug : "build";
+  return `${base}-${Date.now()}`;
+}
+
+/**
  * 새 빌드 실행을 시작하고 실행 결과를 반환한다.
  *
  * @param spec - 실행할 빌드 스펙.
@@ -30,8 +47,9 @@ export async function executeBuild(spec: BuildSpec, signal?: AbortSignal): Promi
   }
 
   // 실연동 모드에서는 실제 실행 시각을 기록한다(이력/상세 화면에서 잘못된 1970 값 방지).
+  const runId = generateRunId(spec.datasetId);
   const startedAt = new Date().toISOString();
-  const result = await builderApi.build(serializeSpec(spec), undefined, signal);
+  const result = await builderApi.build(serializeSpec(spec), runId, signal);
   return {
     id: result.run_id,
     spec,
