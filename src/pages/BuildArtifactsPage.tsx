@@ -88,35 +88,35 @@ export function BuildArtifactsPage() {
       {state.status === "loaded" && manifest ? (
         <>
           <Card>
-            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+            <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
               Manifest 요약
             </p>
             <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
               <div>
-                <dt className="text-zinc-500 dark:text-zinc-400">레코드 수</dt>
-                <dd className="text-zinc-800 dark:text-zinc-100">
+                <dt className="text-muted-foreground">레코드 수</dt>
+                <dd className="text-foreground">
                   {totalRecords.toLocaleString("ko-KR")}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500 dark:text-zinc-400">출력 형식</dt>
-                <dd className="text-zinc-800 dark:text-zinc-100">{formats.join(", ")}</dd>
+                <dt className="text-muted-foreground">출력 형식</dt>
+                <dd className="text-foreground">{formats.join(", ")}</dd>
               </div>
               <div>
-                <dt className="text-zinc-500 dark:text-zinc-400">소스</dt>
-                <dd className="text-zinc-800 dark:text-zinc-100">
+                <dt className="text-muted-foreground">소스</dt>
+                <dd className="text-foreground">
                   {manifest.provenance.map((p) => `${p.provider}.${p.dataset}`).join(", ")}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500 dark:text-zinc-400">빌드 ID</dt>
-                <dd className="break-all text-zinc-800 dark:text-zinc-100">{manifest.build_id}</dd>
+                <dt className="text-muted-foreground">빌드 ID</dt>
+                <dd className="break-all text-foreground">{manifest.build_id}</dd>
               </div>
             </dl>
           </Card>
 
           <Card className="p-0">
-            <div className="grid grid-cols-[1.6fr_0.6fr_0.8fr] gap-4 border-b border-zinc-200/80 px-6 py-4 text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            <div className="grid grid-cols-[1.6fr_0.6fr_0.8fr] gap-4 border-b border-border px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <span>파일</span>
               <span>형식</span>
               <span>액션</span>
@@ -130,11 +130,11 @@ export function BuildArtifactsPage() {
                   return (
                     <li
                       key={path}
-                      className="grid grid-cols-[1.6fr_0.6fr_0.8fr] items-center gap-4 border-b border-zinc-100 px-6 py-3 text-sm last:border-0 dark:border-zinc-900"
+                      className="grid grid-cols-[1.6fr_0.6fr_0.8fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0 "
                     >
                       <span className="break-all font-medium">{name}</span>
-                      <span className="uppercase text-zinc-500 dark:text-zinc-400">{format}</span>
-                      <span className="text-zinc-400 dark:text-zinc-500">다운로드(연동 예정)</span>
+                      <span className="uppercase text-muted-foreground">{format}</span>
+                      <span className="text-muted-foreground">다운로드(연동 예정)</span>
                     </li>
                   );
                 })}
@@ -143,10 +143,10 @@ export function BuildArtifactsPage() {
           </Card>
 
           <Card>
-            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+            <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
               manifest.json
             </p>
-            <pre className="mt-4 overflow-x-auto rounded-[1.5rem] bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
+            <pre className="mt-4 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
               <code>{JSON.stringify(manifest, null, 2)}</code>
             </pre>
           </Card>

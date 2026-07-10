@@ -377,7 +377,7 @@ export function NewBuildPage() {
 
       {buildId ? (
         <Card variant="dashed" className="p-4">
-          <p className="text-sm text-zinc-700 dark:text-zinc-200">
+          <p className="text-sm text-foreground">
             기존 빌드 <span className="font-medium">{buildId}</span> 편집은 Builder 연동(#29) 후
             지원됩니다. 지금은 새 빌드로 작성됩니다.
           </p>
@@ -386,7 +386,7 @@ export function NewBuildPage() {
 
       {draftAvailable ? (
         <Card variant="dashed" className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-zinc-700 dark:text-zinc-200">
+          <p className="text-sm text-foreground">
             저장된 초안이 있습니다. 이어서 편집할까요?
           </p>
           <div className="flex gap-2">
@@ -409,7 +409,7 @@ export function NewBuildPage() {
           {step === 0 ? (
             <div className="space-y-4">
               <h3 className="text-xl font-semibold tracking-tight">템플릿 선택</h3>
-              <p className="text-sm text-zinc-600 dark:text-zinc-300">
+              <p className="text-sm text-muted-foreground">
                 자주 쓰는 공공데이터 조합으로 시작하거나 빈 빌드로 처음부터 설정하세요.
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -418,10 +418,10 @@ export function NewBuildPage() {
                     key={template.id}
                     type="button"
                     onClick={() => selectTemplate(template)}
-                    className="rounded-2xl border border-zinc-200/80 bg-white/80 p-4 text-left transition hover:border-zinc-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/70"
+                    className="rounded-2xl border border-border bg-card p-4 text-left transition hover:border-accent/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <p className="text-base font-semibold tracking-tight">{template.name}</p>
-                    <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+                    <p className="mt-1 text-sm text-muted-foreground">
                       {template.description}
                     </p>
                   </button>
@@ -564,7 +564,7 @@ export function NewBuildPage() {
                 />
               ) : null}
               {preview.status === "loaded" && preview.rows.length > 0 ? (
-                <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                <p className="text-sm text-muted-foreground">
                   {preview.rows.length}개 샘플 행 · {Object.keys(preview.schema).length}개 컬럼
                 </p>
               ) : null}
@@ -575,19 +575,19 @@ export function NewBuildPage() {
             <div className="space-y-4">
               <h3 className="text-xl font-semibold tracking-tight">출력 형식</h3>
               <fieldset>
-                <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                <legend className="text-sm font-medium text-foreground">
                   결과물 형식 (최소 1개)
                 </legend>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   {exportFormats.map((format) => (
                     <label
                       key={format}
-                      className="flex items-center gap-3 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/70"
+                      className="flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-3"
                     >
                       <input
                         type="checkbox"
                         value={format}
-                        className="h-4 w-4 accent-zinc-900 dark:accent-white"
+                        className="h-4 w-4 accent-emerald-600"
                         {...register("exportFormats", {
                           validate: (selected) =>
                             (selected?.length ?? 0) > 0 || "출력 형식을 최소 1개 선택해주세요.",
@@ -634,13 +634,13 @@ export function NewBuildPage() {
                 </Button>
               </div>
               {validation.status === "idle" ? (
-                <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                <p className="text-sm text-muted-foreground">
                   ‘다시 검증’을 눌러 입력값과 빌드 설정을 확인하세요.
                 </p>
               ) : null}
               {validation.status === "validated" && validation.isValid ? (
                 <Card variant="success" className="p-4">
-                  <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+                  <p className="text-sm font-medium text-accent-subtle-foreground">
                     검증을 통과했습니다. 빌드를 실행할 수 있습니다.
                   </p>
                 </Card>
@@ -674,7 +674,7 @@ export function NewBuildPage() {
                   </Button>
                 ) : null}
                 {job.status === "succeeded" ? (
-                  <span className="text-sm text-emerald-700 dark:text-emerald-300">
+                  <span className="text-sm text-accent-subtle-foreground">
                     빌드 성공 (run {job.run?.id})
                   </span>
                 ) : null}
@@ -684,14 +684,14 @@ export function NewBuildPage() {
                   </span>
                 ) : null}
                 {job.status === "cancelled" ? (
-                  <span className="text-sm text-zinc-500 dark:text-zinc-400">실행이 취소되었습니다.</span>
+                  <span className="text-sm text-muted-foreground">실행이 취소되었습니다.</span>
                 ) : null}
               </div>
             </div>
           ) : null}
 
           {/* 모바일에서는 하단 sticky action bar로 고정해 긴 폼에서도 이전/다음이 항상 보이게 한다(§13). */}
-          <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-8 flex items-center justify-between gap-3 border-t border-zinc-200/80 bg-white/95 px-6 py-3 backdrop-blur sm:static sm:mx-0 sm:mb-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none dark:border-zinc-800 dark:bg-zinc-950/95 sm:dark:bg-transparent">
+          <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-8 flex items-center justify-between gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur sm:static sm:mx-0 sm:mb-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none sm:dark:bg-transparent">
             <Button variant="ghost" onClick={goBack} disabled={step === 0}>
               이전
             </Button>
@@ -711,13 +711,13 @@ export function NewBuildPage() {
             {/* 모바일에서 공간을 아끼도록 기본 접힘(details). 데스크톱(xl)에서는 별도 컬럼에
                 표시되며 필요 시 펼친다(§13). */}
             <details className="group">
-              <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 생성될 스펙 (Generated spec)
                 <span className="text-base transition group-open:rotate-180" aria-hidden="true">
                   ⌄
                 </span>
               </summary>
-              <pre className="mt-4 overflow-x-auto rounded-[1.5rem] bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
+              <pre className="mt-4 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
                 <code>{JSON.stringify(specPreview.spec ?? values, null, 2)}</code>
               </pre>
             </details>

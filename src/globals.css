@@ -16,34 +16,91 @@
   }
 }
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/*
+ * 시맨틱 디자인 토큰.
+ *
+ * 모던 SaaS 대시보드(Linear/Vercel 계열) 룩을 위해 중립 팔레트 + 에메랄드 강조를
+ * 시맨틱 토큰으로 정의한다. 각 토큰은 light/dark 두 값을 모두 가진다.
+ *  - background/foreground: 페이지 바탕/기본 텍스트
+ *  - card/card-foreground: 카드·패널 표면
+ *  - muted/muted-foreground: 보조 배경과 보조 텍스트
+ *  - border: 얇고 선명한 경계선
+ *  - accent(에메랄드): 상호작용·강조 요소
+ */
+:root,
 :root[data-theme="light"] {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fafafa;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #10b981;
+  --accent: #059669;
+  --accent-foreground: #ffffff;
+  --accent-subtle: #ecfdf5;
+  --accent-subtle-foreground: #047857;
 }
 
 :root[data-theme="dark"] {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #111113;
+  --card-foreground: #fafafa;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #10b981;
+  --accent: #10b981;
+  --accent-foreground: #052e1f;
+  --accent-subtle: #052e21;
+  --accent-subtle-foreground: #6ee7b7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --background: #09090b;
+    --foreground: #fafafa;
+    --card: #111113;
+    --card-foreground: #fafafa;
+    --muted: #18181b;
+    --muted-foreground: #a1a1aa;
+    --border: #27272a;
+    --input: #27272a;
+    --ring: #10b981;
+    --accent: #10b981;
+    --accent-foreground: #052e1f;
+    --accent-subtle: #052e21;
+    --accent-subtle-foreground: #6ee7b7;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino,
-    Georgia, serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-}
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-subtle-foreground: var(--accent-subtle-foreground);
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans KR", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Consolas,
+    "Liberation Mono", Menlo, monospace;
+
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
 }
 
 body {
@@ -51,4 +108,6 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }

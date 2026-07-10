@@ -46,10 +46,10 @@ export function EmptyState({
 
   return (
     <div className={cn("flex flex-col items-center px-6 py-14 text-center", className)}>
-      {icon ? <div className="mb-4 text-zinc-400 dark:text-zinc-500">{icon}</div> : null}
+      {icon ? <div className="mb-4 text-muted-foreground">{icon}</div> : null}
       <p className="text-lg font-medium tracking-tight">{title}</p>
       {description ? (
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
           {description}
         </p>
       ) : null}

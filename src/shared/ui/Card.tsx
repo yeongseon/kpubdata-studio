@@ -16,15 +16,15 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 
 const VARIANT_CLASS: Record<CardVariant, string> = {
   default:
-    "border border-zinc-200/80 bg-white/80 shadow-lg shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950/70",
+    "border border-border bg-card shadow-sm",
   elevated:
-    "border border-zinc-200/80 bg-white shadow-xl shadow-zinc-950/10 dark:border-zinc-800 dark:bg-zinc-950",
+    "border border-border bg-card shadow-md",
   dashed:
-    "border-2 border-dashed border-zinc-300 bg-transparent dark:border-zinc-700",
+    "border border-dashed border-border bg-transparent",
   error:
-    "border border-red-300 bg-red-50/80 dark:border-red-900/60 dark:bg-red-950/30",
+    "border border-red-300 bg-red-50 dark:border-red-900/60 dark:bg-red-950/30",
   success:
-    "border border-emerald-300 bg-emerald-50/80 dark:border-emerald-900/60 dark:bg-emerald-950/30",
+    "border border-emerald-300 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30",
 };
 
 /**
@@ -35,7 +35,7 @@ const VARIANT_CLASS: Record<CardVariant, string> = {
  */
 export function Card({ variant = "default", className, children, ...rest }: CardProps) {
   return (
-    <div className={cn("rounded-[2rem] p-6", VARIANT_CLASS[variant], className)} {...rest}>
+    <div className={cn("rounded-xl p-6", VARIANT_CLASS[variant], className)} {...rest}>
       {children}
     </div>
   );

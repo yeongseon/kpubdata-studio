@@ -61,7 +61,7 @@ export function FormField({
 
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={id} className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
+      <label htmlFor={id} className="text-sm font-medium text-foreground">
         {label}
         {required ? (
           <>
@@ -75,7 +75,7 @@ export function FormField({
       </label>
       {children({ id, "aria-describedby": describedBy, invalid: Boolean(error) })}
       {help ? (
-        <p id={helpId} className="text-xs text-zinc-500 dark:text-zinc-400">
+        <p id={helpId} className="text-xs text-muted-foreground">
           {help}
         </p>
       ) : null}

@@ -106,7 +106,7 @@ export function BuildsPage() {
       </div>
 
       <Card className="overflow-hidden p-0">
-        <div className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] gap-4 border-b border-zinc-200/80 px-6 py-4 text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <div className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] gap-4 border-b border-border px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <span>빌드</span>
           <span>상태</span>
           <span>마지막 실행</span>
@@ -114,7 +114,7 @@ export function BuildsPage() {
         </div>
 
         {state.status === "loading" ? (
-          <div className="px-6 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="px-6 py-10 text-center text-sm text-muted-foreground">
             불러오는 중입니다…
           </div>
         ) : state.status === "error" ? (
@@ -139,13 +139,13 @@ export function BuildsPage() {
             {visible.map((run) => (
               <li
                 key={run.id}
-                className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] items-center gap-4 border-b border-zinc-100 px-6 py-3 text-sm last:border-0 dark:border-zinc-900"
+                className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0 "
               >
                 <span className="font-medium">{run.spec.title}</span>
                 <span>
                   <StatusBadge status={run.status} />
                 </span>
-                <span className="text-zinc-600 dark:text-zinc-300">{formatTime(run.startedAt)}</span>
+                <span className="text-muted-foreground">{formatTime(run.startedAt)}</span>
                 <span>
                   <LinkButton variant="secondary" size="sm" to={`/builds/${run.id}`}>
                     보기

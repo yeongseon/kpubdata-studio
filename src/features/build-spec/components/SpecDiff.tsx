@@ -47,7 +47,7 @@ export function SpecDiff({ before, after }: SpecDiffProps) {
   }
 
   return (
-    <ul className="divide-y divide-zinc-100 dark:divide-zinc-900">
+    <ul className="divide-y divide-border">
       {changes.map((change) => {
         const meta = KIND_META[change.kind];
         return (
@@ -57,8 +57,8 @@ export function SpecDiff({ before, after }: SpecDiffProps) {
             >
               {meta.sign} {meta.label}
             </span>
-            <span className="font-mono text-zinc-700 dark:text-zinc-200">{change.path}</span>
-            <span className="text-zinc-500 dark:text-zinc-400">
+            <span className="font-mono text-foreground">{change.path}</span>
+            <span className="text-muted-foreground">
               {change.kind === "changed" ? (
                 <>
                   <span className="line-through">{change.before}</span> → {change.after}

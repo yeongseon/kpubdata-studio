@@ -55,7 +55,7 @@ export function HomePage() {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {STATUS_SUMMARY.map((item) => (
           <Card key={item.status} className="flex items-center justify-between">
-            <span className="text-sm text-zinc-600 dark:text-zinc-300">{item.label}</span>
+            <span className="text-sm text-muted-foreground">{item.label}</span>
             <span className="text-2xl font-semibold tracking-tight">{item.count}</span>
           </Card>
         ))}
@@ -84,10 +84,10 @@ export function HomePage() {
             <Link
               key={action.href}
               to={action.href}
-              className="rounded-[1.75rem] border border-zinc-200/80 bg-white/80 p-5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg hover:shadow-zinc-950/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/80 dark:hover:border-zinc-700"
+              className="rounded-xl border border-border bg-card p-5 transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-lg hover:shadow-zinc-950/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <p className="text-lg font-medium tracking-tight">{action.label}</p>
-              <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 {action.description}
               </p>
             </Link>

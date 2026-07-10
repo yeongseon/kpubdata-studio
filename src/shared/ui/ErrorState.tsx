@@ -38,7 +38,7 @@ export function ErrorState({
     <div role="alert" className={cn("flex flex-col items-center px-6 py-14 text-center", className)}>
       <p className="text-lg font-medium tracking-tight text-red-700 dark:text-red-300">{title}</p>
       {message ? (
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
           {message}
         </p>
       ) : null}

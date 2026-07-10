@@ -12,12 +12,12 @@ export type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary:
-    "bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200",
+    "bg-accent text-accent-foreground shadow-sm hover:brightness-110 active:brightness-95",
   secondary:
-    "border border-zinc-300 text-zinc-700 hover:border-zinc-400 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900",
-  ghost: "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900",
-  danger: "bg-red-600 text-white hover:bg-red-500",
-  success: "bg-emerald-600 text-white hover:bg-emerald-500",
+    "border border-border bg-card text-foreground hover:bg-muted",
+  ghost: "text-muted-foreground hover:bg-muted hover:text-foreground",
+  danger: "bg-red-600 text-white shadow-sm hover:bg-red-500",
+  success: "bg-emerald-600 text-white shadow-sm hover:bg-emerald-500",
 };
 
 const SIZE_CLASS: Record<ButtonSize, string> = {
@@ -40,8 +40,9 @@ export function buttonClassName(
   ...extra: ClassValue[]
 ): string {
   return cn(
-    "inline-flex items-center justify-center gap-2 rounded-full font-medium transition",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950",
+    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+    "disabled:pointer-events-none disabled:opacity-50",
     VARIANT_CLASS[variant],
     SIZE_CLASS[size],
     ...extra,

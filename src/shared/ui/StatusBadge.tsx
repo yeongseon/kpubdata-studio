@@ -29,16 +29,16 @@ interface StatusMeta {
 }
 
 const STATUS_META: Record<StatusValue, StatusMeta> = {
-  new: { label: "새 초안", className: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" },
-  draft: { label: "초안", className: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" },
+  new: { label: "새 초안", className: "bg-muted text-muted-foreground" },
+  draft: { label: "초안", className: "bg-muted text-muted-foreground" },
   dirty: { label: "수정됨", className: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300" },
   validated: { label: "검증됨", className: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300" },
   invalid: { label: "오류 있음", className: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300" },
-  queued: { label: "대기 중", className: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" },
+  queued: { label: "대기 중", className: "bg-muted text-muted-foreground" },
   running: { label: "실행 중", className: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300" },
   succeeded: { label: "성공", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" },
   failed: { label: "실패", className: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300" },
-  cancelled: { label: "취소됨", className: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400" },
+  cancelled: { label: "취소됨", className: "bg-muted text-muted-foreground" },
   publishing: { label: "게시 중", className: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300" },
   published: { label: "게시됨", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" },
 };
@@ -46,7 +46,7 @@ const STATUS_META: Record<StatusValue, StatusMeta> = {
 /** 알 수 없는 상태값에 사용할 중립 배지 스타일 */
 const FALLBACK_META: StatusMeta = {
   label: "",
-  className: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
+  className: "bg-muted text-muted-foreground",
 };
 
 export interface StatusBadgeProps {
