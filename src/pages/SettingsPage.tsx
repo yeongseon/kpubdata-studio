@@ -56,22 +56,22 @@ export function SettingsPage() {
       />
 
       <Card>
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           워크스페이스 (Workspace)
         </p>
-        <p className="mt-2 mb-4 text-sm text-zinc-600 dark:text-zinc-300">
+        <p className="mt-2 mb-4 text-sm text-muted-foreground">
           개인/팀 워크스페이스를 전환합니다. 팀 공유·멤버십 연동은 후속(v0.3)에서 확장됩니다.
         </p>
         <WorkspaceSwitcher />
       </Card>
 
       <Card>
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Builder API 엔드포인트
         </p>
-        <div className="mt-4 rounded-[1.5rem] border border-dashed border-zinc-300/80 bg-zinc-50/80 p-4 dark:border-zinc-700 dark:bg-zinc-900/80">
+        <div className="mt-4 rounded-xl border border-dashed border-border bg-muted p-4">
           <p className="text-sm font-medium">현재 base URL</p>
-          <code className="mt-3 block break-all text-sm text-emerald-700 dark:text-emerald-400">
+          <code className="mt-3 block break-all text-sm text-accent-subtle-foreground">
             {API_BASE}
           </code>
         </div>
@@ -79,27 +79,27 @@ export function SettingsPage() {
 
       <Card>
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             연결 상태
           </p>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          <span className="text-xs text-muted-foreground">
             Studio 계약 버전 {API_CONTRACT_VERSION}
           </span>
         </div>
         <div className="mt-4 text-sm">
           {!realEnabled ? (
-            <p className="text-zinc-600 dark:text-zinc-300">
+            <p className="text-muted-foreground">
               mock 모드입니다. 실제 Builder에 연결하려면{" "}
-              <code className="text-emerald-700 dark:text-emerald-400">VITE_USE_REAL_BUILDER=true</code>
+              <code className="text-accent-subtle-foreground">VITE_USE_REAL_BUILDER=true</code>
               로 설정하세요.
             </p>
           ) : connection.status === "checking" ? (
-            <p className="text-zinc-600 dark:text-zinc-300">Builder 연결을 확인하는 중입니다…</p>
+            <p className="text-muted-foreground">Builder 연결을 확인하는 중입니다…</p>
           ) : connection.status === "ok" ? (
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status="succeeded" />
-                <span className="text-zinc-700 dark:text-zinc-200">
+                <span className="text-foreground">
                   Builder API 버전 {connection.apiVersion}
                 </span>
               </div>

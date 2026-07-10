@@ -41,13 +41,13 @@ export function PageHeader({
     >
       <div>
         {eyebrow ? (
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+          <p className="text-xs font-semibold uppercase tracking-wider text-accent-subtle-foreground">
             {eyebrow}
           </p>
         ) : null}
         <h2 className="mt-2 text-3xl font-semibold tracking-tight">{title}</h2>
         {description ? (
-          <p className="mt-2 max-w-2xl text-zinc-600 dark:text-zinc-300">{description}</p>
+          <p className="mt-2 max-w-2xl text-muted-foreground">{description}</p>
         ) : null}
       </div>
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}

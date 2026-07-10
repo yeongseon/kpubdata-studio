@@ -133,6 +133,6 @@ describe("LinkButton", () => {
     );
     const link = screen.getByRole("link", { name: "목록" });
     expect(link).toHaveAttribute("href", "/builds");
-    expect(link).toHaveClass("rounded-full");
+    expect(link).toHaveClass("rounded-lg");
   });
 });

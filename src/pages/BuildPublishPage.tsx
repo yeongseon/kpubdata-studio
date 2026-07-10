@@ -36,22 +36,22 @@ export function BuildPublishPage() {
       />
 
       <Card>
-        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+        <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           검토 (Review)
         </p>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-zinc-500 dark:text-zinc-400">빌드 ID</dt>
-            <dd className="break-all text-zinc-800 dark:text-zinc-100">{buildId || "—"}</dd>
+            <dt className="text-muted-foreground">빌드 ID</dt>
+            <dd className="break-all text-foreground">{buildId || "—"}</dd>
           </div>
           <div>
-            <dt className="text-zinc-500 dark:text-zinc-400">대상</dt>
-            <dd className="text-zinc-800 dark:text-zinc-100">
+            <dt className="text-muted-foreground">대상</dt>
+            <dd className="text-foreground">
               {DESTINATIONS.find((d) => d.id === destination)?.label}
             </dd>
           </div>
         </dl>
-        <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-3 text-sm text-muted-foreground">
           제목·라이선스 등 데이터셋 카드 정보는 Builder publish 엔드포인트 연동 시 manifest에서
           채워집니다.
         </p>
@@ -59,7 +59,7 @@ export function BuildPublishPage() {
 
       <Card>
         <fieldset disabled={isPublishing}>
-          <legend className="text-sm font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+          <legend className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             배포 대상 (Destination)
           </legend>
           <div className="mt-4 flex flex-col gap-3">
@@ -71,7 +71,7 @@ export function BuildPublishPage() {
                   value={dest.id}
                   checked={destination === dest.id}
                   onChange={() => setDestination(dest.id)}
-                  className="h-4 w-4 accent-zinc-900 dark:accent-white"
+                  className="h-4 w-4 accent-emerald-600"
                 />
                 {dest.label}
               </label>
@@ -106,7 +106,7 @@ export function BuildPublishPage() {
                 결과 보기
               </a>
             ) : (
-              <span className="text-zinc-600 dark:text-zinc-300">
+              <span className="text-muted-foreground">
                 게시가 완료되었습니다. 실제 결과 링크는 Builder 연동 후 표시됩니다.
               </span>
             )}
@@ -118,7 +118,7 @@ export function BuildPublishPage() {
           </span>
         ) : null}
         {publish.status === "cancelled" ? (
-          <span className="text-sm text-zinc-500 dark:text-zinc-400">게시가 취소되었습니다.</span>
+          <span className="text-sm text-muted-foreground">게시가 취소되었습니다.</span>
         ) : null}
       </div>
     </main>

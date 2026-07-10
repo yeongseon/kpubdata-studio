@@ -19,17 +19,17 @@ export function ErrorFallback() {
       role="alert"
       className="flex min-h-screen flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center"
     >
-      <p className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+      <p className="text-2xl font-semibold tracking-tight text-foreground">
         문제가 발생했습니다
       </p>
-      <p className="max-w-md text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+      <p className="max-w-md text-sm leading-6 text-muted-foreground">
         예기치 못한 오류로 화면을 표시할 수 없습니다. 페이지를 새로고침하면 대부분 해결됩니다.
         문제가 계속되면 잠시 후 다시 시도해주세요.
       </p>
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="inline-flex items-center justify-center rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+        className="inline-flex items-center justify-center rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         새로고침
       </button>
@@ -98,17 +98,17 @@ function FeatureErrorFallback({ feature, onRetry }: { feature: string; onRetry: 
       role="alert"
       className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center"
     >
-      <p className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+      <p className="text-lg font-semibold tracking-tight text-foreground">
         {feature} 화면에 문제가 발생했습니다
       </p>
-      <p className="max-w-md text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+      <p className="max-w-md text-sm leading-6 text-muted-foreground">
         이 영역만 일시적으로 표시할 수 없습니다. 사이드바와 다른 메뉴는 정상적으로 사용할 수 있어요.
         잠시 후 다시 시도해주세요.
       </p>
       <button
         type="button"
         onClick={onRetry}
-        className="inline-flex items-center justify-center rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+        className="inline-flex items-center justify-center rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         다시 시도
       </button>

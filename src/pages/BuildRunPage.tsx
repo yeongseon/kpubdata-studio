@@ -38,12 +38,12 @@ export function BuildRunPage() {
       />
 
       <Card className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-zinc-600 dark:text-zinc-300">상태</span>
+        <span className="text-sm text-muted-foreground">상태</span>
         <StatusBadge status="queued" />
       </Card>
 
       <Card>
-        <p className="mb-4 text-sm font-semibold uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+        <p className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           진행 단계
         </p>
         <Stepper steps={RUN_STEPS} current={0} />

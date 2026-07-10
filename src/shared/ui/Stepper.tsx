@@ -37,8 +37,8 @@ function resolveState(index: number, current: number, errorSteps: number[]): Ste
 }
 
 const STATE_CIRCLE: Record<StepState, string> = {
-  upcoming: "border-zinc-300 text-zinc-400 dark:border-zinc-700 dark:text-zinc-500",
-  current: "border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-900",
+  upcoming: "border-border text-muted-foreground",
+  current: "border-accent bg-accent text-accent-foreground",
   complete: "border-emerald-600 bg-emerald-600 text-white",
   error: "border-red-600 bg-red-600 text-white",
 };
@@ -86,10 +86,10 @@ export function Stepper({
               <button
                 type="button"
                 onClick={() => onStepClick?.(index)}
-                className="flex items-center gap-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
+                className="flex items-center gap-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {circle}
-                <span className="whitespace-nowrap text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                <span className="whitespace-nowrap text-sm font-medium text-foreground">
                   {step.label}
                 </span>
               </button>
@@ -100,8 +100,8 @@ export function Stepper({
                   className={cn(
                     "whitespace-nowrap text-sm font-medium",
                     state === "upcoming"
-                      ? "text-zinc-400 dark:text-zinc-500"
-                      : "text-zinc-700 dark:text-zinc-200",
+                      ? "text-muted-foreground"
+                      : "text-foreground",
                   )}
                 >
                   {step.label}
@@ -109,7 +109,7 @@ export function Stepper({
               </div>
             )}
             {index < steps.length - 1 ? (
-              <span aria-hidden="true" className="h-px w-6 bg-zinc-300 dark:bg-zinc-700" />
+              <span aria-hidden="true" className="h-px w-6 bg-border" />
             ) : null}
           </li>
         );

@@ -32,9 +32,9 @@ export function BuildDetailPage() {
       />
 
       <Card className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-zinc-600 dark:text-zinc-300">현재 상태</span>
+        <span className="text-sm text-muted-foreground">현재 상태</span>
         <Skeleton className="h-5 w-16 rounded-full" />
-        <span className="text-sm text-zinc-500 dark:text-zinc-400">
+        <span className="text-sm text-muted-foreground">
           Builder API 연동(#29) 후 실제 상태가 표시됩니다.
         </span>
       </Card>
@@ -44,10 +44,10 @@ export function BuildDetailPage() {
           <Link
             key={sub.segment}
             to={`/builds/${buildId}/${sub.segment}`}
-            className="rounded-[1.5rem] border border-zinc-200/80 bg-white/80 p-5 transition hover:border-zinc-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/70"
+            className="rounded-xl border border-border bg-card p-5 transition hover:border-accent/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <p className="text-base font-semibold tracking-tight">{sub.label}</p>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">{sub.description}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{sub.description}</p>
           </Link>
         ))}
       </section>
