@@ -279,12 +279,13 @@ export const builderApi = {
   preview: (specYaml: string, signal?: AbortSignal) =>
     apiFetch<PreviewResponse>("/preview", { method: "POST", body: { spec: specYaml }, signal }),
 
-  /** POST /build — 빌드 실행. run_id 생략 가능. */
+  /** POST /build — 빌드 실행. run_id 생략 가능. 비멱등 요청이므로 재시도하지 않는다 (#117). */
   build: (specYaml: string, runId?: string, signal?: AbortSignal) =>
     apiFetch<BuildResponse>("/build", {
       method: "POST",
       body: runId ? { spec: specYaml, run_id: runId } : { spec: specYaml },
       signal,
+      retries: 0,
     }),
 
   /** GET /artifacts/{runId} — 실행 산출물 파일 목록. */
