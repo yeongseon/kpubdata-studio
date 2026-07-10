@@ -20,21 +20,21 @@ describe("Builds run history (#12)", () => {
   it("renders rows with status badges and a view link", async () => {
     renderBuilds();
     expect(await screen.findByText("대기오염 정보")).toBeInTheDocument();
-    expect(screen.getByText("성공")).toBeInTheDocument(); // succeeded badge
+    expect(screen.getAllByText("성공").length).toBeGreaterThan(0); // succeeded badges
     expect(screen.getByText("실패")).toBeInTheDocument(); // failed badge
-    expect(screen.getAllByRole("link", { name: "보기" }).length).toBe(3);
+    expect(screen.getAllByRole("link", { name: "보기" }).length).toBe(6);
   });
 
   it("filters the history by title search", async () => {
     renderBuilds();
     await screen.findByText("대기오염 정보");
 
-    fireEvent.change(screen.getByLabelText("빌드 제목 검색"), { target: { value: "인구" } });
+    fireEvent.change(screen.getByLabelText("빌드 제목 검색"), { target: { value: "병용" } });
 
     await waitFor(() => {
       expect(screen.queryByText("대기오염 정보")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("인구 통계")).toBeInTheDocument();
+    expect(screen.getByText("병용금기 품목정보")).toBeInTheDocument();
   });
 
   it("shows an error state with retry when listing fails (#71)", async () => {

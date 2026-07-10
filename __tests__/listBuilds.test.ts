@@ -15,7 +15,7 @@ afterEach(() => {
 describe("listBuilds (#95)", () => {
   it("returns deterministic mock history in mock mode", async () => {
     const builds = await listBuilds();
-    expect(builds.length).toBe(3);
+    expect(builds.length).toBe(6);
     expect(builds.map((b) => b.spec.title)).toContain("대기오염 정보");
   });
 

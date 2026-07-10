@@ -7,8 +7,23 @@
  * 매핑한다. /artifacts가 제공하지 않는 필드(recordCount/sources 등)는 안전한 기본값으로
  * 채워 페이지가 누락 필드로 깨지지 않게 한다(#75).
  */
+import { findDemoDataset } from "@/shared/lib/demoDatasets";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type { BuildManifest } from "@/shared/lib/types";
+
+import type { ExportTarget } from "@/shared/lib/types";
+
+/**
+ * export 형식별 산출물 파일 확장자. specMapping의 output_path 규칙과 동일하게 맞춰
+ * (`.../data.<ext>`) mock/실연동 manifest의 파일 목록 표기를 일관되게 유지한다.
+ * huggingface는 파일이 아닌 리포지토리 레이아웃이라 데이터 파일을 생성하지 않는다.
+ */
+const EXPORT_EXTENSION: Record<ExportTarget["format"], string> = {
+  jsonl: "jsonl",
+  markdown: "md",
+  parquet: "parquet",
+  huggingface: "",
+};
 
 /**
  * 빌드 ID 기반의 결정적 mock manifest를 만든다(#30, #29 연동 전 임시).
@@ -17,47 +32,60 @@ import type { BuildManifest } from "@/shared/lib/types";
  * @returns mock BuildManifest.
  */
 function mockManifest(buildId: string): BuildManifest {
-  const sourceKey = "datago.air-quality";
+  const dataset = findDemoDataset(buildId);
+  const sourceKey = `datago.${dataset.providerDataset}`;
+  const succeeded = dataset.status === "succeeded";
+
   return {
     schema_version: "1.0.0",
     build_id: buildId,
-    started_at: "2026-06-21T00:00:00.000Z",
-    finished_at: "2026-06-21T00:00:08.000Z",
+    started_at: dataset.startedAt,
+    finished_at: dataset.finishedAt ?? "",
     build_environment: {
       python_version: "3.12.3",
       kpubdata_version: "0.4.0",
       builder_version: "0.4.0",
     },
     inputs: [sourceKey],
-    inputs_fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-    outputs: [
-      `artifacts/builds/${buildId}/data.jsonl`,
-      `artifacts/builds/${buildId}/README.md`,
-      `artifacts/builds/${buildId}/manifest.json`,
-    ],
+    inputs_fingerprint: succeeded
+      ? `sha256:${dataset.slug.replace(/-/g, "").padEnd(64, "0").slice(0, 64)}`
+      : null,
+    outputs: succeeded
+      ? [
+          ...dataset.exports
+            .filter((target) => target.format !== "huggingface")
+            .map(
+              (target) =>
+                `artifacts/builds/${buildId}/data.${EXPORT_EXTENSION[target.format]}`,
+            ),
+          `artifacts/builds/${buildId}/README.md`,
+          `artifacts/builds/${buildId}/manifest.json`,
+        ]
+      : [],
     warnings: [],
-    errors: [],
-    row_counts: { [sourceKey]: 12304 },
-    schema_summaries: {
-      [sourceKey]: {
-        fields: [
-          { name: "sidoName", type: "string", nullable: false },
-          { name: "pm10Value", type: "int64", nullable: true },
-        ],
-        total_fields: 2,
-      },
-    },
-    provenance: [
-      {
-        provider: "datago",
-        dataset: "air-quality",
-        fetched_at: "2026-06-21T00:00:05.000Z",
-        record_count: 12304,
-        data_checksum: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-        api_version: "unknown",
-        params: { sidoName: "서울" },
-      },
-    ],
+    errors: dataset.errors ?? [],
+    row_counts: succeeded ? { [sourceKey]: dataset.recordCount } : {},
+    schema_summaries: succeeded
+      ? {
+          [sourceKey]: {
+            fields: dataset.fields,
+            total_fields: dataset.fields.length,
+          },
+        }
+      : {},
+    provenance: succeeded
+      ? [
+          {
+            provider: "datago",
+            dataset: dataset.providerDataset,
+            fetched_at: dataset.finishedAt ?? dataset.startedAt,
+            record_count: dataset.recordCount,
+            data_checksum: `sha256:${dataset.slug.replace(/-/g, "").padEnd(64, "1").slice(0, 64)}`,
+            api_version: "unknown",
+            params: dataset.params,
+          },
+        ]
+      : [],
   };
 }
 

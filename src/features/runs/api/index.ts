@@ -7,6 +7,7 @@
  */
 import { serializeSpec } from "@/features/build-spec/specMapping";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
+import { DEMO_DATASETS, type DemoDataset } from "@/shared/lib/demoDatasets";
 import type { BuildRun, BuildSpec } from "@/shared/lib/types";
 
 const MOCK_TIME = "1970-01-01T00:00:00.000Z";
@@ -59,42 +60,36 @@ export async function executeBuild(spec: BuildSpec, signal?: AbortSignal): Promi
   };
 }
 
-/** 목록/이력 UI 개발용 결정적 mock 스펙을 만든다. */
-function mockSpec(datasetId: string, title: string): BuildSpec {
+/** 데모 카탈로그 항목을 목록/이력 UI용 BuildSpec으로 변환한다. */
+function mockSpec(dataset: DemoDataset): BuildSpec {
   return {
-    datasetId,
-    title,
-    description: `${title} 빌드`,
-    sources: [{ provider: "datago", dataset: datasetId, params: {} }],
-    exports: [{ format: "jsonl" }],
-    metadata: {},
+    datasetId: dataset.slug,
+    title: dataset.title,
+    description: dataset.description,
+    sources: [
+      {
+        provider: "datago",
+        dataset: dataset.providerDataset,
+        params: dataset.params,
+      },
+    ],
+    exports: dataset.exports,
+    metadata: {
+      source_url: dataset.sourceUrl,
+      hf_repo: dataset.hfRepo,
+    },
   };
 }
 
-/** mock 모드에서 보여줄 결정적 빌드 이력. */
+/** mock 모드에서 보여줄 결정적 빌드 이력(실제 builder 데이터셋 스펙 기반). */
 function mockBuilds(): BuildRun[] {
-  return [
-    {
-      id: "run-air-quality-3",
-      spec: mockSpec("air-quality", "대기오염 정보"),
-      status: "succeeded",
-      startedAt: "2026-06-21T09:00:00.000Z",
-      finishedAt: "2026-06-21T09:00:08.000Z",
-    },
-    {
-      id: "run-weather-2",
-      spec: mockSpec("kma-daily", "기상청 일별 관측"),
-      status: "failed",
-      startedAt: "2026-06-20T18:30:00.000Z",
-      finishedAt: "2026-06-20T18:30:05.000Z",
-    },
-    {
-      id: "run-population-1",
-      spec: mockSpec("kosis-population", "인구 통계"),
-      status: "running",
-      startedAt: "2026-06-21T10:15:00.000Z",
-    },
-  ];
+  return DEMO_DATASETS.map((dataset) => ({
+    id: dataset.buildId,
+    spec: mockSpec(dataset),
+    status: dataset.status,
+    startedAt: dataset.startedAt,
+    finishedAt: dataset.finishedAt,
+  }));
 }
 
 /**
