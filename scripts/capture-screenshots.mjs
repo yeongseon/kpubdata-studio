@@ -31,21 +31,21 @@ const DEMO_RUNNING = "dur-pregnancy-taboo-20260621"; // 임부금기 의약품 (
 
 // 캡처할 주요 화면 목록
 const SCREENS = [
-{
-id: "dashboard",
-route: "/",
-label: "대시보드 (Dashboard)",
-},
-{
-id: "builds",
-route: "/builds",
-label: "빌드 목록 (Builds)",
-},
-{
-id: "new-build",
-route: "/builds/new",
-label: "새 빌드 만들기 (New Build)",
-},
+  {
+    id: "dashboard",
+    route: "/",
+    label: "대시보드 (Dashboard)",
+  },
+  {
+    id: "builds",
+    route: "/builds",
+    label: "빌드 목록 (Builds)",
+  },
+  {
+    id: "new-build",
+    route: "/builds/new",
+    label: "새 빌드 만들기 (New Build)",
+  },
   {
     id: "build-detail",
     route: `/builds/${DEMO_SUCCEEDED}`,
@@ -82,15 +82,15 @@ label: "새 빌드 만들기 (New Build)",
     label: "미리보기 (Preview)",
   },
   {
-id: "artifacts",
-route: "/artifacts",
-label: "결과물 (Artifacts)",
-},
-{
-id: "settings",
-route: "/settings",
-label: "설정 (Settings)",
-},
+    id: "artifacts",
+    route: "/artifacts",
+    label: "결과물 (Artifacts)",
+  },
+  {
+    id: "settings",
+    route: "/settings",
+    label: "설정 (Settings)",
+  },
 ];
 
 const THEMES = ["light", "dark"];

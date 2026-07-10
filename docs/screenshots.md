@@ -134,15 +134,27 @@ Studio 환경설정 화면입니다. Builder API 연동 등 고급 설정을 관
 
 ---
 
-## 검증 · 미리보기 (Validate · Preview, 레거시)
+## 검증 (Validate, 레거시)
 
-검증·미리보기는 새 빌드 마법사에 통합되었으며, 아래 화면은 마법사로 안내하는 레거시 딥링크입니다.
+검증은 새 빌드 마법사에 통합되었으며, 아래 화면은 마법사로 안내하는 레거시 딥링크입니다.
 
-=== "검증 (Validate)"
+=== "라이트 테마 (Light)"
     ![검증 - 라이트 테마 (Validate Light)](assets/screenshots/validate-light.png)
 
-=== "미리보기 (Preview)"
+=== "다크 테마 (Dark)"
+    ![검증 - 다크 테마 (Validate Dark)](assets/screenshots/validate-dark.png)
+
+---
+
+## 미리보기 (Preview, 레거시)
+
+미리보기도 새 빌드 마법사에 통합되었으며, 아래 화면은 마법사로 안내하는 레거시 딥링크입니다.
+
+=== "라이트 테마 (Light)"
     ![미리보기 - 라이트 테마 (Preview Light)](assets/screenshots/preview-light.png)
+
+=== "다크 테마 (Dark)"
+    ![미리보기 - 다크 테마 (Preview Dark)](assets/screenshots/preview-dark.png)
 
 ---
 

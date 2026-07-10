@@ -13,10 +13,10 @@
 | :--- | :--- | :--- |
 | 진입/현황 파악 | 대시보드 `/` | [dashboard](screens/dashboard.md) |
 | 새 빌드 위저드 | 새 빌드 `/builds/new` | [new-build](screens/new-build.md) |
-| 빌드 검토·재실행 | 빌드 목록 `/builds` → 빌드 상세 `/builds/:id` | [builds](screens/builds.md) · [build-detail](screens/build-detail.md) |
-| 실행 추적 | 실행 `/builds/:id/run` | [build-run](screens/build-run.md) |
-| 결과물 확인 | 결과물 `/builds/:id/artifacts` | [build-artifacts](screens/build-artifacts.md) |
-| 출판·공유 | 게시 `/builds/:id/publish` | [build-publish](screens/build-publish.md) |
+| 빌드 검토·재실행 | 빌드 목록 `/builds` → 빌드 상세 `/builds/:buildId` | [builds](screens/builds.md) · [build-detail](screens/build-detail.md) |
+| 실행 추적 | 실행 `/builds/:buildId/run` | [build-run](screens/build-run.md) |
+| 결과물 확인 | 결과물 `/builds/:buildId/artifacts` | [build-artifacts](screens/build-artifacts.md) |
+| 출판·공유 | 게시 `/builds/:buildId/publish` | [build-publish](screens/build-publish.md) |
 | 환경설정 | 설정 `/settings` | [settings](screens/settings.md) |
 
 > 현재 배포본(GitHub Pages)은 **MOCK 모드**로 동작하며, 화면 데이터는 데모 시드 데이터(`src/shared/lib/demoDatasets.ts`)에서 제공됩니다. `/validate`·`/preview`·`/artifacts`는 마법사/빌드 선택으로 안내하는 레거시 진입점입니다.
