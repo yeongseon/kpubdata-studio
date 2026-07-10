@@ -61,6 +61,7 @@ function getResolvedTheme(theme: ReturnType<typeof useUIStore.getState>["theme"]
 function navigationClassName({ isActive }: { isActive: boolean }) {
   return [
     "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
     isActive
       ? "bg-accent-subtle text-accent-subtle-foreground"
       : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -133,7 +134,7 @@ export function Layout() {
             </div>
             <button
               aria-label="사이드바 닫기"
-              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted lg:hidden"
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:hidden"
               onClick={closeSidebar}
               type="button"
             >
@@ -184,7 +185,7 @@ export function Layout() {
               <div className="flex items-center gap-3">
                 <button
                   aria-label="사이드바 열기/닫기"
-                  className="inline-flex rounded-lg border border-border bg-card p-2 text-foreground lg:hidden"
+                  className="inline-flex rounded-lg border border-border bg-card p-2 text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:hidden"
                   onClick={toggleSidebar}
                   type="button"
                 >
@@ -201,7 +202,7 @@ export function Layout() {
               </div>
 
               <Link
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground shadow-sm transition hover:brightness-110"
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 to={headerCta.to}
               >
                 {headerCta.label}
