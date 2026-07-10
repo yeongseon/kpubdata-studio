@@ -2,18 +2,28 @@
  * Studio 홈 대시보드 화면.
  *
  * 사용자가 가장 먼저 보는 화면으로, 빌드 상태 요약, 최근 빌드, 빠른 시작 진입점을
- * 보여준다(제안 §5.1). 실제 수치/목록은 #29 Builder API 연동 시 채운다.
+ * 보여준다(제안 §5.1). 상태 요약 수치와 최근 빌드 목록은 `listBuilds()`(mock 모드에서는
+ * 실제 builder 스펙 기반 데모 데이터, 실연동 모드에서는 Builder API) 결과로 채운다.
  */
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { BuildRun } from "@/shared/lib/types";
-import { Card, EmptyState, LinkButton, PageHeader, type StatusValue } from "@/shared/ui";
+import { listBuilds } from "@/features/runs/api";
+import type { BuildRun, BuildRunStatus } from "@/shared/lib/types";
+import {
+  Card,
+  EmptyState,
+  LinkButton,
+  PageHeader,
+  StatusBadge,
+  type StatusValue,
+} from "@/shared/ui";
 
-// 상태 요약 카드. 수치는 Builder API 연동 전까지 0으로 둔다.
-const STATUS_SUMMARY: { status: StatusValue; label: string; count: number }[] = [
-  { status: "draft", label: "초안", count: 0 },
-  { status: "running", label: "실행 중", count: 0 },
-  { status: "failed", label: "실패", count: 0 },
-  { status: "succeeded", label: "성공", count: 0 },
+/** 대시보드 상태 요약 카드에 표시할 실행 상태와 라벨. */
+const SUMMARY_CARDS: { status: Extract<StatusValue, BuildRunStatus>; label: string }[] = [
+  { status: "queued", label: "대기 중" },
+  { status: "running", label: "실행 중" },
+  { status: "succeeded", label: "성공" },
+  { status: "failed", label: "실패" },
 ];
 
 const QUICK_ACTIONS = [
@@ -34,13 +44,49 @@ const QUICK_ACTIONS = [
   },
 ];
 
+/** ISO 시작 시각을 timestamp로 안전하게 변환한다(파싱 실패 시 0). */
+function startedAtMillis(iso: string): number {
+  const ms = new Date(iso).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+/** ISO 시각을 한국어 로케일 문자열로 표시한다. */
+function formatTime(iso?: string): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("ko-KR");
+}
+
 /**
  * 상태 요약·최근 빌드·빠른 시작을 보여주는 대시보드 페이지.
  *
  * @returns Studio 대시보드 메인 화면.
  */
 export function HomePage() {
-  const recentBuilds: BuildRun[] = [];
+  const [builds, setBuilds] = useState<BuildRun[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    listBuilds()
+      .then((result) => {
+        if (active) setBuilds(result);
+      })
+      .catch(() => {
+        if (active) setBuilds([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const counts = builds.reduce<Record<string, number>>((acc, run) => {
+    acc[run.status] = (acc[run.status] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const recentBuilds = [...builds]
+    .sort((a, b) => startedAtMillis(b.startedAt) - startedAtMillis(a.startedAt))
+    .slice(0, 5);
 
   return (
     <main className="flex flex-1 flex-col gap-8 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
@@ -53,10 +99,12 @@ export function HomePage() {
 
       {/* 상태 요약 카드 (§5.1) */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {STATUS_SUMMARY.map((item) => (
+        {SUMMARY_CARDS.map((item) => (
           <Card key={item.status} className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">{item.label}</span>
-            <span className="text-2xl font-semibold tracking-tight">{item.count}</span>
+            <span className="text-2xl font-semibold tracking-tight">
+              {counts[item.status] ?? 0}
+            </span>
           </Card>
         ))}
       </section>
@@ -68,11 +116,31 @@ export function HomePage() {
           {recentBuilds.length === 0 ? (
             <EmptyState
               title="아직 생성된 빌드가 없습니다"
-              description="공공데이터 템플릿으로 첫 빌드를 만들어보세요. 실행 이력은 Builder API 연동(#29) 후 여기에 표시됩니다."
+              description="공공데이터 템플릿으로 첫 빌드를 만들어보세요. 실행 이력은 여기에 표시됩니다."
               actionLabel="새 빌드 만들기"
               actionHref="/builds/new"
             />
-          ) : null}
+          ) : (
+            <ul>
+              {recentBuilds.map((run) => (
+                <li
+                  key={run.id}
+                  className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.6fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0"
+                >
+                  <span className="font-medium">{run.spec.title}</span>
+                  <span>
+                    <StatusBadge status={run.status} />
+                  </span>
+                  <span className="text-muted-foreground">{formatTime(run.startedAt)}</span>
+                  <span className="text-right">
+                    <LinkButton variant="secondary" size="sm" to={`/builds/${run.id}`}>
+                      보기
+                    </LinkButton>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </section>
 

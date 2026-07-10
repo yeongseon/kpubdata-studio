@@ -7,6 +7,7 @@
  * 매핑한다. /artifacts가 제공하지 않는 필드(recordCount/sources 등)는 안전한 기본값으로
  * 채워 페이지가 누락 필드로 깨지지 않게 한다(#75).
  */
+import { findDemoDataset } from "@/shared/lib/demoDatasets";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type { BuildManifest } from "@/shared/lib/types";
 
@@ -17,47 +18,55 @@ import type { BuildManifest } from "@/shared/lib/types";
  * @returns mock BuildManifest.
  */
 function mockManifest(buildId: string): BuildManifest {
-  const sourceKey = "datago.air-quality";
+  const dataset = findDemoDataset(buildId);
+  const sourceKey = `datago.${dataset.slug}`;
+  const succeeded = dataset.status === "succeeded";
+
   return {
     schema_version: "1.0.0",
     build_id: buildId,
-    started_at: "2026-06-21T00:00:00.000Z",
-    finished_at: "2026-06-21T00:00:08.000Z",
+    started_at: dataset.startedAt,
+    finished_at: dataset.finishedAt ?? "",
     build_environment: {
       python_version: "3.12.3",
       kpubdata_version: "0.4.0",
       builder_version: "0.4.0",
     },
     inputs: [sourceKey],
-    inputs_fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-    outputs: [
-      `artifacts/builds/${buildId}/data.jsonl`,
-      `artifacts/builds/${buildId}/README.md`,
-      `artifacts/builds/${buildId}/manifest.json`,
-    ],
+    inputs_fingerprint: succeeded
+      ? `sha256:${dataset.slug.replace(/-/g, "").padEnd(64, "0").slice(0, 64)}`
+      : null,
+    outputs: succeeded
+      ? [
+          `artifacts/builds/${buildId}/data/train.parquet`,
+          `artifacts/builds/${buildId}/README.md`,
+          `artifacts/builds/${buildId}/manifest.json`,
+        ]
+      : [],
     warnings: [],
-    errors: [],
-    row_counts: { [sourceKey]: 12304 },
-    schema_summaries: {
-      [sourceKey]: {
-        fields: [
-          { name: "sidoName", type: "string", nullable: false },
-          { name: "pm10Value", type: "int64", nullable: true },
-        ],
-        total_fields: 2,
-      },
-    },
-    provenance: [
-      {
-        provider: "datago",
-        dataset: "air-quality",
-        fetched_at: "2026-06-21T00:00:05.000Z",
-        record_count: 12304,
-        data_checksum: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-        api_version: "unknown",
-        params: { sidoName: "서울" },
-      },
-    ],
+    errors: dataset.errors ?? [],
+    row_counts: succeeded ? { [sourceKey]: dataset.recordCount } : {},
+    schema_summaries: succeeded
+      ? {
+          [sourceKey]: {
+            fields: dataset.fields,
+            total_fields: dataset.fields.length,
+          },
+        }
+      : {},
+    provenance: succeeded
+      ? [
+          {
+            provider: "datago",
+            dataset: dataset.slug,
+            fetched_at: dataset.finishedAt ?? dataset.startedAt,
+            record_count: dataset.recordCount,
+            data_checksum: `sha256:${dataset.slug.replace(/-/g, "").padEnd(64, "1").slice(0, 64)}`,
+            api_version: "unknown",
+            params: dataset.params,
+          },
+        ]
+      : [],
   };
 }
 
