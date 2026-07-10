@@ -25,6 +25,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const OUTPUT_DIR = path.join(ROOT, "docs", "assets", "screenshots");
 
+// build 하위 라우트는 데모 시드 데이터(src/shared/lib/demoDatasets.ts)의 실제 buildId를 사용한다.
+const DEMO_SUCCEEDED = "air-quality-20260621"; // 대기오염 정보 (succeeded)
+const DEMO_RUNNING = "dur-pregnancy-taboo-20260621"; // 임부금기 의약품 (running)
+
 // 캡처할 주요 화면 목록
 const SCREENS = [
   {
@@ -41,6 +45,41 @@ const SCREENS = [
     id: "new-build",
     route: "/builds/new",
     label: "새 빌드 만들기 (New Build)",
+  },
+  {
+    id: "build-detail",
+    route: `/builds/${DEMO_SUCCEEDED}`,
+    label: "빌드 상세 (Build Detail)",
+  },
+  {
+    id: "build-edit",
+    route: `/builds/${DEMO_SUCCEEDED}/edit`,
+    label: "빌드 편집 (Build Edit)",
+  },
+  {
+    id: "build-run",
+    route: `/builds/${DEMO_RUNNING}/run`,
+    label: "빌드 실행 추적 (Build Run)",
+  },
+  {
+    id: "build-artifacts",
+    route: `/builds/${DEMO_SUCCEEDED}/artifacts`,
+    label: "빌드 결과물 (Build Artifacts)",
+  },
+  {
+    id: "build-publish",
+    route: `/builds/${DEMO_SUCCEEDED}/publish`,
+    label: "빌드 게시 (Build Publish)",
+  },
+  {
+    id: "validate",
+    route: "/validate",
+    label: "검증 (Validate)",
+  },
+  {
+    id: "preview",
+    route: "/preview",
+    label: "미리보기 (Preview)",
   },
   {
     id: "artifacts",

@@ -26,6 +26,21 @@ nav:
       - 상태 모델: STATE_MODEL.md
       - 사용자 흐름: USER_FLOWS.md
       - 화면 스크린샷: screenshots.md
+  - 화면 설계서:
+      - 개요: screens/index.md
+      - 애플리케이션 셸: screens/layout-shell.md
+      - 대시보드: screens/dashboard.md
+      - 빌드 목록: screens/builds.md
+      - 새 빌드 만들기: screens/new-build.md
+      - 빌드 상세: screens/build-detail.md
+      - 빌드 편집: screens/build-edit.md
+      - 빌드 실행 추적: screens/build-run.md
+      - 빌드 결과물: screens/build-artifacts.md
+      - 빌드 게시: screens/build-publish.md
+      - 검증(레거시): screens/validate.md
+      - 미리보기(레거시): screens/preview.md
+      - 결과물 랜딩: screens/artifacts.md
+      - 설정: screens/settings.md
   - 아키텍처:
       - 시스템 구조: ARCHITECTURE.md
       - 정보 구조: INFORMATION_ARCHITECTURE.md
