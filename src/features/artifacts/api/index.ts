@@ -11,6 +11,20 @@ import { findDemoDataset } from "@/shared/lib/demoDatasets";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type { BuildManifest } from "@/shared/lib/types";
 
+import type { ExportTarget } from "@/shared/lib/types";
+
+/**
+ * export 형식별 산출물 파일 확장자. specMapping의 output_path 규칙과 동일하게 맞춰
+ * (`.../data.<ext>`) mock/실연동 manifest의 파일 목록 표기를 일관되게 유지한다.
+ * huggingface는 파일이 아닌 리포지토리 레이아웃이라 데이터 파일을 생성하지 않는다.
+ */
+const EXPORT_EXTENSION: Record<ExportTarget["format"], string> = {
+  jsonl: "jsonl",
+  markdown: "md",
+  parquet: "parquet",
+  huggingface: "",
+};
+
 /**
  * 빌드 ID 기반의 결정적 mock manifest를 만든다(#30, #29 연동 전 임시).
  *
@@ -19,7 +33,7 @@ import type { BuildManifest } from "@/shared/lib/types";
  */
 function mockManifest(buildId: string): BuildManifest {
   const dataset = findDemoDataset(buildId);
-  const sourceKey = `datago.${dataset.slug}`;
+  const sourceKey = `datago.${dataset.providerDataset}`;
   const succeeded = dataset.status === "succeeded";
 
   return {
@@ -38,7 +52,12 @@ function mockManifest(buildId: string): BuildManifest {
       : null,
     outputs: succeeded
       ? [
-          `artifacts/builds/${buildId}/data/train.parquet`,
+          ...dataset.exports
+            .filter((target) => target.format !== "huggingface")
+            .map(
+              (target) =>
+                `artifacts/builds/${buildId}/data.${EXPORT_EXTENSION[target.format]}`,
+            ),
           `artifacts/builds/${buildId}/README.md`,
           `artifacts/builds/${buildId}/manifest.json`,
         ]
@@ -58,7 +77,7 @@ function mockManifest(buildId: string): BuildManifest {
       ? [
           {
             provider: "datago",
-            dataset: dataset.slug,
+            dataset: dataset.providerDataset,
             fetched_at: dataset.finishedAt ?? dataset.startedAt,
             record_count: dataset.recordCount,
             data_checksum: `sha256:${dataset.slug.replace(/-/g, "").padEnd(64, "1").slice(0, 64)}`,
