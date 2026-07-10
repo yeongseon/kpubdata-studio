@@ -1,6 +1,27 @@
 # 사용자 흐름 — KPubData Studio
 
-> **참고**: 주요 화면의 스크린샷은 [화면 스크린샷](screenshots.md) 페이지에서 확인할 수 있습니다.
+> **참고**
+>
+> - 주요 화면의 스크린샷은 [화면 스크린샷](screenshots.md) 페이지에서 확인할 수 있습니다.
+> - 각 화면(페이지)의 상세 설계는 [화면 설계서](screens/index.md)에서 페이지 단위로 확인할 수 있습니다.
+
+## 0. 화면 라우트 맵
+
+실제 배포된 화면(라우트)과 사용자 흐름의 대응 관계입니다. 각 화면의 상세 설계는 [화면 설계서](screens/index.md)를 참고하세요.
+
+| 흐름 | 주요 화면(라우트) | 화면 설계서 |
+| :--- | :--- | :--- |
+| 진입/현황 파악 | 대시보드 `/` | [dashboard](screens/dashboard.md) |
+| 새 빌드 위저드 | 새 빌드 `/builds/new` | [new-build](screens/new-build.md) |
+| 빌드 검토·재실행 | 빌드 목록 `/builds` → 빌드 상세 `/builds/:id` | [builds](screens/builds.md) · [build-detail](screens/build-detail.md) |
+| 실행 추적 | 실행 `/builds/:id/run` | [build-run](screens/build-run.md) |
+| 결과물 확인 | 결과물 `/builds/:id/artifacts` | [build-artifacts](screens/build-artifacts.md) |
+| 출판·공유 | 게시 `/builds/:id/publish` | [build-publish](screens/build-publish.md) |
+| 환경설정 | 설정 `/settings` | [settings](screens/settings.md) |
+
+> 현재 배포본(GitHub Pages)은 **MOCK 모드**로 동작하며, 화면 데이터는 데모 시드 데이터(`src/shared/lib/demoDatasets.ts`)에서 제공됩니다. `/validate`·`/preview`·`/artifacts`는 마법사/빌드 선택으로 안내하는 레거시 진입점입니다.
+
+---
 
 ## 1. 새 빌드 위저드
 데이터를 기획하고 첫 빌드를 성공시키기까지의 과정입니다.
@@ -147,6 +168,7 @@ flowchart TD
 | 문서 | 설명 |
 | :--- | :--- |
 | [UI_SPEC.md](./UI_SPEC.md) | UI 컴포넌트 및 화면 명세 |
+| [화면 설계서](screens/index.md) | 페이지(라우트) 단위 화면 설계서 모음 |
 | [STATE_MODEL.md](./STATE_MODEL.md) | 상태 관리 모델 |
 | [INFORMATION_ARCHITECTURE.md](./INFORMATION_ARCHITECTURE.md) | 정보 및 메뉴 구조 |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 시스템 아키텍처 설계 |
