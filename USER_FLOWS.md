@@ -142,22 +142,22 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    Error[오류 발생] --> Type{오류 종류}
+    Error([오류 발생]) --> Type{오류 종류}
     Type --> BuildFail[빌드 실패]
     Type --> NetFail[네트워크 오류]
     Type --> ValFail[검증 실패]
 
     BuildFail --> BuildLog[빌드 로그 분석]
     BuildLog --> EditSpec["명세(Spec) 수정"]
-    EditSpec --> Retry[재시도]
+    EditSpec --> Retry([재시도])
 
     NetFail --> Offline[오프라인 모드 알림]
     Offline --> Reconnect[자동 재연결 대기]
-    Reconnect --> Resume[작업 재개]
+    Reconnect --> Resume([작업 재개])
 
     ValFail --> InputHighlight[잘못된 입력 강조]
     InputHighlight --> CorrectInput[사용자 수정]
-    CorrectInput --> ReValidate[자동 다시 검증]
+    CorrectInput --> ReValidate([자동 다시 검증])
 ```
 
 ---

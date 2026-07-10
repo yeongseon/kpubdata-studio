@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TD
-    Home["Home / Dashboard"] -->|Create New| Editor[Build Editor]
+    Home(["Home / Dashboard"]) -->|Create New| Editor[Build Editor]
     Home -->|View Recent| Run["Build Run / History"]
     Editor -->|Validate/Run| Run
     Run -->|Success| Artifacts[Artifact Viewer]
