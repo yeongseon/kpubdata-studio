@@ -37,16 +37,25 @@ describe("builderApi retry policy", () => {
   });
 
   it("retries idempotent GET /version on 5xx", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse(500, { error: "temp" }))
-      .mockResolvedValueOnce(
-        jsonResponse(200, { service: "kpubdata-builder", api_version: "1.0.0" }),
-      );
+    // 실제 백오프 대기(500ms)를 기다리지 않도록 fake timer로 시간을 직접 진행시킨다.
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(jsonResponse(500, { error: "temp" }))
+        .mockResolvedValueOnce(
+          jsonResponse(200, { service: "kpubdata-builder", api_version: "1.0.0" }),
+        );
 
-    const result = await builderApi.version();
+      const pending = builderApi.version();
+      // 첫 번째 재시도 전 백오프(500ms)를 즉시 소리을 통과시킨다.
+      await vi.advanceTimersByTimeAsync(500);
+      const result = await pending;
 
-    expect(result.api_version).toBe("1.0.0");
-    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+      expect(result.api_version).toBe("1.0.0");
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
