@@ -282,17 +282,17 @@ API 호출에 실패했을 때 서버가 보내주는 표준 에러 형식입니
 
 ```mermaid
 flowchart TD
-    Request[Studio API Request] --> Status{HTTP Status?}
-    Status -->|200| Success[성공 처리 / 데이터 UI 반영]
+    Request([Studio API Request]) --> Status{HTTP Status?}
+    Status -->|200| Success([성공 처리 / 데이터 UI 반영])
     Status -->|400| BadRequest[입력값/스펙 오류]
     Status -->|404| NotFound[데이터 없음]
     Status -->|502| UpstreamFail[소스 실패: outcomes 표시]
     Status -->|500| ServerError[서버 내부 오류]
 
-    BadRequest --> ShowDetail[UI에 구체적 오류 사유 표시]
-    NotFound --> EmptyState[데이터 없음 안내 UI]
-    UpstreamFail --> SourceDetail[소스별 실패 원인 + 재시도 버튼]
-    ServerError --> RetryToast[잠시 후 다시 시도 토스트 메시지]
+    BadRequest --> ShowDetail([UI에 구체적 오류 사유 표시])
+    NotFound --> EmptyState([데이터 없음 안내 UI])
+    UpstreamFail --> SourceDetail([소스별 실패 원인 + 재시도 버튼])
+    ServerError --> RetryToast([잠시 후 다시 시도 토스트 메시지])
 ```
 
 ---
