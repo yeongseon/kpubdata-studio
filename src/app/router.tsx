@@ -40,11 +40,11 @@ function withFeatureBoundary(feature: string, element: ReactElement): ReactEleme
  * @returns 각 경로별 렌더링 규칙을 담은 브라우저 라우터 인스턴스.
  */
 export const router = createBrowserRouter([
-  {
-    path: "/",
-    element: <Layout />,
-    errorElement: <RouteErrorBoundary />,
-    children: [
+    {
+      path: "/",
+      element: <Layout />,
+      errorElement: <RouteErrorBoundary />,
+      children: [
       {
         index: true,
         element: withFeatureBoundary("홈", <HomePage />),
@@ -99,4 +99,9 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+  ],
+  {
+    // GitHub Pages 하위 경로(/kpubdata-studio/)에서도 라우팅이 동작하도록 base를 basename으로 사용한다.
+    basename: import.meta.env.BASE_URL.replace(/\/+$/, "") || "/",
+  },
+);
