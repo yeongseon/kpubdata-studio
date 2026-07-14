@@ -25,3 +25,4 @@ PR 제목은 Conventional Commits 형식을 권장합니다: feat/fix/docs/refac
 - [ ] 커밋 메시지를 영어로 작성했다
 - [ ] Studio는 제어 인터페이스이며, Builder가 소유한 로직(검증/미리보기/Manifest/게시)을 중복 구현하지 않았다
 - [ ] 관련 화면 설계서/문서를 함께 갱신했다 (해당 시)
+- [ ] 사용자 노출 기능 변경 시 문서를 분류해 갱신했다: 제품 계약→PRD, 향후 의도→ROADMAP, 릴리스 변경→CHANGELOG (해당 시)
