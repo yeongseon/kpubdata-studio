@@ -23,7 +23,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # --- Studio 앱(데모) 빌드: dist/ 루트 ---
       - uses: actions/setup-node@v4
