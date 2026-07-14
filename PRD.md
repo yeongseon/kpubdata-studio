@@ -6,6 +6,16 @@ KPubData Studio is a visual interface for creating and managing public-data buil
 
 It helps users define sources, preview records, configure metadata, run builds, and review outputs without hand-editing every configuration file.
 
+## 현재 구현 상태 (Current implementation status — v0.1.0)
+
+> 이 절은 현재 실제로 구현된 범위를 명확히 구분한다.
+
+- **구현된 UI 흐름**: PRD의 Core User Flows(A/B/C)에 대응하는 라우트/페이지가 존재한다 — `builds`, `builds/new`, `builds/:id`(상세/편집), `builds/:id/run`, `builds/:id/artifacts`, `builds/:id/publish`. 추가로 독립 실행형 `validate`, `preview`, `artifacts`, `settings` 페이지를 제공한다.
+- **Builder API 연동은 기본적으로 MOCK 모드**다. 라이브 Builder 없이도 동작하도록 기본값이 mock이며(`shared/lib/builderApi.ts`, `demoDatasets.ts`), 실제 Builder 호출은 `VITE_USE_REAL_BUILDER=true` 환경 변수로만 활성화된다. 즉 현재 GitHub Pages 데모 등은 실제 백엔드가 아니라 demo 데이터로 동작한다.
+- **경계 원칙 유지**: BuildSpec 검증·preview 계산·manifest 스키마·publish 실행 로직은 Builder가 소유하며 Studio는 이를 호출/표시만 한다.
+
+> 실제 Builder API 통합의 완성도는 향후 작업이며, 세부 계획은 [ROADMAP.md](./ROADMAP.md)를 참조한다.
+
 ## 2. Problem
 
 The builder pipeline is powerful but configuration-first.
