@@ -34,7 +34,7 @@ jobs:
       - run: npm run build # base=/kpubdata-studio/, mock 모드(실 Builder 미설정)
 
       # --- 문서 빌드: site/ ---
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install mkdocs-material
