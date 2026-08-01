@@ -52,13 +52,15 @@ export function BuildArtifactsPage() {
   useEffect(() => load(), [load]);
 
   const manifest = state.manifest;
-  const formats = manifest
+  // outputs가 undefined이면 formats도 undefined로, 빈 배열이면 빈 배열로 상태를 보존 (#119)
+  const formats = manifest?.outputs
     ? [...new Set(manifest.outputs.map((path) => describeFile(path).format))]
-    : [];
+    : manifest?.outputs ?? undefined;
   // Builder는 소스별 row_counts(dict)를 주므로 UI 요약에서는 합계로 보여준다.
-  const totalRecords = manifest
+  // row_counts가 제공되지 않으면(undefined) 레코드 수를 "미제공"으로 표시한다.
+  const totalRecords = manifest?.row_counts
     ? Object.values(manifest.row_counts).reduce((sum, count) => sum + count, 0)
-    : 0;
+    : undefined;
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
@@ -95,17 +97,29 @@ export function BuildArtifactsPage() {
               <div>
                 <dt className="text-muted-foreground">레코드 수</dt>
                 <dd className="text-foreground">
-                  {totalRecords.toLocaleString("ko-KR")}
+                  {totalRecords !== undefined
+                    ? totalRecords.toLocaleString("ko-KR")
+                    : "미제공"}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">출력 형식</dt>
-                <dd className="text-foreground">{formats.join(", ")}</dd>
+                <dd className="text-foreground">
+                  {formats === undefined
+                    ? "미제공"
+                    : formats.length > 0
+                      ? formats.join(", ")
+                      : "출력 형식 없음"}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">소스</dt>
                 <dd className="text-foreground">
-                  {manifest.provenance.map((p) => `${p.provider}.${p.dataset}`).join(", ")}
+                  {manifest.provenance === undefined
+                    ? "미제공"
+                    : manifest.provenance.length > 0
+                      ? manifest.provenance.map((p) => `${p.provider}.${p.dataset}`).join(", ")
+                      : "소스 없음"}
                 </dd>
               </div>
               <div>
@@ -121,8 +135,8 @@ export function BuildArtifactsPage() {
               <span>형식</span>
               <span>액션</span>
             </div>
-            {manifest.outputs.length === 0 ? (
-              <EmptyState title="생성된 파일이 없습니다" />
+            {!manifest.outputs || manifest.outputs.length === 0 ? (
+              <EmptyState title={manifest.outputs === undefined ? "파일 정보 미제공" : "생성된 파일이 없습니다"} />
             ) : (
               <ul>
                 {manifest.outputs.map((path) => {

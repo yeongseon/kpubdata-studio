@@ -40,13 +40,13 @@ function mockManifest(buildId: string): BuildManifest {
     schema_version: "1.0.0",
     build_id: buildId,
     started_at: dataset.startedAt,
-    finished_at: dataset.finishedAt ?? "",
+    finished_at: dataset.finishedAt, // undefined를 허용
     build_environment: {
       python_version: "3.12.3",
       kpubdata_version: "0.4.0",
       builder_version: "0.4.0",
     },
-    inputs: [sourceKey],
+    inputs: succeeded ? [sourceKey] : undefined,
     inputs_fingerprint: succeeded
       ? `sha256:${dataset.slug.replace(/-/g, "").padEnd(64, "0").slice(0, 64)}`
       : null,
@@ -61,10 +61,10 @@ function mockManifest(buildId: string): BuildManifest {
           `artifacts/builds/${buildId}/README.md`,
           `artifacts/builds/${buildId}/manifest.json`,
         ]
-      : [],
-    warnings: [],
-    errors: dataset.errors ?? [],
-    row_counts: succeeded ? { [sourceKey]: dataset.recordCount } : {},
+      : undefined,
+    warnings: undefined,
+    errors: dataset.errors,
+    row_counts: succeeded ? { [sourceKey]: dataset.recordCount } : undefined,
     schema_summaries: succeeded
       ? {
           [sourceKey]: {
@@ -72,7 +72,7 @@ function mockManifest(buildId: string): BuildManifest {
             total_fields: dataset.fields.length,
           },
         }
-      : {},
+      : undefined,
     provenance: succeeded
       ? [
           {
@@ -85,33 +85,27 @@ function mockManifest(buildId: string): BuildManifest {
             params: dataset.params,
           },
         ]
-      : [],
+      : undefined,
   };
 }
 
 /**
  * Builder의 실제 `/artifacts` 응답({files, run_id})을 페이지가 쓰는 BuildManifest로
- * 매핑한다. /artifacts가 제공하지 않는 메타 필드는 안전한 기본값으로 채운다.
+ * 매핑한다. /artifacts가 제공하지 않는 메타 필드는 undefined로 남겨 미제공 상태를 표현한다.
  *
  * @param runId - 빌드 실행 ID.
  * @param files - Builder가 반환한 산출물 파일 경로 목록.
- * @returns BuildManifest(메타 필드는 기본값).
+ * @returns BuildManifest(제공되지 않은 필드는 undefined).
  */
 function artifactsToManifest(runId: string, files: string[]): BuildManifest {
   return {
     schema_version: "1.0.0",
     build_id: runId,
-    started_at: "",
-    finished_at: "",
     build_environment: null,
-    inputs: [],
     inputs_fingerprint: null,
     outputs: files,
-    warnings: [],
-    errors: [],
-    row_counts: {},
-    schema_summaries: {},
-    provenance: [],
+    // 제공되지 않은 필드는 undefined로 남겨서 미제공 상태를 표현
+    // started_at, finished_at, inputs, warnings, errors, row_counts, schema_summaries, provenance
   };
 }
 
