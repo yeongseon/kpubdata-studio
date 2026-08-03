@@ -5,6 +5,7 @@
  * 결정적 mock 실행 결과를 반환한다. Builder의 /build는 현재 동기식이므로 비동기 job
  * 폴링은 Builder 측 job 엔드포인트가 생기면 확장한다(#39).
  */
+import { saveBuildSpec } from "@/features/build-spec/specStore";
 import { serializeSpec } from "@/features/build-spec/specMapping";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import { DEMO_DATASETS, type DemoDataset } from "@/shared/lib/demoDatasets";
@@ -38,19 +39,28 @@ export function generateRunId(datasetId: string): string {
  */
 export async function executeBuild(spec: BuildSpec, signal?: AbortSignal): Promise<BuildRun> {
   if (!isRealBuilderEnabled()) {
-    return {
+    const mockRun: BuildRun = {
       id: "mock-run",
       spec,
       status: "succeeded",
       startedAt: MOCK_TIME,
       finishedAt: MOCK_TIME,
     };
+    // mock 모드에서도 편집 흐름을 실제와 같은 경로로 검증할 수 있도록 스펙을 보관한다.
+    saveBuildSpec(mockRun.id, spec);
+    return mockRun;
   }
 
   // 실연동 모드에서는 실제 실행 시각을 기록한다(이력/상세 화면에서 잘못된 1970 값 방지).
   const runId = generateRunId(spec.datasetId);
   const startedAt = new Date().toISOString();
   const result = await builderApi.build(serializeSpec(spec), runId, signal);
+
+  // Builder는 spec을 영속화하지 않으므로(#120), 이후 편집 화면이 기존 스펙을 복원할 수
+  // 있도록 Studio가 실행 시점의 스펙을 run_id에 묶어 보관한다. 저장 실패는 무시되며
+  // 빌드 결과에는 영향을 주지 않는다.
+  saveBuildSpec(result.run_id, spec);
+
   return {
     id: result.run_id,
     spec,

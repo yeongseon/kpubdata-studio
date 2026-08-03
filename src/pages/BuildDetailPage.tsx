@@ -56,26 +56,31 @@ export function BuildDetailPage() {
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
+      {/* 제목은 스펙의 title을 쓰되, 어떤 실행인지 식별할 수 있도록 run id를 함께 노출한다. */}
       <PageHeader
-        eyebrow="빌드 상세"
+        eyebrow={`빌드 상세 · ${buildId}`}
         title={build.spec.title || buildId}
-        description={build.spec.description || "이 빌드의 상태를 확인하고 편집·실행·결과물·게시 단계로 이동하세요."}
+        description={
+          build.spec.description ||
+          "이 빌드의 상태를 확인하고 편집·실행·결과물·게시 단계로 이동하세요."
+        }
         actions={<LinkButton to={`/builds/${buildId}/run`}>실행하기</LinkButton>}
       />
 
+      {/* 값이 없는 시각은 빈 span으로 자리를 차지하지 않도록 아예 렌더하지 않는다. */}
       <Card className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-muted-foreground">현재 상태</span>
         <StatusBadge status={build.status} />
-        <span className="text-sm text-muted-foreground">
-          {build.startedAt && (
-            <>시작: {new Date(build.startedAt).toLocaleString("ko-KR")}</>
-          )}
-        </span>
-        <span className="text-sm text-muted-foreground">
-          {build.finishedAt && (
-            <>완료: {new Date(build.finishedAt).toLocaleString("ko-KR")}</>
-          )}
-        </span>
+        {build.startedAt ? (
+          <span className="text-sm text-muted-foreground">
+            시작: {new Date(build.startedAt).toLocaleString("ko-KR")}
+          </span>
+        ) : null}
+        {build.finishedAt ? (
+          <span className="text-sm text-muted-foreground">
+            완료: {new Date(build.finishedAt).toLocaleString("ko-KR")}
+          </span>
+        ) : null}
       </Card>
 
       <section className="grid gap-4 sm:grid-cols-2">

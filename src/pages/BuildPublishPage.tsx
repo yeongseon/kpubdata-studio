@@ -13,7 +13,7 @@ import { Button, Card, PageHeader, StatusBadge } from "@/shared/ui";
 const DESTINATIONS: { id: PublishDestination; label: string }[] = [
   { id: "local", label: "로컬 다운로드 (Local only)" },
   { id: "huggingface", label: "HuggingFace Dataset" },
-  { id: "github", label: "GitHub Release" },
+  { id: "kaggle", label: "Kaggle Dataset" },
 ];
 
 /**
