@@ -238,6 +238,16 @@ export interface ArtifactsResponse {
   files: string[];
 }
 
+/** GET /builds — 빌드 이력 목록 응답 와이어 형태. */
+export interface ListBuildsResponse {
+  builds: Array<{
+    run_id: string;
+    status: string;
+    started_at: string | null;
+    finished_at: string | null;
+  }>;
+}
+
 /** /preview 응답의 소스별 컬럼 스키마 항목(service app.py 기준). */
 export interface PreviewColumn {
   name: string;
@@ -291,4 +301,7 @@ export const builderApi = {
   /** GET /artifacts/{runId} — 실행 산출물 파일 목록. */
   artifacts: (runId: string, signal?: AbortSignal) =>
     apiFetch<ArtifactsResponse>(`/artifacts/${encodeURIComponent(runId)}`, { signal }),
+
+  /** GET /builds — 빌드 이력 목록 조회. */
+  listBuilds: (signal?: AbortSignal) => apiFetch<ListBuildsResponse>("/builds", { signal }),
 };
