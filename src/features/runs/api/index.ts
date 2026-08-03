@@ -114,7 +114,7 @@ export async function listBuilds(): Promise<BuildRun[]> {
   const response = await builderApi.listBuilds();
 
   // Builder 응답을 BuildRun 형식으로 매핑
-  return response.map((b) => ({
+  return response.builds.map((b) => ({
     id: b.run_id,
     spec: {
       // Builder 응답에 spec 정보가 없으므로 기본값 사용
@@ -128,7 +128,7 @@ export async function listBuilds(): Promise<BuildRun[]> {
     },
     status: b.status === "ok" ? "succeeded" : "failed",
     startedAt: b.started_at ?? new Date().toISOString(),
-    finishedAt: b.finished_at,
+    finishedAt: b.finished_at ?? undefined,
   }));
 }
 
