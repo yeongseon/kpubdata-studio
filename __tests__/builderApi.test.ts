@@ -35,7 +35,11 @@ describe("builderApi client (#29)", () => {
 
   it("preview() POSTs spec to /preview (#75)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      mockResponse(200, { status: "ok", preview: [], api_version: "1.0.0" }),
+      mockResponse(200, {
+        dataset_id: "test-dataset",
+        previews: [],
+        api_version: "1.0.0",
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 

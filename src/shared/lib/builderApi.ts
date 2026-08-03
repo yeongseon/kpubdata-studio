@@ -13,6 +13,7 @@
  * Studio BuildSpec(camelCase) → Builder 스펙 매핑(#37)이 선행되어야 완전히 연결된다.
  * 이 모듈은 그 매핑이 끝난 스펙 텍스트를 받는 저수준 계약 계층이다.
  */
+import { z } from "zod";
 import { API_BASE } from "@/shared/config/env";
 
 /** Builder API 계약 버전. builder #209의 API_CONTRACT_VERSION과 일치해야 한다. */
@@ -206,6 +207,93 @@ export function extractErrorMessage(parsed: unknown): string | undefined {
   return undefined;
 }
 
+// --- Zod 런타임 스키마 검증 (#103) ---
+
+/** Builder API 응답의 api_version을 검증하고 협상한다. */
+function validateApiVersion(responseApiVersion: string | undefined): void {
+  if (!responseApiVersion) {
+    console.warn("Builder 응답에 api_version이 없습니다. 계약 불일치 가능성이 있습니다.");
+    return;
+  }
+
+  if (responseApiVersion !== API_CONTRACT_VERSION) {
+    console.warn(
+      `API 계약 버전 불일치: Studio=${API_CONTRACT_VERSION}, Builder=${responseApiVersion}. ` +
+        "일부 기능이 예상대로 동작하지 않을 수 있습니다."
+    );
+  }
+}
+
+/** GET /version 응답 스키마 */
+export const VersionResponseSchema = z.object({
+  service: z.string(),
+  api_version: z.string(),
+});
+
+/** POST /validate 응답 스키마 */
+export const ValidateResponseSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("valid"),
+    dataset_id: z.string(),
+    api_version: z.string(),
+  }),
+  z.object({
+    status: z.literal("invalid"),
+    problems: z.array(z.string()),
+  }),
+  z.object({
+    status: z.literal("error"),
+    error: z.string(),
+  }),
+]);
+
+/** /build 응답의 outcome 항목 스키마 */
+const BuildOutcomeSchema = z.object({
+  source_key: z.string(),
+  status: z.string(),
+  stages_completed: z.array(z.string()),
+  error: z.string().nullable(),
+});
+
+/** POST /build 응답 스키마 */
+export const BuildResponseSchema = z.object({
+  status: z.string(),
+  run_id: z.string(),
+  outcomes: z.array(BuildOutcomeSchema),
+  manifest: z.string(),
+  api_version: z.string(),
+});
+
+/** GET /artifacts/{runId} 응답 스키마 */
+export const ArtifactsResponseSchema = z.object({
+  run_id: z.string(),
+  files: z.array(z.string()),
+});
+
+/** /preview 응답의 컬럼 스키마 항목 */
+const PreviewColumnSchema = z.object({
+  name: z.string(),
+  dtype: z.string(),
+  nullable: z.boolean(),
+  unique_count: z.number(),
+});
+
+/** /preview 응답의 소스별 미리보기 항목 */
+const PreviewSourceSchema = z.object({
+  source_key: z.string(),
+  status: z.string(),
+  error: z.string().nullable(),
+  schema: z.array(PreviewColumnSchema),
+  sample: z.array(z.record(z.string(), z.unknown())),
+  total_rows: z.number(),
+});
+
+/** POST /preview 응답 스키마 */
+export const PreviewResponseSchema = z.object({
+  dataset_id: z.string(),
+  previews: z.array(PreviewSourceSchema),
+});
+
 // --- 응답 와이어 타입 (Builder service 실제 구현 기준) ---
 
 export interface VersionResponse {
@@ -269,26 +357,56 @@ export interface PreviewResponse {
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
   /** GET /version — 계약 버전 확인(메타). */
-  version: (signal?: AbortSignal) => apiFetch<VersionResponse>("/version", { signal }),
+  version: async (signal?: AbortSignal) => {
+    const response = await apiFetch<VersionResponse>("/version", { signal });
+    const validated = VersionResponseSchema.parse(response);
+    validateApiVersion(validated.api_version);
+    return validated;
+  },
 
   /** POST /validate — BuildSpec YAML 검증. */
-  validate: (specYaml: string, signal?: AbortSignal) =>
-    apiFetch<ValidateResponse>("/validate", { method: "POST", body: { spec: specYaml }, signal }),
+  validate: async (specYaml: string, signal?: AbortSignal) => {
+    const response = await apiFetch<ValidateResponse>("/validate", {
+      method: "POST",
+      body: { spec: specYaml },
+      signal,
+    });
+    const validated = ValidateResponseSchema.parse(response);
+    if (validated.status === "valid") {
+      validateApiVersion(validated.api_version);
+    }
+    return validated;
+  },
 
   /** POST /preview — BuildSpec 기반 샘플 미리보기. */
-  preview: (specYaml: string, signal?: AbortSignal) =>
-    apiFetch<PreviewResponse>("/preview", { method: "POST", body: { spec: specYaml }, signal }),
+  preview: async (specYaml: string, signal?: AbortSignal) => {
+    const response = await apiFetch<PreviewResponse>("/preview", {
+      method: "POST",
+      body: { spec: specYaml },
+      signal,
+    });
+    return PreviewResponseSchema.parse(response);
+  },
 
   /** POST /build — 빌드 실행. run_id 생략 가능. 비멱등 요청이므로 재시도하지 않는다 (#117). */
-  build: (specYaml: string, runId?: string, signal?: AbortSignal) =>
-    apiFetch<BuildResponse>("/build", {
+  build: async (specYaml: string, runId?: string, signal?: AbortSignal) => {
+    const response = await apiFetch<BuildResponse>("/build", {
       method: "POST",
       body: runId ? { spec: specYaml, run_id: runId } : { spec: specYaml },
       signal,
       retries: 0,
-    }),
+    });
+    const validated = BuildResponseSchema.parse(response);
+    validateApiVersion(validated.api_version);
+    return validated;
+  },
 
   /** GET /artifacts/{runId} — 실행 산출물 파일 목록. */
-  artifacts: (runId: string, signal?: AbortSignal) =>
-    apiFetch<ArtifactsResponse>(`/artifacts/${encodeURIComponent(runId)}`, { signal }),
+  artifacts: async (runId: string, signal?: AbortSignal) => {
+    const response = await apiFetch<ArtifactsResponse>(
+      `/artifacts/${encodeURIComponent(runId)}`,
+      { signal }
+    );
+    return ArtifactsResponseSchema.parse(response);
+  },
 };
