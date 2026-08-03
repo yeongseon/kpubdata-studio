@@ -95,22 +95,22 @@ export function BuildArtifactsPage() {
               <div>
                 <dt className="text-muted-foreground">레코드 수</dt>
                 <dd className="text-foreground">
-                  {totalRecords.toLocaleString("ko-KR")}
+                  {totalRecords > 0 ? totalRecords.toLocaleString("ko-KR") : "미제공"}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">출력 형식</dt>
-                <dd className="text-foreground">{formats.join(", ")}</dd>
+                <dd className="text-foreground">{formats.length > 0 ? formats.join(", ") : "미제공"}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">소스</dt>
                 <dd className="text-foreground">
-                  {manifest.provenance.map((p) => `${p.provider}.${p.dataset}`).join(", ")}
+                  {manifest.provenance.length > 0 ? manifest.provenance.map((p) => `${p.provider}.${p.dataset}`).join(", ") : "미제공"}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">빌드 ID</dt>
-                <dd className="break-all text-foreground">{manifest.build_id}</dd>
+                <dd className="break-all text-foreground">{manifest.build_id || "미제공"}</dd>
               </div>
             </dl>
           </Card>
