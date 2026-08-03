@@ -11,6 +11,7 @@ import { useForm } from "react-hook-form";
 import { useParams } from "react-router-dom";
 import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
 import { previewBuild } from "@/features/preview/api";
+import { useBuild } from "@/features/runs/useBuild";
 import { useBuildJob } from "@/features/runs/useBuildJob";
 import { validateSpec } from "@/features/validation/api";
 import { buildFormValuesSchema, buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
@@ -204,6 +205,28 @@ function toBuildSpec(values: BuildFormValues): { spec?: BuildSpec; error?: strin
   return { spec: result.data };
 }
 
+/**
+ * BuildSpec을 BuildFormValues로 변환한다.
+ *
+ * @param spec - BuildSpec 객체.
+ * @returns BuildFormValues.
+ */
+function toFormValues(spec: BuildSpec): BuildFormValues {
+  const firstSource = spec.sources[0] ?? { provider: "", dataset: "", params: {} };
+  return {
+    datasetId: spec.datasetId,
+    title: spec.title,
+    description: spec.description,
+    provider: firstSource.provider,
+    sourceDataset: firstSource.dataset,
+    sourceParams: Object.keys(firstSource.params).length > 0
+      ? JSON.stringify(firstSource.params, null, 2)
+      : "{}",
+    exportFormats: spec.exports.map((e) => e.format),
+    outputPath: spec.metadata.outputPath ?? "",
+  };
+}
+
 interface PreviewState {
   status: "idle" | "loading" | "loaded" | "error";
   rows: Record<string, unknown>[];
@@ -223,9 +246,11 @@ interface ValidationState {
  * @returns 마법사 UI.
  */
 export function NewBuildPage() {
-  // /builds/:buildId/edit 로 진입한 경우(편집 모드). 기존 스펙 로드는 Builder 연동(#29)
-  // 이후 지원하므로, 지금은 안내만 표시한다.
+  // /builds/:buildId/edit 로 진입한 경우(편집 모드). buildId가 있으면 기존 스펙을 로드한다.
   const { buildId } = useParams();
+  const { build, isLoading: buildLoading } = useBuild(buildId || "");
+  const isEditMode = !!buildId && build !== null;
+
   const [step, setStep] = useState(0);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle", rows: [], schema: {} });
   const [validation, setValidation] = useState<ValidationState>({
@@ -268,6 +293,15 @@ export function NewBuildPage() {
       setValidation({ status: "idle", isValid: false, errors: [] });
     }
   }, [values, validation.status]);
+
+  // 편집 모드에서 build가 로드되면 폼을 초기화한다.
+  useEffect(() => {
+    if (isEditMode && build && !buildLoading) {
+      const formValues = toFormValues(build.spec);
+      reset(formValues);
+      setStep(1); // 기본 정보 단계부터 시작
+    }
+  }, [isEditMode, build, buildLoading, reset]);
 
   const draftStatus = validation.isValid ? "validated" : isDirty ? "dirty" : "new";
 
