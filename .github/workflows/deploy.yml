@@ -30,6 +30,14 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+
+      - name: Ensure npm uses runner-writable cache
+        run: |
+          npm config set cache "${RUNNER_TEMP}/.npm-cache" --global
+          npm config set tmp "${RUNNER_TEMP}/.npm-tmp" --global
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+
       - run: npm ci
       - run: npm run build # base=/kpubdata-studio/, mock 모드(실 Builder 미설정)
 
