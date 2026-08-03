@@ -3,6 +3,9 @@
  *
  * 실제 Builder 연동이 켜져 있으면(`VITE_USE_REAL_BUILDER=true`) Builder `/validate`를
  * 호출하고, 아니면 mock(항상 valid)을 반환해 Studio가 독립 동작하도록 한다(#29/#37).
+ *
+ * Builder 계약상 200 정상 응답은 status="valid"만 허용된다.
+ * status="invalid"/"error"는 400 오류 응답으로 처리한다.
  */
 import { serializeSpec } from "@/features/build-spec/specMapping";
 import { ApiError, builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
@@ -33,15 +36,10 @@ export async function validateSpec(
   }
 
   try {
-    const result = await builderApi.validate(serializeSpec(spec));
-    // 2xx로 invalid/error가 올 수도 있으므로 status별로 사유를 매핑한다.
-    if (result.status === "valid") return { valid: true, errors: [] };
-    if (result.status === "invalid") {
-      return { valid: false, errors: result.problems.map(String) };
-    }
-    return { valid: false, errors: [result.error] };
+    await builderApi.validate(serializeSpec(spec));
+    return { valid: true, errors: [] };
   } catch (cause) {
-    // Builder가 검증 실패를 400 + {status:"invalid", problems}으로 돌려주는 경우도 처리한다.
+    // Builder가 검증 실패를 400 + {status:"invalid", problems}으로 돌려주는 경우를 처리한다.
     if (cause instanceof ApiError) {
       const invalid = asInvalidDetails(cause.details);
       if (invalid) return { valid: false, errors: invalid.problems };

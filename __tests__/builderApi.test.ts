@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   ApiError,
   apiFetch,
@@ -33,9 +34,18 @@ describe("builderApi client (#29)", () => {
     expect(init.method).toBe("GET");
   });
 
+  it("version() rejects when api_version is missing (Zod validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { service: "kpubdata-builder" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.version()).rejects.toBeInstanceOf(z.ZodError);
+  });
+
   it("preview() POSTs spec to /preview (#75)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      mockResponse(200, { status: "ok", preview: [], api_version: "1.0.0" }),
+      mockResponse(200, { dataset_id: "x", previews: [] }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -45,6 +55,24 @@ describe("builderApi client (#29)", () => {
     expect(String(url)).toContain("/preview");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({ spec: "dataset_id: x" });
+  });
+
+  it("preview() rejects when previews is missing (Zod validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { dataset_id: "x", preview: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.preview("spec")).rejects.toBeInstanceOf(z.ZodError);
+  });
+
+  it("preview() rejects when previews is not an array (Zod validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { dataset_id: "x", previews: "not-an-array" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.preview("spec")).rejects.toBeInstanceOf(z.ZodError);
   });
 
   it("build() POSTs spec + run_id as JSON", async () => {
@@ -65,6 +93,73 @@ describe("builderApi client (#29)", () => {
     const init = fetchMock.mock.calls[0][1];
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({ spec: "dataset_id: x", run_id: "run1" });
+  });
+
+  it("build() rejects when run_id is missing (Zod validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        status: "ok",
+        outcomes: [],
+        manifest: "m.json",
+        api_version: "1.0.0",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.build("spec")).rejects.toBeInstanceOf(z.ZodError);
+  });
+
+  it("build() rejects when status is 'failed' in 200 response (Zod validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        status: "failed",
+        run_id: "run1",
+        outcomes: [],
+        manifest: "m.json",
+        api_version: "1.0.0",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.build("spec")).rejects.toBeInstanceOf(z.ZodError);
+  });
+
+  it("artifacts() rejects when files is not an array (Zod validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { run_id: "run1", files: "not-an-array" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.artifacts("run1")).rejects.toBeInstanceOf(z.ZodError);
+  });
+
+  it("artifacts() rejects when files is an object (Zod validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { run_id: "run1", files: { key: "value" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.artifacts("run1")).rejects.toBeInstanceOf(z.ZodError);
+  });
+
+  it("listBuilds() rejects when builds is missing (Zod validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { buildList: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.listBuilds()).rejects.toBeInstanceOf(z.ZodError);
+  });
+
+  it("listBuilds() rejects when build status is not 'ok' or 'failed' (Zod validation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        builds: [{ run_id: "run1", status: "running" }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.listBuilds()).rejects.toBeInstanceOf(z.ZodError);
   });
 
   it("throws ApiError with the server message on a non-2xx response", async () => {
@@ -147,6 +242,40 @@ describe("builderApi client (#29)", () => {
       status: "failed",
       started_at: "2024-01-16T14:20:00Z",
       finished_at: null,
+    });
+  });
+
+  it("listBuilds() parses builds without optional timestamp fields (PR #174 regression)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        builds: [
+          {
+            run_id: "run1",
+            status: "ok",
+            started_at: null,
+            finished_at: null,
+          },
+          {
+            run_id: "run2",
+            status: "failed",
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.listBuilds();
+
+    expect(result.builds).toHaveLength(2);
+    expect(result.builds[0]).toMatchObject({
+      run_id: "run1",
+      status: "ok",
+      started_at: null,
+      finished_at: null,
+    });
+    expect(result.builds[1]).toMatchObject({
+      run_id: "run2",
+      status: "failed",
     });
   });
 

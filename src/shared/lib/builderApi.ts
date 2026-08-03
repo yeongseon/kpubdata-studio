@@ -13,6 +13,7 @@
  * Studio BuildSpec(camelCase) → Builder 스펙 매핑(#37)이 선행되어야 완전히 연결된다.
  * 이 모듈은 그 매핑이 끝난 스펙 텍스트를 받는 저수준 계약 계층이다.
  */
+import { z } from "zod";
 import { API_BASE } from "@/shared/config/env";
 
 /** Builder API 계약 버전. builder #209의 API_CONTRACT_VERSION과 일치해야 한다. */
@@ -102,7 +103,7 @@ function isTimeoutAbort(cause: unknown): boolean {
  * @returns 파싱된 응답 본문.
  * @throws ApiError 응답이 2xx가 아니거나 네트워크/파싱/타임아웃 오류가 발생한 경우.
  */
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiFetch(path: string, options: RequestOptions = {}): Promise<unknown> {
   const {
     method = "GET",
     body,
@@ -171,7 +172,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     throw new ApiError(response.status, message, parsed);
   }
 
-  return parsed as T;
+  return parsed;
 }
 
 /**
@@ -206,99 +207,151 @@ export function extractErrorMessage(parsed: unknown): string | undefined {
   return undefined;
 }
 
-// --- 응답 와이어 타입 (Builder service 실제 구현 기준) ---
+// --- 성공 응답 스키마 (Builder contract 기준, Zod 런타임 검증용) ---
 
-export interface VersionResponse {
-  service: string;
-  api_version: string;
-}
+/** GET /version 응답 스키마. */
+export const VersionResponseSchema = z.object({
+  service: z.string(),
+  api_version: z.string(),
+});
 
-export type ValidateResponse =
-  | { status: "valid"; dataset_id: string; api_version: string }
-  | { status: "invalid"; problems: string[] }
-  | { status: "error"; error: string };
-
-export interface BuildOutcome {
-  source_key: string;
-  status: string;
-  stages_completed: string[];
-  error: string | null;
-}
-
-export interface BuildResponse {
-  status: string;
-  run_id: string;
-  outcomes: BuildOutcome[];
-  manifest: string;
-  api_version: string;
-}
-
-export interface ArtifactsResponse {
-  run_id: string;
-  files: string[];
-}
-
-/** /preview 응답의 소스별 컬럼 스키마 항목(service app.py 기준). */
-export interface PreviewColumn {
-  name: string;
-  dtype: string;
-  nullable: boolean;
-  unique_count: number;
-}
-
-/** /preview 응답의 소스별 미리보기 항목(service app.py 기준). */
-export interface PreviewSource {
-  source_key: string;
-  status: string;
-  error: string | null;
-  schema: PreviewColumn[];
-  sample: Record<string, unknown>[];
-  total_rows: number;
-}
+export type VersionResponse = z.infer<typeof VersionResponseSchema>;
 
 /**
- * POST /preview 응답 와이어 형태(builder service app.py 기준).
- *
- * `{ dataset_id, previews: [...] }` — 소스별로 스키마와 샘플 행을 담는다.
+ * POST /validate 성공(200) 응답 스키마.
+ * Builder 계약상 200은 status="valid"만 허용된다.
+ * invalid/error는 400 오류 응답이므로 여기 포함하지 않는다.
  */
-export interface PreviewResponse {
-  dataset_id: string;
-  previews: PreviewSource[];
+export const ValidateResponseSchema = z.object({
+  status: z.literal("valid"),
+  dataset_id: z.string(),
+  api_version: z.string(),
+});
+
+export type ValidateResponse = z.infer<typeof ValidateResponseSchema>;
+
+/** /preview 응답의 컬럼 스키마 항목. */
+export const PreviewColumnSchema = z.object({
+  name: z.string(),
+  dtype: z.string(),
+  nullable: z.boolean(),
+  unique_count: z.number().int(),
+});
+
+export type PreviewColumn = z.infer<typeof PreviewColumnSchema>;
+
+/** /preview 응답의 소스별 미리보기 항목. */
+export const PreviewSourceSchema = z.object({
+  source_key: z.string(),
+  status: z.string(),
+  error: z.string().nullable().optional(),
+  schema: PreviewColumnSchema.array(),
+  sample: z.record(z.string(), z.unknown()).array(),
+  total_rows: z.number().int(),
+});
+
+export type PreviewSource = z.infer<typeof PreviewSourceSchema>;
+
+/** POST /preview 응답 스키마. */
+export const PreviewResponseSchema = z.object({
+  dataset_id: z.string(),
+  previews: PreviewSourceSchema.array(),
+});
+
+export type PreviewResponse = z.infer<typeof PreviewResponseSchema>;
+
+/** /build 응답의 단일 소스 결과. */
+export const BuildOutcomeSchema = z.object({
+  source_key: z.string(),
+  status: z.enum(["ok", "failed"]),
+  stages_completed: z.string().array(),
+  error: z.string().nullable(),
+});
+
+export type BuildOutcome = z.infer<typeof BuildOutcomeSchema>;
+
+/**
+ * POST /build 성공(200) 응답 스키마.
+ * Builder 계약상 200은 status="ok"만 허용된다.
+ * status="failed"는 502 오류 응답이므로 여기 포함하지 않는다.
+ */
+export const BuildResponseSchema = z.object({
+  status: z.literal("ok"),
+  run_id: z.string(),
+  outcomes: BuildOutcomeSchema.array(),
+  manifest: z.string(),
+  api_version: z.string(),
+});
+
+export type BuildResponse = z.infer<typeof BuildResponseSchema>;
+
+/** GET /artifacts/{run_id} 응답 스키마. */
+export const ArtifactsResponseSchema = z.object({
+  run_id: z.string(),
+  files: z.string().array(),
+});
+
+export type ArtifactsResponse = z.infer<typeof ArtifactsResponseSchema>;
+
+/** GET /builds 응답의 단일 빌드 요약. */
+export const BuildSummarySchema = z.object({
+  run_id: z.string(),
+  status: z.enum(["ok", "failed"]),
+  started_at: z.string().nullable().optional(),
+  finished_at: z.string().nullable().optional(),
+});
+
+export type BuildSummary = z.infer<typeof BuildSummarySchema>;
+
+/** GET /builds 응답 스키마. */
+export const BuildsResponseSchema = z.object({
+  builds: BuildSummarySchema.array(),
+});
+
+export type BuildsResponse = z.infer<typeof BuildsResponseSchema>;
+
+// --- 내부 helper: 성공 응답 파싱 with Zod 검증 ---
+
+/**
+ * apiFetch를 호출하고 응답을 Zod 스키마로 파싱/검증한다.
+ * @internal (export for testing only)
+ */
+async function apiFetchParsed<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  options: RequestOptions = {},
+): Promise<T> {
+  const response = await apiFetch(path, options);
+  return schema.parse(response);
 }
 
-/** GET /builds 응답의 단일 빌드 요약(builder contract BuildSummary 기준). */
-export interface BuildSummary {
-  /** 빌드 실행 식별자 */
-  run_id: string;
-  /** 빌드 상태("ok" | "failed") */
-  status: "ok" | "failed";
-  /** 빌드 시작 시각(ISO 8601, null, 또는 생략됨) */
-  started_at?: string | null;
-  /** 빌드 완료 시각(ISO 8601, null, 또는 생략됨) */
-  finished_at?: string | null;
-}
-
-/** GET /builds 응답 와이어 형태(builder contract BuildsResponse 기준). */
-export interface BuildsResponse {
-  builds: BuildSummary[];
-}
+// --- Builder service 엔드포인트 클라이언트 ---
 
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
   /** GET /version — 계약 버전 확인(메타). */
-  version: (signal?: AbortSignal) => apiFetch<VersionResponse>("/version", { signal }),
+  version: (signal?: AbortSignal) =>
+    apiFetchParsed("/version", VersionResponseSchema, { signal }),
 
   /** POST /validate — BuildSpec YAML 검증. */
   validate: (specYaml: string, signal?: AbortSignal) =>
-    apiFetch<ValidateResponse>("/validate", { method: "POST", body: { spec: specYaml }, signal }),
+    apiFetchParsed("/validate", ValidateResponseSchema, {
+      method: "POST",
+      body: { spec: specYaml },
+      signal,
+    }),
 
   /** POST /preview — BuildSpec 기반 샘플 미리보기. */
   preview: (specYaml: string, signal?: AbortSignal) =>
-    apiFetch<PreviewResponse>("/preview", { method: "POST", body: { spec: specYaml }, signal }),
+    apiFetchParsed("/preview", PreviewResponseSchema, {
+      method: "POST",
+      body: { spec: specYaml },
+      signal,
+    }),
 
   /** POST /build — 빌드 실행. run_id 생략 가능. 비멱등 요청이므로 재시도하지 않는다 (#117). */
   build: (specYaml: string, runId?: string, signal?: AbortSignal) =>
-    apiFetch<BuildResponse>("/build", {
+    apiFetchParsed("/build", BuildResponseSchema, {
       method: "POST",
       body: runId ? { spec: specYaml, run_id: runId } : { spec: specYaml },
       signal,
@@ -307,11 +360,11 @@ export const builderApi = {
 
   /** GET /artifacts/{runId} — 실행 산출물 파일 목록. */
   artifacts: (runId: string, signal?: AbortSignal) =>
-    apiFetch<ArtifactsResponse>(`/artifacts/${encodeURIComponent(runId)}`, { signal }),
+    apiFetchParsed(`/artifacts/${encodeURIComponent(runId)}`, ArtifactsResponseSchema, { signal }),
 
   /** GET /builds — 빌드 이력 목록(#153, builder #250). */
   listBuilds: (limit?: number, signal?: AbortSignal) => {
     const query = limit !== undefined ? `?limit=${limit}` : "";
-    return apiFetch<BuildsResponse>(`/builds${query}`, { signal });
+    return apiFetchParsed(`/builds${query}`, BuildsResponseSchema, { signal });
   },
 };

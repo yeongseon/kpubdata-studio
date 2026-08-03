@@ -36,7 +36,7 @@ describe("apiFetch retry (#94)", () => {
       .mockResolvedValueOnce(okResponse({ service: "kpubdata-builder" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await apiFetch<{ service: string }>("/version", { retries: 1, timeoutMs: 0 });
+    const result = await apiFetch("/version", { retries: 1, timeoutMs: 0 }) as { service: string };
 
     expect(result.service).toBe("kpubdata-builder");
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -49,7 +49,7 @@ describe("apiFetch retry (#94)", () => {
       .mockResolvedValueOnce(okResponse({ service: "ok" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await apiFetch<{ service: string }>("/version", { retries: 1, timeoutMs: 0 });
+    const result = await apiFetch("/version", { retries: 1, timeoutMs: 0 }) as { service: string };
 
     expect(result.service).toBe("ok");
     expect(fetchMock).toHaveBeenCalledTimes(2);
