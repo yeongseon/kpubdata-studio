@@ -8,9 +8,8 @@
  * MSW가 모의 응답을 반환하도록 설정되어 있다.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch, builderApi, extractErrorMessage } from "@/shared/lib/builderApi";
-import { http, HttpResponse } from "msw";
+import { describe, expect, it, vi } from "vitest";
+import { ApiError, apiFetch, builderApi } from "@/shared/lib/builderApi";
 import { mswServer } from "../vitest.setup";
 
 describe("Builder API 실제 HTTP E2E 테스트 (#104)", () => {
@@ -80,10 +79,6 @@ sources:
       expect(error).toBeInstanceOf(ApiError);
       const apiError = error as ApiError;
       expect(apiError.status).toBe(400);
-
-      // error 추출 (problems 배열)
-      const message = extractErrorMessage(apiError.details);
-      // extractErrorMessage는 problems 배열을 직접 처리하지 않으므로,
       // apiError.message를 통해 검증
       expect(apiError.message).toBeTruthy();
     }

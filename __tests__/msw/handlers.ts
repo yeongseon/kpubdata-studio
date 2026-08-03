@@ -142,7 +142,7 @@ export const handlers = [
   /**
    * POST /preview — 소스 스키마와 샘플 행 산출 (파일 미기록)
    */
-  http.post(`${API_BASE}/preview`, async ({ request }) => {
+  http.post(`${API_BASE}/preview`, async () => {
     return HttpResponse.json({
       dataset_id: "weather_report",
       previews: [

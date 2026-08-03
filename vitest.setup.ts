@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { afterEach, afterAll } from "vitest";
 
 /**
  * MSW (Mock Service Worker) 설정 (#104)
