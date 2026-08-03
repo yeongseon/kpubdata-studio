@@ -31,8 +31,6 @@ jobs:
           node-version: "22"
           cache: "npm"
       - run: npm ci
-        env:
-          npm_config_cache: /tmp/.npm-cache
       - run: npm run build # base=/kpubdata-studio/, mock 모드(실 Builder 미설정)
 
       # --- 문서 빌드: site/ ---
