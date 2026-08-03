@@ -31,7 +31,7 @@ graph LR
 
 > ⚠️ **이 섹션은 초기 설계 스캐폴드입니다.** 여기 적힌 `/providers`·`/builds`·
 > `/builds/:id/status` 등은 설계 시안이며, Studio가 **실제로 호출하는 엔드포인트와
-> 와이어 형태**는 아래 [Builder 통합 현황](#builder-통합-현황-36) 및
+> 와이어 형태**는 아래 [Builder 통합 현황](#builder-36) 및
 > `src/shared/lib/builderApi.ts`(`/version`·`/validate`·`/build`·`/artifacts/{run_id}`)를
 > 기준으로 합니다. 두 섹션이 다르면 통합 현황 쪽이 최신입니다.
 
