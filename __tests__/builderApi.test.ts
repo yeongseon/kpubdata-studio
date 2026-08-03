@@ -83,6 +83,73 @@ describe("builderApi client (#29)", () => {
     expect((error as ApiError).status).toBe(0);
   });
 
+  it("listBuilds() calls GET /builds without limit parameter (#153)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { builds: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await builderApi.listBuilds();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/builds");
+    expect(String(url)).not.toContain("?limit=");
+    expect(init.method).toBe("GET");
+  });
+
+  it("listBuilds() calls GET /builds?limit=N with limit parameter (#153)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { builds: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await builderApi.listBuilds(25);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/builds?limit=25");
+    expect(init.method).toBe("GET");
+  });
+
+  it("listBuilds() parses Builder wire response correctly (#153)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        builds: [
+          {
+            run_id: "run_123",
+            status: "ok",
+            started_at: "2024-01-15T10:30:00Z",
+            finished_at: "2024-01-15T11:45:00Z",
+          },
+          {
+            run_id: "run_456",
+            status: "failed",
+            started_at: "2024-01-16T14:20:00Z",
+            finished_at: null,
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.listBuilds();
+
+    expect(result.builds).toHaveLength(2);
+    expect(result.builds[0]).toMatchObject({
+      run_id: "run_123",
+      status: "ok",
+      started_at: "2024-01-15T10:30:00Z",
+      finished_at: "2024-01-15T11:45:00Z",
+    });
+    expect(result.builds[1]).toMatchObject({
+      run_id: "run_456",
+      status: "failed",
+      started_at: "2024-01-16T14:20:00Z",
+      finished_at: null,
+    });
+  });
+
   it("surfaces outcomes[].error on a 502 with no top-level error (#75)", async () => {
     vi.stubGlobal(
       "fetch",

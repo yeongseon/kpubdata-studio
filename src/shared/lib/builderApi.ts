@@ -266,6 +266,23 @@ export interface PreviewResponse {
   previews: PreviewSource[];
 }
 
+/** GET /builds 응답의 단일 빌드 요약(builder contract BuildSummary 기준). */
+export interface BuildSummary {
+  /** 빌드 실행 식별자 */
+  run_id: string;
+  /** 빌드 상태("ok" | "failed") */
+  status: "ok" | "failed";
+  /** 빌드 시작 시각(ISO 8601, null, 또는 생략됨) */
+  started_at?: string | null;
+  /** 빌드 완료 시각(ISO 8601, null, 또는 생략됨) */
+  finished_at?: string | null;
+}
+
+/** GET /builds 응답 와이어 형태(builder contract BuildsResponse 기준). */
+export interface BuildsResponse {
+  builds: BuildSummary[];
+}
+
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
   /** GET /version — 계약 버전 확인(메타). */
@@ -291,4 +308,10 @@ export const builderApi = {
   /** GET /artifacts/{runId} — 실행 산출물 파일 목록. */
   artifacts: (runId: string, signal?: AbortSignal) =>
     apiFetch<ArtifactsResponse>(`/artifacts/${encodeURIComponent(runId)}`, { signal }),
+
+  /** GET /builds — 빌드 이력 목록(#153, builder #250). */
+  listBuilds: (limit?: number, signal?: AbortSignal) => {
+    const query = limit !== undefined ? `?limit=${limit}` : "";
+    return apiFetch<BuildsResponse>(`/builds${query}`, { signal });
+  },
 };
