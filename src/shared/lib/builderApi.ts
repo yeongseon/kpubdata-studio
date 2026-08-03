@@ -181,8 +181,8 @@ export async function apiFetch<T>(
   }
 
   if (!response.ok) {
-    const message =
-      extractErrorMessage(parsed) ?? `Builder API 오류 (HTTP ${response.status})`;
+    // 사용자에게 명시적인 에러 메시지 제공 (#159)
+    const message = formatApiErrorMessage(response.status, parsed);
     throw new ApiError(response.status, message, parsed);
   }
 
@@ -190,9 +190,16 @@ export async function apiFetch<T>(
   if (schema) {
     const result = schema.safeParse(parsed);
     if (!result.success) {
+      // 스키마 불일치 시 사용자에게 표시 가능한 명시적 에러 (#159)
+      const errorDetails = result.error.issues.map((issue) => {
+        const path = issue.path.length > 0 ? `\`${issue.path.join(".")}\`` : "응답 구조";
+        const message = issue.message || "형식 불일치";
+        return `${path}: ${message}`;
+      }).join(", ");
+
       throw new ApiError(
         500,
-        `응답 스키마 검증 실패: ${result.error.issues.map((e) => e.message).join(", ")}`,
+        `Builder API 응답이 예상된 형식과 일치하지 않습니다: ${errorDetails}`,
         parsed,
       );
     }
@@ -233,6 +240,52 @@ export function extractErrorMessage(parsed: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * HTTP 상태 코드와 응답 본문을 사용자에게 표시 가능한 에러 메시지로 변환합니다 (#159).
+ *
+ * @param status - HTTP 상태 코드
+ * @param parsed - 파싱된 응답 본문
+ * @returns 사용자에게 표시할 수 있는 명시적인 에러 메시지
+ */
+export function formatApiErrorMessage(status: number, parsed: unknown): string {
+  // 먼저 구조화된 에러 메시지 추출 시도
+  const extracted = extractErrorMessage(parsed);
+  if (extracted) return extracted;
+
+  // 상태 코드별 기본 메시지
+  const statusMessages: Record<number, string> = {
+    400: "요청 형식이 올바르지 않습니다.",
+    401: "인증이 필요합니다.",
+    403: "접근 권한이 없습니다.",
+    404: "요청한 리소스를 찾을 수 없습니다.",
+    405: "Method Not Allowed",
+    408: "요청 시간이 초과되었습니다.",
+    429: "너무 많은 요청을 보냈습니다. 잠시 후 다시 시도해주세요.",
+    500: "서버 내부 오류가 발생했습니다.",
+    502: "데이터 소스에서 오류가 발생했습니다.",
+    503: "서비스를 일시적으로 사용할 수 없습니다.",
+    504: "Gateway Timeout",
+  };
+
+  const baseMessage = statusMessages[status] ?? `Builder API 오류 (HTTP ${status})`;
+
+  // 응답에 추가 정보가 있는 경우 덧붙임
+  if (parsed && typeof parsed === "object") {
+    const record = parsed as Record<string, unknown>;
+    if (record.run_id) {
+      return `${baseMessage} (빌드 ID: ${record.run_id})`;
+    }
+    if (record.dataset_id) {
+      return `${baseMessage} (데이터셋 ID: ${record.dataset_id})`;
+    }
+    if (record.source_key) {
+      return `${baseMessage} (소스: ${record.source_key})`;
+    }
+  }
+
+  return baseMessage;
 }
 
 // --- 응답 타입 (Zod 스키마에서 추출) ---

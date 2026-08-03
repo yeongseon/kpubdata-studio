@@ -4,6 +4,7 @@ import {
   apiFetch,
   builderApi,
   extractErrorMessage,
+  formatApiErrorMessage,
 } from "@/shared/lib/builderApi";
 
 function mockResponse(status: number, body: unknown): Response {
@@ -133,6 +134,49 @@ describe("extractErrorMessage (#75)", () => {
   });
 });
 
+describe("formatApiErrorMessage (#159)", () => {
+  it("400 - 기본 메시지 반환", () => {
+    expect(formatApiErrorMessage(400, undefined)).toBe("요청 형식이 올바르지 않습니다.");
+  });
+
+  it("404 - 기본 메시지 반환", () => {
+    expect(formatApiErrorMessage(404, undefined)).toBe("요청한 리소스를 찾을 수 없습니다.");
+  });
+
+  it("404 - run_id 포함 응답 시 메시지에 run_id 추가", () => {
+    const message = formatApiErrorMessage(404, { run_id: "run_123" });
+    expect(message).toContain("run_123");
+  });
+
+  it("502 - 기본 메시지 반환", () => {
+    expect(formatApiErrorMessage(502, undefined)).toBe("데이터 소스에서 오류가 발생했습니다.");
+  });
+
+  it("extractErrorMessage가 있으면 해당 메시지 우선", () => {
+    const message = formatApiErrorMessage(400, { error: "구체적 에러" });
+    expect(message).toContain("구체적 에러");
+  });
+
+  it("404 - 리소스 없음 응답 스키마 검증", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(404, {
+        error: "run not found: run_999",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await apiFetch("/artifacts/run_999");
+      expect.fail("ApiError가 발생해야 합니다.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      const apiError = error as ApiError;
+      expect(apiError.status).toBe(404);
+      expect(apiError.message).toContain("run_999");
+    }
+  });
+});
+
 describe("Zod 스키마 런타임 검증 (#158, #103)", () => {
   it("version() 스키마 검증 - 올바른 응답 통과", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -152,7 +196,7 @@ describe("Zod 스키마 런타임 검증 (#158, #103)", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(builderApi.version()).rejects.toThrow("응답 스키마 검증 실패");
+    await expect(builderApi.version()).rejects.toThrow("Builder API 응답이 예상된 형식과 일치하지 않습니다");
   });
 
   it("validate() 스키마 검증 - valid 응답 통과", async () => {

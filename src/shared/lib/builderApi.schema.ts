@@ -1,5 +1,5 @@
 /**
- * Builder API 응답 Zod 스키마 (#158, #103)
+ * Builder API 응답 Zod 스키마 (#158, #103, #159)
  *
  * Builder HTTP API 응답의 런타임 타입 검증을 위한 Zod 스키마입니다.
  * Builder SSOT(contract/builder-api.yaml)와 정합하도록 작성되었습니다.
@@ -7,6 +7,7 @@
  * 사용 방법:
  * - apiFetch()에서 응답 파싱 후 zod.parse()로 런타임 검증
  * - TypeScript 타입 안정성 보장 + 런타임 데이터 정합성 검증
+ * - 오류 응답도 스키마로 검증하여 사용자에게 명시적인 피드백 제공 (#159)
  */
 
 import { z } from "zod";
@@ -131,6 +132,65 @@ export const previewResponseSchema = z.object({
   previews: z.array(previewSourceSchema),
 });
 
+/**
+ * ============================================
+ * 오류 응답 스키마 (#159)
+ * ============================================
+ */
+
+/**
+ * 400 - 스펙 로딩 실패 (SpecLoadError)
+ */
+export const specLoadErrorSchema = z.object({
+  status: z.literal("error"),
+  error: z.string(),
+});
+
+/**
+ * 400 - 요청 본문 누락/형식 오류
+ */
+export const badRequestSchema = z.object({
+  error: z.string(),
+});
+
+/**
+ * 404 - 리소스 없음
+ */
+export const notFoundSchema = z.object({
+  error: z.string(),
+});
+
+/**
+ * 502 - 소스 fetch/stage 실패 (일부 성공, 최소 하나 실패)
+ *
+ * 참고: outcomes 배열에는 성공/실패 소스가 섞여 있으며,
+ * 하나라도 실패한 소스가 있으면 전체 상태는 "failed"가 됩니다.
+ */
+export const buildPartialFailureSchema = z.object({
+  status: z.literal("failed"),
+  run_id: z.string(),
+  outcomes: z.array(buildOutcomeSchema),
+  manifest: z.string(),
+  api_version: z.string(),
+});
+
+/**
+ * 통합 오류 응답 스키마
+ *
+ * Builder API의 다양한 오류 응답 형태를 검증합니다.
+ * discriminatedUnion 대신 일반적인 z.union() 사용.
+ */
+export const errorResponseSchema = z.union([
+  // 400 - 스펙 로딩 실패 (이미 validateResponseSchema에 있음)
+  validateErrorSchema,
+  // 400 - 요청 본문 오류
+  badRequestSchema,
+  // 404 - 리소스 없음
+  notFoundSchema,
+  // 502 - 빌드 부분 실패 (이미 buildResponseSchema의 failed에 있음)
+  buildPartialFailureSchema,
+]);
+
 // 타입 추출 (TypeScript 타입과 일치하도록 Zod 스키마에서 추출)
 export type VersionResponse = z.infer<typeof versionResponseSchema>;
 export type ValidateValid = z.infer<typeof validateValidSchema>;
@@ -145,3 +205,9 @@ export type ArtifactsResponse = z.infer<typeof artifactsResponseSchema>;
 export type PreviewColumn = z.infer<typeof previewColumnSchema>;
 export type PreviewSource = z.infer<typeof previewSourceSchema>;
 export type PreviewResponse = z.infer<typeof previewResponseSchema>;
+
+// 오류 응답 타입 (#159)
+export type SpecLoadError = z.infer<typeof specLoadErrorSchema>;
+export type BadRequest = z.infer<typeof badRequestSchema>;
+export type NotFound = z.infer<typeof notFoundSchema>;
+export type BuildPartialFailure = z.infer<typeof buildPartialFailureSchema>;
