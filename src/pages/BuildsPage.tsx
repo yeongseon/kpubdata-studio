@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listBuilds } from "@/features/runs/api";
+import { SkeletonTable } from "@/shared/ui";
 import type { BuildRun } from "@/shared/lib/types";
 import {
   Button,
@@ -114,9 +115,7 @@ export function BuildsPage() {
         </div>
 
         {state.status === "loading" ? (
-          <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-            불러오는 중입니다…
-          </div>
+          <SkeletonTable rows={5} className="w-full" />
         ) : state.status === "error" ? (
           <ErrorState
             title="빌드 목록을 불러오지 못했습니다"
