@@ -27,14 +27,6 @@ services:
     volumes:
       # 테스트 전용 named volume (테스트 종료 시 제거)
       - builder-e2e-data:/data
-    healthcheck:
-      # readiness 확인용 healthcheck
-      test: ["CMD", "curl", "-f", "http://localhost:8000/version"]
-      interval: 2s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
-    container_name: kpubdata-builder-e2e
 
 volumes:
   builder-e2e-data:

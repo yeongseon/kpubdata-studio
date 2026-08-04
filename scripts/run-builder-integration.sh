@@ -84,7 +84,7 @@ while [ ${WAITED} -lt ${MAX_WAIT} ]; do
     fi
     sleep 2
     WAITED=$((WAITED + 2))
-    echo -n "."
+    printf "."
 done
 
 echo ""
