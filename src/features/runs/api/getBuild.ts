@@ -34,11 +34,16 @@ export async function getBuild(buildId: string): Promise<BuildRun> {
     return storedSpec ? { ...build, spec: storedSpec } : build;
   }
 
-  // 목록에 없지만 스펙이 보관돼 있는 경우(방금 실행한 빌드, 또는 실연동 모드에서 이력
-  // 목록 연동이 아직 없는 상황). 실행 상태는 알 수 없으므로 지어내지 않는다.
-  if (storedSpec) {
-    return { id: buildId, spec: storedSpec, status: "succeeded" as const, startedAt: "" };
+  // 목록에 없으면 실제 실행 이력이 없는 것이다. 스펙만 저장돼 있다고 해서 성공 상태를
+  // 지어내면 안 된다(#155).
+  if (isRealBuilderEnabled()) {
+    // 실연동 모드에서 목록이 비어 있는 원인은 Builder `GET /builds` 미연동이다(#102).
+    // 사용자가 "존재하지 않는 빌드"로 오해하지 않도록 원인을 드러낸다.
+    throw new Error(
+      `빌드를 찾을 수 없습니다: ${buildId}. Builder 이력 목록 연동(#102) 이후 조회할 수 있습니다.`,
+    );
   }
+  throw new Error(`빌드를 찾을 수 없습니다: ${buildId}`);
 
   if (isRealBuilderEnabled()) {
     // 실연동 모드에서 목록이 비어 있는 원인은 Builder `GET /builds` 미연동이다(#102).

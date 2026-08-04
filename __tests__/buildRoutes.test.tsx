@@ -28,18 +28,24 @@ describe("build-centric routes", () => {
       // 조회된 스펙의 제목이 표시되고,
       expect(screen.getByRole("heading", { name: "대기오염 정보" })).toBeInTheDocument();
     });
-    // 어떤 실행인지 식별할 수 있도록 run id도 함께 노출된다.
-    expect(screen.getByText(/air-quality-20260621/)).toBeInTheDocument();
+    // 어떤 실행인지 식별할 수 있도록 run id도 함께 노출된다(eyebrow 영역).
+    expect(screen.getByText(/빌드 상세 · air-quality-20260621/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /편집/ })).toHaveAttribute(
       "href",
       "/builds/air-quality-20260621/edit",
     );
+    // Manifest 요약이 비동기로 표시된다(#155).
+    expect(await screen.findByText("Manifest 요약")).toBeInTheDocument();
+    // mock manifest의 artifact 파일명이 표시된다(#155). air-quality는 parquet를 export한다.
+    expect(screen.getByText("data.parquet")).toBeInTheDocument();
   });
 
   it("shows an error instead of placeholder data for an unknown buildId", async () => {
     renderAt("/builds/does-not-exist", <BuildDetailPage />);
     // 존재하지 않는 빌드를 실제 데이터처럼 보여주면 안 된다 (#119, #120).
     expect(await screen.findByText(/빌드를 찾을 수 없습니다/)).toBeInTheDocument();
+    // 존재하지 않는 build가 성공 상태로 렌더링되지 않아야 한다(#155).
+    expect(screen.queryByText(/Manifest 요약/)).not.toBeInTheDocument();
   });
 
   it("renders the run page with progress steps", () => {
