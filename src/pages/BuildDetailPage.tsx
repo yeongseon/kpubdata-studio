@@ -60,7 +60,7 @@ export function BuildDetailPage() {
   // build 조회 성공 시 manifest를 로드한다.
   useEffect(() => {
     if (build && !isLoading && !error) {
-      loadManifest();
+      return loadManifest();
     }
   }, [build, isLoading, error, loadManifest]);
 
@@ -147,7 +147,7 @@ export function BuildDetailPage() {
               <div>
                 <dt className="text-muted-foreground">레코드 수</dt>
                 <dd className="text-foreground">
-                  {Object.keys(manifestState.manifest.row_counts).length > 0
+                  {manifestState.manifest.row_counts && Object.keys(manifestState.manifest.row_counts).length > 0
                     ? Object.values(manifestState.manifest.row_counts)
                         .reduce((sum, count) => sum + count, 0)
                         .toLocaleString("ko-KR")
@@ -157,7 +157,7 @@ export function BuildDetailPage() {
               <div>
                 <dt className="text-muted-foreground">데이터 소스</dt>
                 <dd className="text-foreground">
-                  {manifestState.manifest.provenance.length > 0
+                  {manifestState.manifest.provenance && manifestState.manifest.provenance.length > 0
                     ? manifestState.manifest.provenance
                         .map((p) => `${p.provider}.${p.dataset}`)
                         .join(", ")
@@ -166,12 +166,14 @@ export function BuildDetailPage() {
               </div>
               <div>
                 <dt className="text-muted-foreground">생성 파일 수</dt>
-                <dd className="text-foreground">{manifestState.manifest.outputs.length}</dd>
+                <dd className="text-foreground">
+                  {manifestState.manifest.outputs?.length ?? 0}
+                </dd>
               </div>
             </dl>
           </Card>
 
-          {manifestState.manifest.outputs.length > 0 && (
+          {manifestState.manifest.outputs && manifestState.manifest.outputs.length > 0 && (
             <Card className="p-0">
               <div className="grid grid-cols-[1.6fr_0.6fr] gap-4 border-b border-border px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <span>파일</span>
