@@ -147,33 +147,45 @@ export function BuildDetailPage() {
               <div>
                 <dt className="text-muted-foreground">레코드 수</dt>
                 <dd className="text-foreground">
-                  {manifestState.manifest.row_counts && Object.keys(manifestState.manifest.row_counts).length > 0
-                    ? Object.values(manifestState.manifest.row_counts)
-                        .reduce((sum, count) => sum + count, 0)
-                        .toLocaleString("ko-KR")
-                    : "미제공"}
+                  {manifestState.manifest.row_counts === undefined
+                  ? "미제공"
+                  : Object.values(manifestState.manifest.row_counts)
+                  .reduce((sum, count) => sum + count, 0)
+                  .toLocaleString("ko-KR")}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">데이터 소스</dt>
                 <dd className="text-foreground">
-                  {manifestState.manifest.provenance && manifestState.manifest.provenance.length > 0
-                    ? manifestState.manifest.provenance
-                        .map((p) => `${p.provider}.${p.dataset}`)
-                        .join(", ")
-                    : "미제공"}
+                {manifestState.manifest.provenance === undefined
+                ? "미제공"
+                : manifestState.manifest.provenance.length === 0
+                ? "소스 없음"
+                : manifestState.manifest.provenance
+                .map((provenance) => `${provenance.provider}.${provenance.dataset}`)
+                .join(", ")}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">생성 파일 수</dt>
                 <dd className="text-foreground">
-                  {manifestState.manifest.outputs?.length ?? 0}
+                {manifestState.manifest.outputs === undefined
+                ? "미제공"
+                : manifestState.manifest.outputs.length}
                 </dd>
               </div>
             </dl>
           </Card>
 
-          {manifestState.manifest.outputs && manifestState.manifest.outputs.length > 0 && (
+          {manifestState.manifest.outputs === undefined ? (
+            <Card variant="dashed">
+              <p className="text-sm text-muted-foreground">파일 정보 미제공</p>
+            </Card>
+          ) : manifestState.manifest.outputs.length === 0 ? (
+            <Card variant="dashed">
+              <p className="text-sm text-muted-foreground">생성된 파일이 없습니다.</p>
+            </Card>
+          ) : (
             <Card className="p-0">
               <div className="grid grid-cols-[1.6fr_0.6fr] gap-4 border-b border-border px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <span>파일</span>
