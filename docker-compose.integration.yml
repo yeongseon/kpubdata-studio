@@ -1,0 +1,41 @@
+# Builder HTTP E2E 통합 테스트용 Docker Compose 설정 (#160).
+#
+# Studio의 builderApi가 실제 Builder 컨테이너와 HTTP 통신하는 흐름을 검증한다.
+# 로컬 개발과 CI에서 모두 사용 가능하며, 별도의 Compose project로 격리한다.
+
+name: kpubdata-studio-e2e
+
+services:
+  builder:
+    build:
+      context: ${KPUBDATA_BUILDER_CONTEXT:-../kpubdata-builder}
+      dockerfile: Dockerfile
+    environment:
+      # 로컬 무인증 모드 (service/app.py의 _DEV_MODE_ENV)
+      # docker-entrypoint.sh에서도 KPUBDATA_BUILDER_DEV를 체크하므로 둘 다 설정
+      KPUBDATA_BUILDER_DEV: "1"
+      KPUBDATA_BUILDER_DEV_MODE: "1"
+      # 빌드 산출물 출력 디렉터리
+      KPUBDATA_BUILDER_OUTPUT_DIR: /data
+      # 서버 바인딩 (기본 0.0.0.0)
+      KPUBDATA_BUILDER_HOST: 0.0.0.0
+      # 내부 포트 (기본 8000)
+      KPUBDATA_BUILDER_PORT: "8000"
+    ports:
+      # 호스트 포트: 충돌 방지를 위해 18000 사용 (환경변수로 재정의 가능)
+      - "${KPUBDATA_BUILDER_E2E_PORT:-18000}:8000"
+    volumes:
+      # 테스트 전용 named volume (테스트 종료 시 제거)
+      - builder-e2e-data:/data
+    healthcheck:
+      # readiness 확인용 healthcheck
+      test: ["CMD", "curl", "-f", "http://localhost:8000/version"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    container_name: kpubdata-builder-e2e
+
+volumes:
+  builder-e2e-data:
+    # 테스트별로 격리된 볼륨 (cleanup 필요 시 이름으로 제거)

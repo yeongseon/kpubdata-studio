@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "screenshots": "node scripts/capture-screenshots.mjs"
+    "screenshots": "node scripts/capture-screenshots.mjs",
+    "test:integration:builder": "vitest run --config vitest.integration.config.ts",
+    "test:integration:builder:docker": "sh scripts/run-builder-integration.sh"
   },
   "dependencies": {
     "react": "19.2.8",

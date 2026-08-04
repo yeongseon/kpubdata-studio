@@ -1,0 +1,71 @@
+# Builder HTTP E2E 통합 테스트 CI (#160).
+#
+# 실제 kpubdata-builder Docker 컨테이너를 기동하고
+# Studio의 builderApi와 HTTP 통신하는 통합 테스트를 실행한다.
+#
+# - workflow_dispatch로 수동 실행 가능
+# - 관련 파일이 변경된 PR에서 자동 실행
+# - Docker build/run 실제 수행
+# - 별도 secret 불필요 (KPUBDATA_BUILDER_DEV_MODE 사용)
+
+name: Builder Integration Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/shared/lib/builderApi.ts"
+      - "src/shared/config/env.ts"
+      - "__tests__/integration/**"
+      - "scripts/run-builder-integration.sh"
+      - "docker-compose.integration.yml"
+      - "vitest.integration.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/builder-integration.yml"
+
+# 최소 권한: 코드 읽기만 필요
+permissions:
+  contents: read
+
+# 동시 실행 취소
+concurrency:
+  group: builder-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Builder HTTP E2E
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Studio
+        uses: actions/checkout@v7
+        with:
+          path: studio
+
+      - name: Checkout Builder
+        uses: actions/checkout@v7
+        with:
+          repository: yeongseon/kpubdata-builder
+          ref: main
+          path: kpubdata-builder
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: studio/package-lock.json
+
+      - name: Install dependencies
+        working-directory: studio
+        run: npm ci
+
+      - name: Run Builder integration tests
+        working-directory: studio
+        run: npm run test:integration:builder:docker
+        env:
+          # Studio와 Builder가 형제 디렉터리에 있으므로 기본값 사용
+          KPUBDATA_BUILDER_CONTEXT: ../kpubdata-builder
