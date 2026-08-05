@@ -73,7 +73,7 @@ describe("BuildEditPage", () => {
   });
 
   it("취소 버튼을 누르면 빌드 상세 페이지로 이동한다", async () => {
-    const { useNavigate } = await import("react-router-dom");
+    const { useNavigate, useParams } = await import("react-router-dom");
     const navigate = vi.fn();
 
     vi.mocked(useNavigate).mockReturnValue(navigate);
