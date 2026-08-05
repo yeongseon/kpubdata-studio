@@ -10,6 +10,7 @@ import { Layout } from "@/app/Layout";
 import { ArtifactsPage } from "@/pages/ArtifactsPage";
 import { BuildArtifactsPage } from "@/pages/BuildArtifactsPage";
 import { BuildDetailPage } from "@/pages/BuildDetailPage";
+import { BuildEditPage } from "@/pages/BuildEditPage";
 import { BuildPublishPage } from "@/pages/BuildPublishPage";
 import { BuildRunPage } from "@/pages/BuildRunPage";
 import { BuildsPage } from "@/pages/BuildsPage";
@@ -63,9 +64,8 @@ export const router = createBrowserRouter([
         element: withFeatureBoundary("빌드 상세", <BuildDetailPage />),
       },
       {
-        // 편집은 New Build와 동일한 에디터를 재사용한다.
         path: "builds/:buildId/edit",
-        element: withFeatureBoundary("빌드 편집", <NewBuildPage />),
+        element: withFeatureBoundary("빌드 편집", <BuildEditPage />),
       },
       {
         path: "builds/:buildId/run",
