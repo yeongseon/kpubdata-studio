@@ -114,28 +114,28 @@ export interface BuildManifest {
   schema_version: string;
   /** 실행된 빌드를 추적하는 고유 ID */
   build_id: string;
-  /** 빌드 시작 시각 ISO 문자열(UTC) */
-  started_at: string;
-  /** 빌드 종료 시각 ISO 문자열(UTC) */
-  finished_at: string;
+  /** 빌드 시작 시각 ISO 문자열(UTC). 제공되지 않으면 undefined */
+  started_at?: string;
+  /** 빌드 종료 시각 ISO 문자열(UTC). 제공되지 않으면 undefined */
+  finished_at?: string;
   /** 빌드를 생성한 실행 환경. 캡처하지 못했으면 null */
   build_environment: ManifestBuildEnvironment | null;
-  /** 입력 파일 또는 소스 식별자 목록 */
-  inputs: string[];
+  /** 입력 파일 또는 소스 식별자 목록. 제공되지 않으면 undefined */
+  inputs?: string[];
   /** 입력 데이터 전체의 재현성 지문("sha256:..."). 입력이 없으면 null */
   inputs_fingerprint: string | null;
-  /** 생성된 결과물 경로 목록 */
-  outputs: string[];
-  /** 치명적이지 않지만 확인이 필요한 경고 목록 */
-  warnings: string[];
-  /** 실행 실패 또는 부분 실패 메시지 목록 */
-  errors: string[];
-  /** 단계별 또는 산출물별 레코드 수 요약(소스 키 → 건수) */
-  row_counts: Record<string, number>;
-  /** 소스(산출물) 키별 스키마 요약. row_counts와 동일한 키를 사용한다 */
-  schema_summaries: Record<string, ManifestSchemaSummary>;
-  /** 소스별 상세 출처(fetch 시각/파라미터/레코드 수/체크섬) 목록 */
-  provenance: ManifestSourceProvenance[];
+  /** 생성된 결과물 경로 목록. 제공되지 않으면 undefined */
+  outputs?: string[];
+  /** 치명적이지 않지만 확인이 필요한 경고 목록. 제공되지 않으면 undefined */
+  warnings?: string[];
+  /** 실행 실패 또는 부분 실패 메시지 목록. 제공되지 않으면 undefined */
+  errors?: string[];
+  /** 단계별 또는 산출물별 레코드 수 요약(소스 키 → 건수). 제공되지 않으면 undefined */
+  row_counts?: Record<string, number>;
+  /** 소스(산출물) 키별 스키마 요약. row_counts와 동일한 키를 사용한다. 제공되지 않으면 undefined */
+  schema_summaries?: Record<string, ManifestSchemaSummary>;
+  /** 소스별 상세 출처(fetch 시각/파라미터/레코드 수/체크섬) 목록. 제공되지 않으면 undefined */
+  provenance?: ManifestSourceProvenance[];
 }
 
 export interface BuildDraft {

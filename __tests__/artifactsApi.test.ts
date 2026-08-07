@@ -40,21 +40,47 @@ describe("getBuildManifest (#75)", () => {
       "artifacts/builds/run-99/data.jsonl",
       "artifacts/builds/run-99/README.md",
     ]);
-    // /artifacts가 제공하지 않는 필드는 안전한 기본값(페이지가 깨지지 않음).
-    expect(manifest.row_counts).toEqual({});
-    expect(manifest.provenance).toEqual([]);
+    // /artifacts가 제공하지 않는 필드는 undefined로 남겨 미제공 상태를 표현 (#119)
+    expect(manifest.row_counts).toBeUndefined();
+    expect(manifest.provenance).toBeUndefined();
     expect(manifest.inputs_fingerprint).toBeNull();
+    expect(manifest.started_at).toBeUndefined();
+    expect(manifest.finished_at).toBeUndefined();
+    expect(manifest.inputs).toBeUndefined();
+    expect(manifest.warnings).toBeUndefined();
+    expect(manifest.errors).toBeUndefined();
+    expect(manifest.schema_summaries).toBeUndefined();
   });
 
   it("returns the mock manifest without network in mock mode", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const manifest = await getBuildManifest("mock-build");
+    const manifest = await getBuildManifest("air-quality-20260621");
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(manifest.build_id).toBe("mock-build");
-    const total = Object.values(manifest.row_counts).reduce((sum, n) => sum + n, 0);
+    expect(manifest.build_id).toBe("air-quality-20260621");
+    // 성공한 빌드는 row_counts가 제공됨
+    expect(manifest.row_counts).toBeDefined();
+    const total = Object.values(manifest.row_counts ?? {}).reduce((sum, n) => sum + n, 0);
     expect(total).toBeGreaterThan(0);
+  });
+
+  it("returns mock manifest with undefined fields for failed builds (#119)", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    // 실패한 빌드에 대한 mock manifest
+    const manifest = await getBuildManifest("dur-older-adult-caution-20260618");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(manifest.build_id).toBe("dur-older-adult-caution-20260618");
+    // 실패한 빌드는 row_counts가 제공되지 않음 (undefined)
+    expect(manifest.row_counts).toBeUndefined();
+    expect(manifest.schema_summaries).toBeUndefined();
+    expect(manifest.provenance).toBeUndefined();
+    // errors는 제공됨
+    expect(manifest.errors).toBeDefined();
+    expect(manifest.errors?.length).toBeGreaterThan(0);
   });
 });
