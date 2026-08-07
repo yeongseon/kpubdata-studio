@@ -242,6 +242,17 @@ export function extractErrorMessage(parsed: unknown): string | undefined {
   return undefined;
 }
 
+// --- GET /builds 응답 와이어 타입 (#166; 스키마 미정의 계약) ---
+
+/** GET /builds — 빌드 이력 목록 응답 와이어 형태. */
+export interface ListBuildsResponse {
+  builds: Array<{
+    run_id: string;
+    status: string;
+    started_at: string | null;
+    finished_at: string | null;
+  }>;
+}
 /**
  * HTTP 상태 코드와 응답 본문을 사용자에게 표시 가능한 에러 메시지로 변환합니다 (#159).
  *
@@ -329,4 +340,7 @@ export const builderApi = {
   /** GET /artifacts/{runId} — 실행 산출물 파일 목록. */
   artifacts: (runId: string, signal?: AbortSignal) =>
     apiFetch(`/artifacts/${encodeURIComponent(runId)}`, { signal }, schemas.artifactsResponseSchema),
+
+  /** GET /builds — 빌드 이력 목록 조회. */
+  listBuilds: (signal?: AbortSignal) => apiFetch<ListBuildsResponse>("/builds", { signal }),
 };

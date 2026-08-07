@@ -110,8 +110,25 @@ export async function listBuilds(): Promise<BuildRun[]> {
     return mockBuilds();
   }
 
-  // TODO(builder #250): Builder에 GET /builds가 추가되면 실제 이력을 호출·매핑한다.
-  // 그 전까지는 가짜 이력 대신 빈 목록을 반환해 실연동 모드에서 mock을 노출하지 않는다.
-  return [];
+  // Builder의 GET /builds 엔드포인트를 호출하여 실제 빌드 이력을 가져온다.
+  const response = await builderApi.listBuilds();
+
+  // Builder 응답을 BuildRun 형식으로 매핑
+  return response.builds.map((b) => ({
+    id: b.run_id,
+    spec: {
+      // Builder 응답에 spec 정보가 없으므로 기본값 사용
+      // 추후 manifest에서 spec을 읽어오도록 개선 필요
+      datasetId: "",
+      title: b.run_id,
+      description: "",
+      sources: [],
+      exports: [],
+      metadata: {},
+    },
+    status: b.status === "ok" ? "succeeded" : "failed",
+    startedAt: b.started_at ?? new Date().toISOString(),
+    finishedAt: b.finished_at ?? undefined,
+  }));
 }
 
