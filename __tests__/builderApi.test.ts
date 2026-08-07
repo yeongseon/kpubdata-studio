@@ -4,6 +4,7 @@ import {
   apiFetch,
   builderApi,
   extractErrorMessage,
+  formatApiErrorMessage,
 } from "@/shared/lib/builderApi";
 
 function mockResponse(status: number, body: unknown): Response {
@@ -35,7 +36,11 @@ describe("builderApi client (#29)", () => {
 
   it("preview() POSTs spec to /preview (#75)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      mockResponse(200, { status: "ok", preview: [], api_version: "1.0.0" }),
+      mockResponse(200, {
+        dataset_id: "test_dataset",
+        previews: [],
+        api_version: "1.0.0",
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -83,6 +88,73 @@ describe("builderApi client (#29)", () => {
     expect((error as ApiError).status).toBe(0);
   });
 
+  it("listBuilds() calls GET /builds without limit parameter (#153)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { builds: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await builderApi.listBuilds();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/builds");
+    expect(String(url)).not.toContain("?limit=");
+    expect(init.method).toBe("GET");
+  });
+
+  it("listBuilds() calls GET /builds?limit=N with limit parameter (#153)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { builds: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await builderApi.listBuilds(25);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/builds?limit=25");
+    expect(init.method).toBe("GET");
+  });
+
+  it("listBuilds() parses Builder wire response correctly (#153)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        builds: [
+          {
+            run_id: "run_123",
+            status: "ok",
+            started_at: "2024-01-15T10:30:00Z",
+            finished_at: "2024-01-15T11:45:00Z",
+          },
+          {
+            run_id: "run_456",
+            status: "failed",
+            started_at: "2024-01-16T14:20:00Z",
+            finished_at: null,
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.listBuilds();
+
+    expect(result.builds).toHaveLength(2);
+    expect(result.builds[0]).toMatchObject({
+      run_id: "run_123",
+      status: "ok",
+      started_at: "2024-01-15T10:30:00Z",
+      finished_at: "2024-01-15T11:45:00Z",
+    });
+    expect(result.builds[1]).toMatchObject({
+      run_id: "run_456",
+      status: "failed",
+      started_at: "2024-01-16T14:20:00Z",
+      finished_at: null,
+    });
+  });
+
   it("surfaces outcomes[].error on a 502 with no top-level error (#75)", async () => {
     vi.stubGlobal(
       "fetch",
@@ -126,5 +198,177 @@ describe("extractErrorMessage (#75)", () => {
     expect(extractErrorMessage({ status: "failed", outcomes: [] })).toBeUndefined();
     expect(extractErrorMessage(undefined)).toBeUndefined();
     expect(extractErrorMessage("oops")).toBeUndefined();
+  });
+});
+
+describe("formatApiErrorMessage (#159)", () => {
+  it("400 - 기본 메시지 반환", () => {
+    expect(formatApiErrorMessage(400, undefined)).toBe("요청 형식이 올바르지 않습니다.");
+  });
+
+  it("404 - 기본 메시지 반환", () => {
+    expect(formatApiErrorMessage(404, undefined)).toBe("요청한 리소스를 찾을 수 없습니다.");
+  });
+
+  it("404 - run_id 포함 응답 시 메시지에 run_id 추가", () => {
+    const message = formatApiErrorMessage(404, { run_id: "run_123" });
+    expect(message).toContain("run_123");
+  });
+
+  it("502 - 기본 메시지 반환", () => {
+    expect(formatApiErrorMessage(502, undefined)).toBe("데이터 소스에서 오류가 발생했습니다.");
+  });
+
+  it("extractErrorMessage가 있으면 해당 메시지 우선", () => {
+    const message = formatApiErrorMessage(400, { error: "구체적 에러" });
+    expect(message).toContain("구체적 에러");
+  });
+
+  it("404 - 리소스 없음 응답 스키마 검증", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(404, {
+        error: "run not found: run_999",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await apiFetch("/artifacts/run_999");
+      expect.fail("ApiError가 발생해야 합니다.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      const apiError = error as ApiError;
+      expect(apiError.status).toBe(404);
+      expect(apiError.message).toContain("run_999");
+    }
+  });
+});
+
+describe("Zod 스키마 런타임 검증 (#158, #103)", () => {
+  it("version() 스키마 검증 - 올바른 응답 통과", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { service: "kpubdata-builder", api_version: "1.0.0" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.version();
+
+    expect(result.service).toBe("kpubdata-builder");
+    expect(result.api_version).toBe("1.0.0");
+  });
+
+  it("version() 스키마 검증 - 필드 누락 시 실패", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { service: "kpubdata-builder" }), // api_version 누락
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(builderApi.version()).rejects.toThrow("Builder API 응답이 예상된 형식과 일치하지 않습니다");
+  });
+
+  it("validate() 스키마 검증 - valid 응답 통과", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        status: "valid",
+        dataset_id: "test_dataset",
+        api_version: "1.0.0",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.validate("dataset_id: x");
+
+    expect(result.status).toBe("valid");
+    if (result.status === "valid") {
+      expect(result.dataset_id).toBe("test_dataset");
+    }
+  });
+
+  it("validate() 스키마 검증 - invalid 응답 통과", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(400, {
+        status: "invalid",
+        problems: ["필수 파라미터 누락"],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await builderApi.validate("invalid");
+      expect.fail("ApiError가 발생해야 합니다.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(400);
+    }
+  });
+
+  it("build() 스키마 검증 - ok 응답 통과", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        status: "ok",
+        run_id: "run_123",
+        outcomes: [
+          {
+            source_key: "kma__forecast",
+            status: "ok",
+            stages_completed: ["bronze", "silver"],
+            error: null,
+          },
+        ],
+        manifest: "output/run_123/manifest.json",
+        api_version: "1.0.0",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.build("dataset_id: x");
+
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      expect(result.run_id).toBe("run_123");
+      expect(result.outcomes).toHaveLength(1);
+    }
+  });
+
+  it("preview() 스키마 검증 - 올바른 응답 통과", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        dataset_id: "weather_report",
+        previews: [
+          {
+            source_key: "kma__forecast",
+            status: "ok",
+            error: null,
+            schema: [
+              { name: "date", dtype: "Utf8", nullable: false, unique_count: 30 },
+            ],
+            sample: [{ date: "2024-04-01" }],
+            total_rows: 30,
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.preview("dataset_id: x");
+
+    expect(result.dataset_id).toBe("weather_report");
+    expect(result.previews).toHaveLength(1);
+    expect(result.previews[0].schema).toBeDefined();
+  });
+
+  it("artifacts() 스키마 검증 - 올바른 응답 통과", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        run_id: "run_123",
+        files: ["manifest.json", "data.parquet"],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.artifacts("run_123");
+
+    expect(result.run_id).toBe("run_123");
+    expect(result.files).toContain("manifest.json");
   });
 });

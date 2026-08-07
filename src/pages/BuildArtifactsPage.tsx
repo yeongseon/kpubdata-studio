@@ -55,10 +55,14 @@ export function BuildArtifactsPage() {
   const formats = manifest
     ? [...new Set(manifest.outputs.map((path) => describeFile(path).format))]
     : [];
-  // Builder는 소스별 row_counts(dict)를 주므로 UI 요약에서는 합계로 보여준다.
-  const totalRecords = manifest
+  
+  const hasMetadata = manifest && manifest.started_at && manifest.started_at.length > 0;
+  const totalRecords = manifest && hasMetadata
     ? Object.values(manifest.row_counts).reduce((sum, count) => sum + count, 0)
-    : 0;
+    : null;
+  const sources = manifest && hasMetadata && manifest.provenance.length > 0
+    ? manifest.provenance.map((p) => `${p.provider}.${p.dataset}`).join(", ")
+    : null;
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
@@ -95,22 +99,22 @@ export function BuildArtifactsPage() {
               <div>
                 <dt className="text-muted-foreground">레코드 수</dt>
                 <dd className="text-foreground">
-                  {totalRecords.toLocaleString("ko-KR")}
+                  {totalRecords !== null ? totalRecords.toLocaleString("ko-KR") : "미제공"}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">출력 형식</dt>
-                <dd className="text-foreground">{formats.join(", ")}</dd>
+                <dd className="text-foreground">{formats.length > 0 ? formats.join(", ") : "미제공"}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">소스</dt>
                 <dd className="text-foreground">
-                  {manifest.provenance.map((p) => `${p.provider}.${p.dataset}`).join(", ")}
+                  {sources || "미제공"}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">빌드 ID</dt>
-                <dd className="break-all text-foreground">{manifest.build_id}</dd>
+                <dd className="break-all text-foreground">{manifest?.build_id || "미제공"}</dd>
               </div>
             </dl>
           </Card>
@@ -146,6 +150,13 @@ export function BuildArtifactsPage() {
             <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
               manifest.json
             </p>
+            {!hasMetadata && (
+              <p className="mt-2 text-xs text-orange-600 dark:text-orange-400">
+                실연동 모드에서는 Builder /build 응답 manifest가 아직 연동되지 않아, 
+                메타데이터 필드(시간/환경/지문/레코드 수/스키마/출처)가 제공되지 않습니다. 
+                파일 목록(outputs)만 실제 데이터입니다.
+              </p>
+            )}
             <pre className="mt-4 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
               <code>{JSON.stringify(manifest, null, 2)}</code>
             </pre>

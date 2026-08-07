@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listBuilds } from "@/features/runs/api";
-import type { BuildRun, BuildRunStatus } from "@/shared/lib/types";
+import type { BuildListItem, BuildRunStatus } from "@/shared/lib/types";
 import {
   Card,
   EmptyState,
@@ -44,14 +44,15 @@ const QUICK_ACTIONS = [
   },
 ];
 
-/** ISO 시작 시각을 timestamp로 안전하게 변환한다(파싱 실패 시 0). */
-function startedAtMillis(iso: string): number {
+/** ISO 시작 시각을 timestamp로 안전하게 변환한다(null이면 0으로 처리하여 나중에 정렬). */
+function startedAtMillis(iso: string | null): number {
+  if (!iso) return 0; // null인 경우 목록 끝으로 보냄
   const ms = new Date(iso).getTime();
   return Number.isNaN(ms) ? 0 : ms;
 }
 
 /** ISO 시각을 한국어 로케일 문자열로 표시한다. */
-function formatTime(iso?: string): string {
+function formatTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("ko-KR");
@@ -63,7 +64,7 @@ function formatTime(iso?: string): string {
  * @returns Studio 대시보드 메인 화면.
  */
 export function HomePage() {
-  const [builds, setBuilds] = useState<BuildRun[]>([]);
+  const [builds, setBuilds] = useState<BuildListItem[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -127,7 +128,7 @@ export function HomePage() {
                   key={run.id}
                   className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.6fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0"
                 >
-                  <span className="font-medium">{run.spec.title}</span>
+                  <span className="font-medium">{run.title ?? run.id}</span>
                   <span>
                     <StatusBadge status={run.status} />
                   </span>
