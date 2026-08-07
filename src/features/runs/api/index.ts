@@ -92,7 +92,7 @@ function mockSpec(dataset: DemoDataset): BuildSpec {
 }
 
 /** mock 모드에서 보여줄 결정적 빌드 이력(실제 builder 데이터셋 스펙 기반). */
-function mockBuilds(): BuildRun[] {
+export function mockBuilds(): BuildRun[] {
   return DEMO_DATASETS.map((dataset) => ({
     id: dataset.buildId,
     spec: mockSpec(dataset),
