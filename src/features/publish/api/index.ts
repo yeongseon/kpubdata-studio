@@ -2,9 +2,10 @@
  * 게시(publish) 워크플로 API 진입점 (#9).
  *
  * 빌드 결과를 외부 배포 대상(로컬/HuggingFace/GitHub)에 게시한다. Builder service가
- * 아직 publish 엔드포인트를 노출하지 않으므로 현재는 결정적 mock 결과를 반환한다.
- * Builder publish 엔드포인트가 생기면 이 함수만 실제 호출로 교체한다.
+ * 아직 publish 엔드포인트를 완전히 구현하지 않았으므로, VITE_USE_REAL_BUILDER=true일 때는
+ * 실제 Builder API를 호출하고 그 외에는 mock 결과를 반환한다.
  */
+import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type { BuildSpec } from "@/shared/lib/types";
 
 export type PublishDestination = "local" | "huggingface" | "github";
@@ -19,7 +20,7 @@ export interface PublishResult {
 }
 
 /**
- * 빌드 결과를 선택한 대상에 게시한다(현재 mock).
+ * 빌드 결과를 선택한 대상에 게시한다.
  *
  * @param buildId - 게시할 빌드 실행 ID.
  * @param destination - 배포 대상.
@@ -33,10 +34,22 @@ export async function publishBuild(
 ): Promise<PublishResult> {
   // 이미 취소된 신호로 호출되면 취소 흐름이 일관되게 동작하도록 AbortError를 던진다.
   if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-  void buildId;
-  void destination;
-  // Builder publish 엔드포인트 전까지는 실제 결과 URL이 없으므로 url을 비워 둔다(깨진 링크 방지).
-  // Builder가 게시 결과 URL을 반환하면 이 함수에서 result.url에 채운다.
+
+  if (isRealBuilderEnabled()) {
+    // 실제 Builder API 호출
+    try {
+      const result = await builderApi.publish(buildId, destination, signal);
+      return result;
+    } catch (error) {
+      // Builder API 오류를 PublishResult 형식으로 변환
+      return {
+        status: "failed",
+        error: error instanceof Error ? error.message : "게시에 실패했습니다.",
+      };
+    }
+  }
+
+  // Mock 모드: 결정적 mock 결과 반환
   return { status: "published" };
 }
 

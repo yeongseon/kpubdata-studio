@@ -291,4 +291,11 @@ export const builderApi = {
   /** GET /artifacts/{runId} — 실행 산출물 파일 목록. */
   artifacts: (runId: string, signal?: AbortSignal) =>
     apiFetch<ArtifactsResponse>(`/artifacts/${encodeURIComponent(runId)}`, { signal }),
+
+  /** POST /builds/{runId}/publish — 빌드 게시 트리거. Builder API 구현 필요. */
+  publish: (runId: string, destination: string, signal?: AbortSignal) =>
+    apiFetch<{ status: "published" | "failed"; url?: string; error?: string }>(
+      `/builds/${encodeURIComponent(runId)}/publish`,
+      { method: "POST", body: { destination }, signal, retries: 0 }
+    ),
 };
