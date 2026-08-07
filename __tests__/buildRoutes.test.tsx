@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { BuildArtifactsPage } from "@/pages/BuildArtifactsPage";
@@ -20,13 +20,26 @@ function renderAt(path: string, element: React.ReactNode) {
 }
 
 describe("build-centric routes", () => {
-  it("renders the build detail page with the buildId from the route", () => {
-    renderAt("/builds/air-quality", <BuildDetailPage />);
-    expect(screen.getByRole("heading", { name: "air-quality" })).toBeInTheDocument();
+  it("renders the build detail page with data for the buildId from the route", async () => {
+    // 라우트 파라미터가 실제 조회에 쓰이는지 확인하기 위해 mock 이력에 존재하는 id를 쓴다.
+    renderAt("/builds/air-quality-20260621", <BuildDetailPage />);
+    // BuildDetailPage는 비동기로 데이터를 로드하므로 로딩이 완료될 때까지 기다린다.
+    await waitFor(() => {
+      // 조회된 스펙의 제목이 표시되고,
+      expect(screen.getByRole("heading", { name: "대기오염 정보" })).toBeInTheDocument();
+    });
+    // 어떤 실행인지 식별할 수 있도록 run id도 함께 노출된다.
+    expect(screen.getByText(/air-quality-20260621/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /편집/ })).toHaveAttribute(
       "href",
-      "/builds/air-quality/edit",
+      "/builds/air-quality-20260621/edit",
     );
+  });
+
+  it("shows an error instead of placeholder data for an unknown buildId", async () => {
+    renderAt("/builds/does-not-exist", <BuildDetailPage />);
+    // 존재하지 않는 빌드를 실제 데이터처럼 보여주면 안 된다 (#119, #120).
+    expect(await screen.findByText(/빌드를 찾을 수 없습니다/)).toBeInTheDocument();
   });
 
   it("renders the run page with progress steps", () => {

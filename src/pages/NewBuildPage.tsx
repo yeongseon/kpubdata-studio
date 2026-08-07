@@ -11,6 +11,7 @@ import { useForm } from "react-hook-form";
 import { useParams } from "react-router-dom";
 import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
 import { previewBuild } from "@/features/preview/api";
+import { useBuild } from "@/features/runs/useBuild";
 import { useBuildJob } from "@/features/runs/useBuildJob";
 import { validateSpec } from "@/features/validation/api";
 import { buildFormValuesSchema, buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
@@ -174,10 +175,19 @@ function parseSourceParams(sourceParams: string) {
 /**
  * 폼 입력값으로 BuildSpec 후보를 만들고 zod로 검증한다.
  *
+ * 폼은 소스 하나와 outputPath만 다루지만, 편집 대상 스펙은 소스를 여럿 갖거나 폼에
+ * 대응 필드가 없는 메타데이터(source_url, hf_repo 등)를 갖고 있을 수 있다. `base`가
+ * 주어지면 폼이 표현하지 못하는 부분을 그대로 이어받아, 편집 왕복만으로 스펙이
+ * 손실되는 것을 막는다 (#120).
+ *
  * @param values - 현재 폼 입력값.
+ * @param base - 편집 중인 원본 스펙(신규 작성 시 생략).
  * @returns 검증을 통과한 스펙 또는 한국어 오류 메시지.
  */
-function toBuildSpec(values: BuildFormValues): { spec?: BuildSpec; error?: string } {
+function toBuildSpec(
+  values: BuildFormValues,
+  base?: BuildSpec | null,
+): { spec?: BuildSpec; error?: string } {
   const parsedParams = parseSourceParams(values.sourceParams);
   if (parsedParams.error) {
     return { error: parsedParams.error };
@@ -189,12 +199,15 @@ function toBuildSpec(values: BuildFormValues): { spec?: BuildSpec; error?: strin
     description: values.description,
     sources: [
       { provider: values.provider, dataset: values.sourceDataset, params: parsedParams.data ?? {} },
+      // 폼이 편집하지 않는 2번째 이후 소스는 원본 그대로 보존한다.
+      ...(base?.sources.slice(1) ?? []),
     ],
     exports: values.exportFormats.map((format) => ({
       format,
       options: format === "huggingface" ? { outputPath: values.outputPath } : undefined,
     })),
-    metadata: { outputPath: values.outputPath },
+    // 원본 메타데이터를 먼저 펼쳐 폼이 다루지 않는 키를 유지하고, outputPath만 덮어쓴다.
+    metadata: { ...base?.metadata, outputPath: values.outputPath },
   };
 
   const result = buildSpecSchema.safeParse(candidate);
@@ -202,6 +215,28 @@ function toBuildSpec(values: BuildFormValues): { spec?: BuildSpec; error?: strin
     return { error: result.error.issues[0]?.message ?? "빌드 스펙이 올바르지 않습니다." };
   }
   return { spec: result.data };
+}
+
+/**
+ * BuildSpec을 BuildFormValues로 변환한다.
+ *
+ * @param spec - BuildSpec 객체.
+ * @returns BuildFormValues.
+ */
+function toFormValues(spec: BuildSpec): BuildFormValues {
+  const firstSource = spec.sources[0] ?? { provider: "", dataset: "", params: {} };
+  return {
+    datasetId: spec.datasetId,
+    title: spec.title,
+    description: spec.description,
+    provider: firstSource.provider,
+    sourceDataset: firstSource.dataset,
+    sourceParams: Object.keys(firstSource.params).length > 0
+      ? JSON.stringify(firstSource.params, null, 2)
+      : "{}",
+    exportFormats: spec.exports.map((e) => e.format),
+    outputPath: spec.metadata.outputPath ?? "",
+  };
 }
 
 interface PreviewState {
@@ -223,9 +258,11 @@ interface ValidationState {
  * @returns 마법사 UI.
  */
 export function NewBuildPage() {
-  // /builds/:buildId/edit 로 진입한 경우(편집 모드). 기존 스펙 로드는 Builder 연동(#29)
-  // 이후 지원하므로, 지금은 안내만 표시한다.
+  // /builds/:buildId/edit 로 진입한 경우(편집 모드). buildId가 있으면 기존 스펙을 로드한다.
   const { buildId } = useParams();
+  const { build, isLoading: buildLoading } = useBuild(buildId || "");
+  const isEditMode = !!buildId && build !== null;
+
   const [step, setStep] = useState(0);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle", rows: [], schema: {} });
   const [validation, setValidation] = useState<ValidationState>({
@@ -233,8 +270,11 @@ export function NewBuildPage() {
     isValid: false,
     errors: [],
   });
+  // 편집 중인 원본 스펙. 폼이 표현하지 못하는 소스/메타데이터를 보존하는 기준이 된다.
+  const [baseSpec, setBaseSpec] = useState<BuildSpec | null>(null);
   // 저장된 초안이 있으면 복원 배너를 보여준다 (#10). 마운트 시 한 번만 확인한다.
-  const [draftAvailable, setDraftAvailable] = useState(() => hasDraft());
+  // 편집 모드에서는 초안을 복원하면 불러온 스펙을 덮어써 버리므로 배너를 띄우지 않는다.
+  const [draftAvailable, setDraftAvailable] = useState(() => !buildId && hasDraft());
   const [draftSaved, setDraftSaved] = useState(false);
   const job = useBuildJob();
 
@@ -248,7 +288,7 @@ export function NewBuildPage() {
   } = useForm<BuildFormValues>({ defaultValues: initialValues, mode: "onChange" });
 
   const values = watch();
-  const specPreview = useMemo(() => toBuildSpec(values), [values]);
+  const specPreview = useMemo(() => toBuildSpec(values, baseSpec), [values, baseSpec]);
 
   // 마지막으로 검증한 폼 입력의 스냅샷. 검증 이후 입력이 바뀌면 검증 결과를 초기화하기 위해
   // 비교 기준으로 사용한다(stale validation 방지, #72).
@@ -269,12 +309,28 @@ export function NewBuildPage() {
     }
   }, [values, validation.status]);
 
+  // 편집 모드에서 build가 로드되면 폼을 초기화한다.
+  //
+  // 템플릿 선택(selectTemplate)과 동일하게, 폼을 갈아끼울 때는 이전 스펙 기준으로 만든
+  // 미리보기/검증 결과가 남지 않도록 함께 초기화한다(stale 상태 방지, #72).
+  useEffect(() => {
+    if (!isEditMode || !build || buildLoading) return;
+    setBaseSpec(build.spec);
+    reset(toFormValues(build.spec));
+    setPreview({ status: "idle", rows: [], schema: {} });
+    setValidation({ status: "idle", isValid: false, errors: [] });
+    validatedSnapshotRef.current = null;
+    setStep(1); // 템플릿 단계를 건너뛰고 기본 정보부터 시작
+  }, [isEditMode, build, buildLoading, reset]);
+
   const draftStatus = validation.isValid ? "validated" : isDirty ? "dirty" : "new";
 
   // 템플릿을 선택하면 폼을 해당 값으로 채우고 기본 정보 단계로 넘어간다 (#11).
   // 이전 템플릿에서 로드된 미리보기/검증 결과가 남지 않도록 함께 초기화한다.
   function selectTemplate(template: BuildTemplate) {
     reset(template.values);
+    // 템플릿으로 새로 시작하므로 편집 중이던 원본 스펙의 잔여 소스/메타데이터를 버린다.
+    setBaseSpec(null);
     setPreview({ status: "idle", rows: [], schema: {} });
     setValidation({ status: "idle", isValid: false, errors: [] });
     validatedSnapshotRef.current = null;
@@ -324,7 +380,7 @@ export function NewBuildPage() {
   }
 
   async function runPreview() {
-    const next = toBuildSpec(getValues());
+    const next = toBuildSpec(getValues(), baseSpec);
     if (next.error || !next.spec) {
       setPreview({ status: "error", rows: [], schema: {}, error: next.error });
       return;
@@ -347,7 +403,7 @@ export function NewBuildPage() {
     // 검증 대상 입력의 스냅샷을 기록한다. 이후 폼이 바뀌면 effect가 이를 감지해 검증 상태를
     // 초기화한다(#72).
     validatedSnapshotRef.current = JSON.stringify(getValues());
-    const next = toBuildSpec(getValues());
+    const next = toBuildSpec(getValues(), baseSpec);
     if (next.error || !next.spec) {
       setValidation({ status: "validated", isValid: false, errors: [next.error ?? "스펙 오류"] });
       return;
@@ -369,17 +425,37 @@ export function NewBuildPage() {
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
       <PageHeader
-        eyebrow="새 빌드"
-        title="새 공공데이터 빌드 만들기"
-        description="데이터 소스, 파라미터, 출력 형식을 단계별로 설정합니다."
+        eyebrow={isEditMode ? "빌드 편집" : "새 빌드"}
+        title={isEditMode ? `${baseSpec?.title || buildId} 편집` : "새 공공데이터 빌드 만들기"}
+        description={
+          isEditMode
+            ? "기존 스펙을 불러왔습니다. 수정한 내용은 새 실행으로 기록됩니다."
+            : "데이터 소스, 파라미터, 출력 형식을 단계별로 설정합니다."
+        }
         actions={<StatusBadge status={draftStatus} />}
       />
 
-      {buildId ? (
+      {buildId && buildLoading ? (
+        <Card variant="dashed" className="p-4">
+          <p className="text-sm text-muted-foreground">기존 스펙을 불러오는 중입니다...</p>
+        </Card>
+      ) : null}
+
+      {buildId && !buildLoading && !isEditMode ? (
         <Card variant="dashed" className="p-4">
           <p className="text-sm text-foreground">
-            기존 빌드 <span className="font-medium">{buildId}</span> 편집은 Builder 연동(#29) 후
-            지원됩니다. 지금은 새 빌드로 작성됩니다.
+            빌드 <span className="font-medium">{buildId}</span>의 스펙을 찾지 못했습니다. Builder는
+            스펙을 보관하지 않으므로, 이 브라우저에서 실행하지 않은 빌드는 불러올 수 없습니다.
+            아래 입력은 새 빌드로 작성됩니다.
+          </p>
+        </Card>
+      ) : null}
+
+      {isEditMode ? (
+        <Card variant="dashed" className="p-4">
+          <p className="text-sm text-foreground">
+            빌드 <span className="font-medium">{buildId}</span>의 스펙을 편집하고 있습니다. Builder는
+            기존 실행을 덮어쓰지 않으므로, 실행하면 수정된 스펙으로 새 빌드가 기록됩니다.
           </p>
         </Card>
       ) : null}
