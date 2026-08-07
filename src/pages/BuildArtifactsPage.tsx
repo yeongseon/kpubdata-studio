@@ -61,6 +61,9 @@ export function BuildArtifactsPage() {
   const totalRecords = manifest?.row_counts
     ? Object.values(manifest.row_counts).reduce((sum, count) => sum + count, 0)
     : undefined;
+  // 실연동 모드 경고 배너용: 핵심 메타데이터(레코드 수/출처)가 제공되지 않으면 안내한다.
+  const hasMetadata =
+    manifest?.row_counts !== undefined && manifest?.provenance !== undefined;
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
