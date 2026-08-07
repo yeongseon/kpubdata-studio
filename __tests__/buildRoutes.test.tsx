@@ -34,6 +34,8 @@ describe("build-centric routes", () => {
       "href",
       "/builds/air-quality-20260621/edit",
     );
+    // manifest 요약(#155 살벤지)도 상세 화면에 함께 렌더된다.
+    expect(await screen.findByText("Manifest 요약")).toBeInTheDocument();
   });
 
   it("shows an error instead of placeholder data for an unknown buildId", async () => {
