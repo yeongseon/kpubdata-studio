@@ -124,7 +124,7 @@ export function BuildArtifactsPage() {
               </div>
               <div>
                 <dt className="text-muted-foreground">빌드 ID</dt>
-                <dd className="break-all text-foreground">{manifest.build_id}</dd>
+                <dd className="break-all text-foreground">{manifest?.build_id || "미제공"}</dd>
               </div>
             </dl>
           </Card>
@@ -160,6 +160,13 @@ export function BuildArtifactsPage() {
             <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
               manifest.json
             </p>
+            {!hasMetadata && (
+              <p className="mt-2 text-xs text-orange-600 dark:text-orange-400">
+                실연동 모드에서는 Builder /build 응답 manifest가 아직 연동되지 않아, 
+                메타데이터 필드(시간/환경/지문/레코드 수/스키마/출처)가 제공되지 않습니다. 
+                파일 목록(outputs)만 실제 데이터입니다.
+              </p>
+            )}
             <pre className="mt-4 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
               <code>{JSON.stringify(manifest, null, 2)}</code>
             </pre>

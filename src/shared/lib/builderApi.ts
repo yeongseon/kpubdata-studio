@@ -12,8 +12,14 @@
  * 주의: validate/preview/build는 Builder가 BuildSpec YAML(snake_case)을 기대하므로,
  * Studio BuildSpec(camelCase) → Builder 스펙 매핑(#37)이 선행되어야 완전히 연결된다.
  * 이 모듈은 그 매핑이 끝난 스펙 텍스트를 받는 저수준 계약 계층이다.
+ *
+ * 런타임 타입 검증 (#158, #103):
+ * - 모든 응답은 Zod 스키마로 런타임 검증된다.
+ * - as T 캐스팅 대신 zod.parse()를 사용하여 타입 안정성을 보장한다.
  */
 import { API_BASE } from "@/shared/config/env";
+import * as schemas from "./builderApi.schema";
+import { z } from "zod";
 
 /** Builder API 계약 버전. builder #209의 API_CONTRACT_VERSION과 일치해야 한다. */
 export const API_CONTRACT_VERSION = "1.0.0";
@@ -97,12 +103,21 @@ function isTimeoutAbort(cause: unknown): boolean {
  * 네트워크 일시 장애와 5xx에는 지수 백오프로 제한 재시도하고(#94), 응답이 없을 경우
  * UI가 무한 대기에 빠지지 않도록 자동 타임아웃을 건다(#94). 호출자 취소 signal은 그대로 존중한다.
  *
+ * 런타임 타입 검증 (#158, #103):
+ * - 스키마가 제공되면 Zod로 런타임 검증을 수행한다.
+ * - 검증 실패 시 ApiError를 던진다.
+ *
  * @param path - 선행 슬래시를 포함한 엔드포인트 경로(예: "/version").
  * @param options - 메서드/바디/취소 시그널/타임아웃/재시도.
+ * @param schema - 응답을 검증할 Zod 스키마 (선택).
  * @returns 파싱된 응답 본문.
- * @throws ApiError 응답이 2xx가 아니거나 네트워크/파싱/타임아웃 오류가 발생한 경우.
+ * @throws ApiError 응답이 2xx가 아니거나 네트워크/파싱/타임아웃/스키마 검증 오류가 발생한 경우.
  */
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiFetch<T>(
+  path: string,
+  options: RequestOptions = {},
+  schema?: z.ZodSchema<T>,
+): Promise<T> {
   const {
     method = "GET",
     body,
@@ -166,11 +181,32 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   if (!response.ok) {
-    const message =
-      extractErrorMessage(parsed) ?? `Builder API 오류 (HTTP ${response.status})`;
+    // 사용자에게 명시적인 에러 메시지 제공 (#159)
+    const message = formatApiErrorMessage(response.status, parsed);
     throw new ApiError(response.status, message, parsed);
   }
 
+  // Zod 스키마로 런타임 타입 검증 (#158, #103)
+  if (schema) {
+    const result = schema.safeParse(parsed);
+    if (!result.success) {
+      // 스키마 불일치 시 사용자에게 표시 가능한 명시적 에러 (#159)
+      const errorDetails = result.error.issues.map((issue) => {
+        const path = issue.path.length > 0 ? `\`${issue.path.join(".")}\`` : "응답 구조";
+        const message = issue.message || "형식 불일치";
+        return `${path}: ${message}`;
+      }).join(", ");
+
+      throw new ApiError(
+        500,
+        `Builder API 응답이 예상된 형식과 일치하지 않습니다: ${errorDetails}`,
+        parsed,
+      );
+    }
+    return result.data;
+  }
+
+  // 스키마가 없는 경우 (하위 호환): as T 캐스팅만 수행
   return parsed as T;
 }
 
@@ -206,89 +242,114 @@ export function extractErrorMessage(parsed: unknown): string | undefined {
   return undefined;
 }
 
-// --- 응답 와이어 타입 (Builder service 실제 구현 기준) ---
-
-export interface VersionResponse {
-  service: string;
-  api_version: string;
-}
-
-export type ValidateResponse =
-  | { status: "valid"; dataset_id: string; api_version: string }
-  | { status: "invalid"; problems: string[] }
-  | { status: "error"; error: string };
-
-export interface BuildOutcome {
-  source_key: string;
-  status: string;
-  stages_completed: string[];
-  error: string | null;
-}
-
-export interface BuildResponse {
-  status: string;
-  run_id: string;
-  outcomes: BuildOutcome[];
-  manifest: string;
-  api_version: string;
-}
-
-export interface ArtifactsResponse {
-  run_id: string;
-  files: string[];
-}
-
-/** /preview 응답의 소스별 컬럼 스키마 항목(service app.py 기준). */
-export interface PreviewColumn {
-  name: string;
-  dtype: string;
-  nullable: boolean;
-  unique_count: number;
-}
-
-/** /preview 응답의 소스별 미리보기 항목(service app.py 기준). */
-export interface PreviewSource {
-  source_key: string;
-  status: string;
-  error: string | null;
-  schema: PreviewColumn[];
-  sample: Record<string, unknown>[];
-  total_rows: number;
-}
-
 /**
- * POST /preview 응답 와이어 형태(builder service app.py 기준).
+ * HTTP 상태 코드와 응답 본문을 사용자에게 표시 가능한 에러 메시지로 변환합니다 (#159).
  *
- * `{ dataset_id, previews: [...] }` — 소스별로 스키마와 샘플 행을 담는다.
+ * @param status - HTTP 상태 코드
+ * @param parsed - 파싱된 응답 본문
+ * @returns 사용자에게 표시할 수 있는 명시적인 에러 메시지
  */
-export interface PreviewResponse {
-  dataset_id: string;
-  previews: PreviewSource[];
+export function formatApiErrorMessage(status: number, parsed: unknown): string {
+  // 먼저 구조화된 에러 메시지 추출 시도
+  const extracted = extractErrorMessage(parsed);
+  if (extracted) return extracted;
+
+  // 상태 코드별 기본 메시지
+  const statusMessages: Record<number, string> = {
+    400: "요청 형식이 올바르지 않습니다.",
+    401: "인증이 필요합니다.",
+    403: "접근 권한이 없습니다.",
+    404: "요청한 리소스를 찾을 수 없습니다.",
+    405: "Method Not Allowed",
+    408: "요청 시간이 초과되었습니다.",
+    429: "너무 많은 요청을 보냈습니다. 잠시 후 다시 시도해주세요.",
+    500: "서버 내부 오류가 발생했습니다.",
+    502: "데이터 소스에서 오류가 발생했습니다.",
+    503: "서비스를 일시적으로 사용할 수 없습니다.",
+    504: "Gateway Timeout",
+  };
+
+  const baseMessage = statusMessages[status] ?? `Builder API 오류 (HTTP ${status})`;
+
+  // 응답에 추가 정보가 있는 경우 덧붙임
+  if (parsed && typeof parsed === "object") {
+    const record = parsed as Record<string, unknown>;
+    if (record.run_id) {
+      return `${baseMessage} (빌드 ID: ${record.run_id})`;
+    }
+    if (record.dataset_id) {
+      return `${baseMessage} (데이터셋 ID: ${record.dataset_id})`;
+    }
+    if (record.source_key) {
+      return `${baseMessage} (소스: ${record.source_key})`;
+    }
+  }
+
+  return baseMessage;
 }
+
+/** GET /builds 응답의 단일 빌드 요약(builder contract BuildSummary 기준). */
+export interface BuildSummary {
+  /** 빌드 실행 식별자 */
+  run_id: string;
+  /** 빌드 상태("ok" | "failed") */
+  status: "ok" | "failed";
+  /** 빌드 시작 시각(ISO 8601, null, 또는 생략됨) */
+  started_at?: string | null;
+  /** 빌드 완료 시각(ISO 8601, null, 또는 생략됨) */
+  finished_at?: string | null;
+}
+
+/** GET /builds 응답 와이어 형태(builder contract BuildsResponse 기준). */
+export interface BuildsResponse {
+  builds: BuildSummary[];
+}
+
+// --- 응답 타입 (Zod 스키마에서 추출) ---
+
+export type VersionResponse = schemas.VersionResponse;
+export type ValidateResponse = schemas.ValidateResponse;
+export type BuildOutcome = schemas.BuildOutcome;
+export type BuildResponse = schemas.BuildResponse;
+export type ArtifactsResponse = schemas.ArtifactsResponse;
+export type PreviewColumn = schemas.PreviewColumn;
+export type PreviewSource = schemas.PreviewSource;
+export type PreviewResponse = schemas.PreviewResponse;
 
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
   /** GET /version — 계약 버전 확인(메타). */
-  version: (signal?: AbortSignal) => apiFetch<VersionResponse>("/version", { signal }),
+  version: (signal?: AbortSignal) =>
+    apiFetch("/version", { signal }, schemas.versionResponseSchema),
 
   /** POST /validate — BuildSpec YAML 검증. */
   validate: (specYaml: string, signal?: AbortSignal) =>
-    apiFetch<ValidateResponse>("/validate", { method: "POST", body: { spec: specYaml }, signal }),
+    apiFetch("/validate", { method: "POST", body: { spec: specYaml }, signal }, schemas.validateResponseSchema),
 
   /** POST /preview — BuildSpec 기반 샘플 미리보기. */
   preview: (specYaml: string, signal?: AbortSignal) =>
-    apiFetch<PreviewResponse>("/preview", { method: "POST", body: { spec: specYaml }, signal }),
+    apiFetch("/preview", { method: "POST", body: { spec: specYaml }, signal }, schemas.previewResponseSchema),
 
   /** POST /build — 빌드 실행. run_id 생략 가능. 비멱등 요청이므로 재시도하지 않는다 (#117). */
   build: (specYaml: string, runId?: string, signal?: AbortSignal) =>
-    apiFetch<BuildResponse>("/build", {
-      method: "POST",
-      body: runId ? { spec: specYaml, run_id: runId } : { spec: specYaml },
-      signal,
-      retries: 0,
-    }),
+    apiFetch(
+      "/build",
+      {
+        method: "POST",
+        body: runId ? { spec: specYaml, run_id: runId } : { spec: specYaml },
+        signal,
+        retries: 0,
+      },
+      schemas.buildResponseSchema,
+    ),
 
   /** GET /artifacts/{runId} — 실행 산출물 파일 목록. */
   artifacts: (runId: string, signal?: AbortSignal) =>
-    apiFetch<ArtifactsResponse>(`/artifacts/${encodeURIComponent(runId)}`, { signal }),
+    apiFetch(`/artifacts/${encodeURIComponent(runId)}`, { signal }, schemas.artifactsResponseSchema),
+
+  /** GET /builds — 빌드 이력 목록(#153, builder #250). */
+  listBuilds: (limit?: number, signal?: AbortSignal) => {
+    const query = limit !== undefined ? `?limit=${limit}` : "";
+    return apiFetch<BuildsResponse>(`/builds${query}`, { signal });
+  },
 };

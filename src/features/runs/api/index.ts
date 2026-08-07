@@ -5,10 +5,11 @@
  * 결정적 mock 실행 결과를 반환한다. Builder의 /build는 현재 동기식이므로 비동기 job
  * 폴링은 Builder 측 job 엔드포인트가 생기면 확장한다(#39).
  */
+import { saveBuildSpec } from "@/features/build-spec/specStore";
 import { serializeSpec } from "@/features/build-spec/specMapping";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import { DEMO_DATASETS, type DemoDataset } from "@/shared/lib/demoDatasets";
-import type { BuildRun, BuildSpec } from "@/shared/lib/types";
+import type { BuildListItem, BuildRun, BuildSpec } from "@/shared/lib/types";
 
 const MOCK_TIME = "1970-01-01T00:00:00.000Z";
 
@@ -38,19 +39,28 @@ export function generateRunId(datasetId: string): string {
  */
 export async function executeBuild(spec: BuildSpec, signal?: AbortSignal): Promise<BuildRun> {
   if (!isRealBuilderEnabled()) {
-    return {
+    const mockRun: BuildRun = {
       id: "mock-run",
       spec,
       status: "succeeded",
       startedAt: MOCK_TIME,
       finishedAt: MOCK_TIME,
     };
+    // mock 모드에서도 편집 흐름을 실제와 같은 경로로 검증할 수 있도록 스펙을 보관한다.
+    saveBuildSpec(mockRun.id, spec);
+    return mockRun;
   }
 
   // 실연동 모드에서는 실제 실행 시각을 기록한다(이력/상세 화면에서 잘못된 1970 값 방지).
   const runId = generateRunId(spec.datasetId);
   const startedAt = new Date().toISOString();
   const result = await builderApi.build(serializeSpec(spec), runId, signal);
+
+  // Builder는 spec을 영속화하지 않으므로(#120), 이후 편집 화면이 기존 스펙을 복원할 수
+  // 있도록 Studio가 실행 시점의 스펙을 run_id에 묶어 보관한다. 저장 실패는 무시되며
+  // 빌드 결과에는 영향을 주지 않는다.
+  saveBuildSpec(result.run_id, spec);
+
   return {
     id: result.run_id,
     spec,
@@ -82,7 +92,7 @@ function mockSpec(dataset: DemoDataset): BuildSpec {
 }
 
 /** mock 모드에서 보여줄 결정적 빌드 이력(실제 builder 데이터셋 스펙 기반). */
-function mockBuilds(): BuildRun[] {
+export function mockBuilds(): BuildRun[] {
   return DEMO_DATASETS.map((dataset) => ({
     id: dataset.buildId,
     spec: mockSpec(dataset),
@@ -93,25 +103,35 @@ function mockBuilds(): BuildRun[] {
 }
 
 /**
- * 빌드 실행 이력 목록을 조회한다 (#12, #95).
+ * 빌드 실행 이력 목록을 조회한다 (#12, #95, #153).
  *
  * mock 모드(`VITE_USE_REAL_BUILDER` 미설정)에서는 이력 표/검색/정렬 UI를 개발·검증할 수
  * 있도록 결정적 mock 목록을 반환한다.
  *
- * 실연동 모드에서는 Builder에 이력 목록 엔드포인트(`GET /builds`)가 아직 없다(builder #250).
- * 그 전까지 mock 데이터를 실데이터처럼 보여주면 사용자를 오도하므로, 실연동 모드에서는
- * 가짜 이력을 만들지 않고 빈 목록을 반환한다. Builder에 `GET /builds`가 추가되면 이 분기에서
- * 해당 API를 호출하고 응답을 BuildRun[]으로 매핑하도록 확장한다(executeBuild의 실연동 패턴과 동일).
+ * 실연동 모드에서는 Builder `GET /builds`를 호출하고 응답을 BuildListItem[]으로 매핑한다(#153, builder #250).
+ * Builder 응답에 spec/title이 없으므로 title은 null이 되고, UI는 run ID를 대신 표시한다.
  *
- * @returns 빌드 실행 목록(mock 모드: 결정적 mock, 실연동 모드: 현재는 빈 목록).
+ * @param limit - 선택적 limit 파라미터. Builder의 기본값(50)을 사용하려면 생략한다.
+ * @returns 빌드 실행 목록(mock 모드: 결정적 mock, 실연동 모드: Builder 응답 매핑).
  */
-export async function listBuilds(): Promise<BuildRun[]> {
+export async function listBuilds(limit?: number): Promise<BuildListItem[]> {
   if (!isRealBuilderEnabled()) {
-    return mockBuilds();
+    return mockBuilds().map((run) => ({
+      id: run.id,
+      title: run.spec.title,
+      status: run.status,
+      startedAt: run.startedAt,
+      finishedAt: run.finishedAt ?? null,
+    }));
   }
 
-  // TODO(builder #250): Builder에 GET /builds가 추가되면 실제 이력을 호출·매핑한다.
-  // 그 전까지는 가짜 이력 대신 빈 목록을 반환해 실연동 모드에서 mock을 노출하지 않는다.
-  return [];
+  const response = await builderApi.listBuilds(limit);
+  return response.builds.map((summary) => ({
+    id: summary.run_id,
+    title: null, // Builder GET /builds는 title을 제공하지 않음
+    status: summary.status === "ok" ? "succeeded" : "failed",
+    startedAt: summary.started_at ?? null, // 누락 또는 null을 명시적 null로 정규화
+    finishedAt: summary.finished_at ?? null, // 누락 또는 null을 명시적 null로 정규화
+  }));
 }
 

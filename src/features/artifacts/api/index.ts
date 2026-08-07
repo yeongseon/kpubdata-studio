@@ -93,6 +93,10 @@ function mockManifest(buildId: string): BuildManifest {
  * Builder의 실제 `/artifacts` 응답({files, run_id})을 페이지가 쓰는 BuildManifest로
  * 매핑한다. /artifacts가 제공하지 않는 메타 필드는 undefined로 남겨 미제공 상태를 표현한다.
  *
+ * 실연동 모드에서는 Builder `/build` 응답 manifest가 연동되지 않아, 메타 필드(시간/환경/
+ * 지문/레코드 수/스키마/출처)는 Builder 완성 후 연동할 수 있다. UI에서는 이를 명확히
+ * "미제공"으로 표시하도록 처리해야 한다(#119).
+ *
  * @param runId - 빌드 실행 ID.
  * @param files - Builder가 반환한 산출물 파일 경로 목록.
  * @returns BuildManifest(제공되지 않은 필드는 undefined).

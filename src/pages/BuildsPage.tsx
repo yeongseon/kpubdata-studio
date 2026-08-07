@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listBuilds } from "@/features/runs/api";
-import type { BuildRun } from "@/shared/lib/types";
+import type { BuildListItem } from "@/shared/lib/types";
 import {
   Button,
   Card,
@@ -14,24 +14,26 @@ import {
   ErrorState,
   LinkButton,
   PageHeader,
+  SkeletonTable,
   StatusBadge,
   TextInput,
 } from "@/shared/ui";
 
 interface BuildsState {
   status: "loading" | "loaded" | "error";
-  runs?: BuildRun[];
+  runs?: BuildListItem[];
   error?: string;
 }
 
-function formatTime(iso?: string): string {
+function formatTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("ko-KR");
 }
 
-/** ISO 시작 시각을 timestamp로 정렬하기 위한 안전한 변환(파싱 실패 시 0). */
-function startedAtMillis(iso: string): number {
+/** ISO 시작 시각을 timestamp로 정렬하기 위한 안전한 변환(null이면 0으로 처리하여 나중에 정렬). */
+function startedAtMillis(iso: string | null): number {
+  if (!iso) return 0; // null인 경우 목록 끝으로 보냄
   const ms = new Date(iso).getTime();
   return Number.isNaN(ms) ? 0 : ms;
 }
@@ -70,9 +72,10 @@ export function BuildsPage() {
   const runs = state.runs;
   const visible = useMemo(() => {
     if (!runs) return [];
-    const filtered = runs.filter((run) =>
-      run.spec.title.toLowerCase().includes(query.trim().toLowerCase()),
-    );
+    const filtered = runs.filter((run) => {
+      const titleOrId = run.title ?? run.id; // title이 null이면 run ID로 검색
+      return titleOrId.toLowerCase().includes(query.trim().toLowerCase());
+    });
     return [...filtered].sort((a, b) => {
       const diff = startedAtMillis(a.startedAt) - startedAtMillis(b.startedAt);
       return newestFirst ? -diff : diff;
@@ -114,9 +117,7 @@ export function BuildsPage() {
         </div>
 
         {state.status === "loading" ? (
-          <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-            불러오는 중입니다…
-          </div>
+          <SkeletonTable rows={5} className="w-full" />
         ) : state.status === "error" ? (
           <ErrorState
             title="빌드 목록을 불러오지 못했습니다"
@@ -141,7 +142,7 @@ export function BuildsPage() {
                 key={run.id}
                 className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0 "
               >
-                <span className="font-medium">{run.spec.title}</span>
+                <span className="font-medium">{run.title ?? run.id}</span>
                 <span>
                   <StatusBadge status={run.status} />
                 </span>

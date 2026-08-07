@@ -161,3 +161,23 @@ export interface BuildRun {
   /** 실행 종료 시각 ISO 문자열 */
   finishedAt?: string;
 }
+
+/**
+ * 빌드 이력 목록용 최소 표현 타입(#153).
+ *
+ * Builder GET /builds가 spec/title을 제공하지 않으므로, 이들을 null로 가지고
+ * UI에서는 run ID를 대신 표시한다. 실제 BuildSpec이 필요한 상세 화면으로 진입하면
+ * 그때 개별 조회로 전체 스펙을 가져온다.
+ */
+export interface BuildListItem {
+  /** 실행 이력 항목 고유 ID */
+  id: string;
+  /** 빌드 제목(Builder에서 제공하지 않으므로 실연동 시 null, mock 시 실제 title) */
+  title: string | null;
+  /** 현재 실행 상태 */
+  status: BuildRunStatus;
+  /** 실행 시작 시각 ISO 문자열(Builder에서 null이면 null 유지) */
+  startedAt: string | null;
+  /** 실행 종료 시각 ISO 문자열(Builder에서 null이거나 누락이면 null) */
+  finishedAt: string | null;
+}
