@@ -211,3 +211,25 @@ export type SpecLoadError = z.infer<typeof specLoadErrorSchema>;
 export type BadRequest = z.infer<typeof badRequestSchema>;
 export type NotFound = z.infer<typeof notFoundSchema>;
 export type BuildPartialFailure = z.infer<typeof buildPartialFailureSchema>;
+
+/**
+ * GET /catalog 응답 스키마 (#416, BL2)
+ */
+export const catalogDatasetSchema = z.object({
+  name: z.string(),
+  title: z.string(),
+  requires_service_key: z.boolean(),
+});
+
+export const catalogProviderSchema = z.object({
+  name: z.string(),
+  datasets: z.array(catalogDatasetSchema),
+});
+
+export const catalogResponseSchema = z.object({
+  providers: z.array(catalogProviderSchema),
+});
+
+export type CatalogDataset = z.infer<typeof catalogDatasetSchema>;
+export type CatalogProvider = z.infer<typeof catalogProviderSchema>;
+export type CatalogResponse = z.infer<typeof catalogResponseSchema>;

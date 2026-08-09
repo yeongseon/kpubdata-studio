@@ -389,4 +389,8 @@ export const builderApi = {
     const query = limit !== undefined ? `?limit=${limit}` : "";
     return apiFetch<BuildsResponse>(`/builds${query}`, { signal });
   },
+
+  /** GET /catalog — provider/dataset 카탈로그 (#416, BL2). */
+  catalog: (signal?: AbortSignal) =>
+    apiFetch<schemas.CatalogResponse>("/catalog", { signal }),
 };
