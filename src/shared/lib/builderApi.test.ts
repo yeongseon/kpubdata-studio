@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { builderApi } from "./builderApi";
+import { builderApi, setAuthTokenProvider, _resetAuthTokenProvider } from "./builderApi";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -57,5 +57,59 @@ describe("builderApi retry policy", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("apiFetch auth header injection (#186)", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    _resetAuthTokenProvider();
+  });
+
+  afterEach(() => {
+    _resetAuthTokenProvider();
+    vi.restoreAllMocks();
+  });
+
+  function requestInitOf(fetchMock: ReturnType<typeof vi.spyOn>) {
+    // fetch(url, init) — 두 번째 인자가 RequestInit.
+    return fetchMock.mock.calls[0][1] as RequestInit;
+  }
+
+  it("does not send Authorization when no provider is set (회귀 없음)", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { service: "kpubdata-builder", api_version: "1.0.0" }));
+
+    await builderApi.version();
+
+    const headers = requestInitOf(fetchMock).headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+    // 미로그인/mock 모드에서 빈 헤더가 나가지 않는다.
+    expect(headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("sends Authorization: Bearer <token> when provider returns a token", async () => {
+    setAuthTokenProvider(() => "id-token-jwt");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { service: "kpubdata-builder", api_version: "1.0.0" }));
+
+    await builderApi.version();
+
+    const headers = requestInitOf(fetchMock).headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer id-token-jwt");
+  });
+
+  it("does not send Authorization when provider returns null (미로그인)", async () => {
+    setAuthTokenProvider(() => null);
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { service: "kpubdata-builder", api_version: "1.0.0" }));
+
+    await builderApi.version();
+
+    const headers = requestInitOf(fetchMock).headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
   });
 });

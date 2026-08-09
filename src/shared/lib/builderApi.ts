@@ -49,6 +49,33 @@ interface RequestOptions {
   timeoutMs?: number;
   /** 네트워크 오류·5xx 발생 시 추가 재시도 횟수(지수 백오프). 미지정 시 DEFAULT_RETRIES. */
   retries?: number;
+  /** 인증 헤더 생략 (/healthz 등 무인증 엔드포인트, #186). */
+  skipAuth?: boolean;
+}
+
+/**
+ * Builder 요청에 붙일 Bearer 토큰을 제공하는 provider (#186).
+ * null을 반환하면 해당 요청에 Authorization 헤더를 붙이지 않는다 —
+ * mock 모드·미로그인 상태에서 빈 헤더가 나가는 것을 방지한다.
+ */
+export type AuthTokenProvider = () => string | null;
+
+// Studio는 서버가 없는 정적 SPA라 토큰을 메모리(zustand 스토어)에만 보관한다 (#187 예정).
+// apiFetch는 주입받은 provider를 통해 그 토큰을 읽는다 — 전역을 직접 참조하면 테스트가 어렵다.
+let authTokenProvider: AuthTokenProvider | null = null;
+
+/**
+ * Builder 요청에 붙일 Bearer 토큰 provider를 등록한다 (#186).
+ * provider를 null로(또는 해제) 두면 인증 헤더가 나가지 않아, 미로그인/mock 모드에서
+ * 기존 요청 형태와 완전히 동일하게 동작한다(회귀 없음).
+ */
+export function setAuthTokenProvider(provider: AuthTokenProvider | null): void {
+  authTokenProvider = provider;
+}
+
+/** 테스트 격리용: 등록된 provider를 해제한다. */
+export function _resetAuthTokenProvider(): void {
+  authTokenProvider = null;
 }
 
 /** 자동 타임아웃 기본값(ms). Builder /build는 외부 API를 호출해 느릴 수 있어 넉넉히 잡는다. */
@@ -129,11 +156,16 @@ export async function apiFetch<T>(
   let response: Response | undefined;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const { signal: combined, cleanup } = withTimeout(signal, timeoutMs);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
     try {
+      if (!options.skipAuth) {
+        const token = authTokenProvider?.() ?? null;
+        if (token) headers.Authorization = `Bearer ${token}`;
+      }
       response = await fetch(`${API_BASE}${path}`, {
         method,
         signal: combined,
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (cause) {
