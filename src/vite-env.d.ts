@@ -11,6 +11,8 @@ interface ImportMetaEnv {
   readonly VITE_BUILDER_API_URL?: string;
   /** "true"이면 mock 대신 실제 Builder API를 호출한다. */
   readonly VITE_USE_REAL_BUILDER?: string;
+  /** Google OAuth Client ID (GIS 로그인, #187). public 값 — 번들 포함 무방. */
+  readonly VITE_GOOGLE_CLIENT_ID?: string;
 }
 
 interface ImportMeta {
