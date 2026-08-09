@@ -212,3 +212,22 @@ src/
 - **v0.1**: Vite + React SPA 셸 구성, React Router 기반 화면 전환, feature 기반 모듈 구조 정착, Builder API 연동 기초 작업
 - **v0.2**: 실시간 미리보기 기능, 데이터 검증 뷰, 빌드 결과물 뷰어 구현
 - **v0.3**: 최종 게시(Publish) 워크플로우 완성 및 전체 프로젝트 대시보드 제공
+
+---
+
+## 오리진 정합 — Google Console ↔ Builder CORS (#194, S9)
+
+실연동 모드에서 Studio가 Builder를 호출하려면 **같은 오리진 목록**을 양쪽에 등록해야 한다:
+
+1. **Google Cloud Console** → APIs & Services → Credentials → OAuth client ID → **Authorized JavaScript origins**
+2. **Builder** → `KPUBDATA_BUILDER_ALLOWED_ORIGINS` 환경변수 (CORS default-deny)
+
+두 값이 어긋나면 증상이 **CORS 오류**로 나타나 원인 추적이 어렵다. 로컬과 실배포 오리진을 모두 양쪽에 등록할 것.
+
+| 환경 | Studio 오리진 | Google Console | Builder CORS env |
+| :--- | :--- | :--- | :--- |
+| 로컬 개발 | `http://localhost:5173` | ✅ 등록 | ✅ 등록 |
+| 실배포 | `https://<studio-host>` | ✅ 등록 | ✅ 등록 |
+| Pages 데모 | `https://yeongseon.github.io` | ❌ (mock 모드, Builder 호출 안 함) | ❌ |
+
+> Pages 데모는 mock 모드(`VITE_USE_REAL_BUILDER` 미설정)라 Builder를 호출하지 않으므로 등록 대상이 아니다.

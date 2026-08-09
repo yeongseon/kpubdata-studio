@@ -13,6 +13,7 @@ import {
   isRealBuilderEnabled,
 } from "@/shared/lib/builderApi";
 import { WorkspaceSwitcher } from "@/features/workspace/WorkspaceSwitcher";
+import { useAuthStore } from "@/features/auth/store";
 import { Card, PageHeader, StatusBadge } from "@/shared/ui";
 
 interface ConnectionState {
@@ -28,6 +29,7 @@ interface ConnectionState {
  */
 export function SettingsPage() {
   const realEnabled = isRealBuilderEnabled();
+  const { email, clear } = useAuthStore();
   const [connection, setConnection] = useState<ConnectionState>({ status: "idle" });
 
   useEffect(() => {
@@ -118,6 +120,32 @@ export function SettingsPage() {
           ) : null}
         </div>
       </Card>
+
+      {realEnabled && (
+        <Card>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            로그인 상태
+          </p>
+          <div className="mt-4 text-sm">
+            {email ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-foreground">{email}</span>
+                <button
+                  type="button"
+                  onClick={() => clear()}
+                  className="rounded-lg border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
+                >
+                  로그아웃
+                </button>
+              </div>
+            ) : (
+              <p className="text-muted-foreground">
+                로그인되지 않았습니다. 실연동 모드에서는 Builder 호출을 위해 Google 로그인이 필요합니다.
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
     </main>
   );
 }
