@@ -310,30 +310,26 @@ Studio는 Builder 계약 **v1.0.0**(builder #209의 `API_CONTRACT_VERSION`)을 �
   `VITE_USE_REAL_BUILDER` 플래그로 mock/실연동 전환.
 - 스펙 매핑 계층: `src/features/build-spec/specMapping.ts` (#37) — Studio camelCase
   BuildSpec → Builder snake_case 스펙.
-- 현재 실연동: `GET /version`(SettingsPage), `POST /validate`(validateSpec).
-- 후속: preview/build/artifacts 실연동, 비동기 job(#39).
+- 현재 실연동: 모든 오퍼레이션 (`GET /version`, `POST /validate`, `POST /preview`, `POST /build`, `GET /artifacts/{run_id}`, `GET /builds`). `VITE_USE_REAL_BUILDER=true` 시 Builder로 직접 호출.
+- mock 모드: `VITE_USE_REAL_BUILDER` 미설정 시 결정적 mock 결과 반환.
 
-### Builder SSOT(contract/builder-api.yaml)와의 불일치 분석 (#162)
+### Builder SSOT(contract/builder-api.yaml)와의 정합 분석 (#162, #219)
 
-다음 표는 Builder SSOT를 기준으로 Studio 계약/클라이언트의 불일치 항목을 정리한 것이다.
+API 1.2.0 기준 — 모든 오퍼레이션이 Builder SSOT, Studio 클라이언트, contractConformance.test.ts와 정합.
 
-| 엔드포인트 | Builder SSOT | Studio 문서 | Studio 클라이언트 | 상태 |
-|:---|:---|:---|:---|:---|
-| GET /version | ✓ 구현됨 | ✓ 기술됨 | ✓ 구현됨 | 정합 |
-| POST /validate | ✓ 구현됨 | ✓ 기술됨 | ✓ 구현됨 | 정합 |
-| POST /preview | ✓ 구현됨 | ✓ 기술됨 | ✓ 구현됨 | **불일치** (sample 형식) |
-| POST /build | ✓ 구현됨 | ✓ 기술됨 | ✓ 구현됨 | 정합 |
-| GET /artifacts/{run_id} | ✓ 구현됨 | ✓ 기술됨 | ✓ 구현됨 | 정합 |
-| GET /builds?limit=50 | ✓ 구현됨 | 계획/미구현으로 표기됨 | ✗ 미구현됨 | **불일치** (누락) |
+| 엔드포인트 | Builder SSOT | Studio 클라이언트 | 상태 |
+|:---|:---|:---|:---|
+| GET /healthz | ✓ | N/A (무인증) | 정합 |
+| GET /version | ✓ | ✓ 구현됨 | 정합 |
+| GET /catalog | ✓ | ✓ 구현됨 (#416, BL2) | 정합 |
+| POST /validate | ✓ | ✓ 구현됨 | 정합 |
+| POST /preview | ✓ | ✓ 구현됨 | 정합 |
+| POST /build | ✓ | ✓ 구현됨 | 정합 |
+| GET /artifacts/{run_id} | ✓ | ✓ 구현됨 | 정합 |
+| GET /builds | ✓ | ✓ 구현됨 | 정합 |
 
-**해소 필요 항목**:
-
-1. **GET /builds?limit=50 누락**: Builder SSOT에는 이미 정의되어 있으나 Studio 클라이언트와 문서에 계획/미구현으로만 기술되어 있음. 이 엔드포인트를 builderApi에 추가해야 함.
-
-2. **POST /preview 응답 sample 형식 불일치**:
-   - Studio 문서 기술: `[["2024-04-01"]]` (이중 배열)
-   - Builder SSOT 및 실제 구현: `[{date: "2024-04-01"}]` (객체 배열)
-   - `builderApi.ts` `PreviewResponse` 타입과 정합하도록 문서를 수정해야 함.
+> **계약 버전**: Studio `API_CONTRACT_VERSION = "1.2.0"`, Builder `API_CONTRACT_VERSION = "1.2.0"`.
+> `contractConformance.test.ts`가 오퍼레이션 집합과 버전을 CI에서 고정.
 
 ### 이 저장소 내 문서
 | 문서 | 설명 |
