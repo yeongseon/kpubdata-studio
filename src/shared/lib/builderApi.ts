@@ -156,14 +156,12 @@ export async function apiFetch<T>(
   let response: Response | undefined;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const { signal: combined, cleanup } = withTimeout(signal, timeoutMs);
-    // 인증 헤더: skipAuth이거나 provider가 토큰을 주지 않으면 붙이지 않는다 (#186).
-    // provider 미설정 시에는 기존(Content-Type만)과 완전히 동일하다.
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (!options.skipAuth) {
-      const token = authTokenProvider?.() ?? null;
-      if (token) headers.Authorization = `Bearer ${token}`;
-    }
     try {
+      if (!options.skipAuth) {
+        const token = authTokenProvider?.() ?? null;
+        if (token) headers.Authorization = `Bearer ${token}`;
+      }
       response = await fetch(`${API_BASE}${path}`, {
         method,
         signal: combined,
