@@ -1,39 +1,41 @@
-# Roadmap — kpubdata-studio
+# 로드맵 — kpubdata-studio
 
-## v0.1
-- Vite + React SPA 셸 정착
-- React Router 기반 주요 경로 구성
-- feature-based 폴더 구조 정착
-- build wizard
-- source config form
-- preview page
-- validation page
-- build execution page
-- manifest viewer
+> 한국 공공데이터 빌드 과정을 기획, 미리보기, 실행 및 검사하는 웹 기반 작업실.
 
-## v0.2
-- artifact preview
-- publish flow
-- saved drafts
-- better template support
+## v0.1 ✅ 완료
 
-## v0.3
-- richer run history
-- spec diffing
-- team/workspace concepts
+- ✅ Vite + React SPA 셸
+- ✅ React Router 주요 경로
+- ✅ feature-based 폴더 구조
+- ✅ Builder API 클라이언트 (apiFetch, 재시도, 타임아웃)
+- ✅ 도메인 타입 정의
+- ✅ 주요 페이지 골격
 
----
+## v0.2 ✅ 완료
 
-## 관련 문서
+- ✅ 아티팩트 미리보기
+- ✅ 데이터셋 검증 화면
+- ✅ 빌드 결과물 뷰어
 
-### 이 저장소 내 문서
-| 문서 | 설명 |
-| :--- | :--- |
-| [PRD.md](./PRD.md) | 제품 요구사항 정의 |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 시스템 아키텍처 설계 |
+## v0.3 ✅ 완료
 
-### KPubData Product Family
-| 저장소 | 문서 | 설명 |
-| :--- | :--- | :--- |
-| [kpubdata](https://github.com/yeongseon/kpubdata) | [ROADMAP.md](https://github.com/yeongseon/kpubdata/blob/main/ROADMAP.md) | Core 개발 로드맵 |
-| [kpubdata-builder](https://github.com/yeongseon/kpubdata-builder) | [ROADMAP.md](https://github.com/yeongseon/kpubdata-builder/blob/main/ROADMAP.md) | Builder 개발 로드맵 |
+- ✅ Build Detail (manifest 요약, 파일 목록)
+- ✅ Build Edit 마법사 (Stepper, RHF)
+- ✅ Build Run / Publish 페이지
+- ✅ Spec 매핑 계층
+
+## v0.4 🔧 진행 중
+
+- ✅ 인증 S1-S10 (apiFetch → Google GIS → 토큰 → 게이트 → 에러)
+- ✅ BuildSpec 어시스턴트 ST-A1-A10 (BYOK → 스크러빙 → 채팅 → 생성 → 테스트)
+- ✅ MSW E2E 테스트 하네스
+- ✅ zod 런타임 검증
+- ✅ API 1.2.0 동기화
+
+## v1.0 기준
+
+- ✅ 전체 빌드 워크플로우 UI
+- ✅ Builder API 모든 오퍼레이션 클라이언트
+- ✅ 인증 (Google OIDC BYOK)
+- ✅ BuildSpec 어시스턴트 (설명 + 생성)
+- 🔲 Studio↔Builder 실 HTTP E2E (실배포 환경)
