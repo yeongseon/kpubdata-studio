@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { builderApi, setAuthTokenProvider, _resetAuthTokenProvider } from "./builderApi";
+import { builderApi, setAuthTokenProvider } from "./builderApi";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -63,11 +63,11 @@ describe("builderApi retry policy", () => {
 describe("apiFetch auth header injection (#186)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    _resetAuthTokenProvider();
+    setAuthTokenProvider(null);
   });
 
   afterEach(() => {
-    _resetAuthTokenProvider();
+    setAuthTokenProvider(null);
     vi.restoreAllMocks();
   });
 
