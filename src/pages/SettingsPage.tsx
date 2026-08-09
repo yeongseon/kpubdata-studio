@@ -146,6 +146,25 @@ export function SettingsPage() {
           </div>
         </Card>
       )}
+
+      <Card variant="dashed">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          프라이버시 고지
+        </p>
+        <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+          <p>
+            어시스턴트 기능을 사용하면 대화 내용이 사용자가 설정한 외부 LLM 제공자(OpenAI 등)로
+            전송됩니다. API 키와 비용은 사용자 부담입니다.
+          </p>
+          <p className="text-amber-700 dark:text-amber-400">
+            공용 API 키를 VITE_* 환경변수로 주입하지 마세요 — 번들에 평문으로 포함됩니다.
+          </p>
+          <p>
+            시크릿 스크러빙(#206)이 sourceParams의 서비스 키를 자동 마스킹하지만,
+            대화에 직접 입력하는 민감 정보는 마스킹되지 않습니다.
+          </p>
+        </div>
+      </Card>
     </main>
   );
 }
