@@ -6,8 +6,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+const mockState = vi.hoisted(() => ({ realBuilderEnabled: true }));
+
 vi.mock("@/shared/lib/builderApi", () => ({
-  isRealBuilderEnabled: () => true,
+  isRealBuilderEnabled: () => mockState.realBuilderEnabled,
 }));
 
 import { generateBuildSpec } from "@/features/assistant/generate";
@@ -73,10 +75,12 @@ describe("generateBuildSpec (ST-A7, #210)", () => {
   });
 
   it("rejects generation in mock mode", async () => {
+    mockState.realBuilderEnabled = false;
     const provider = mockProvider(["should not be called"]);
     const result = await generateBuildSpec(provider, "test", {
       validateFn: vi.fn().mockResolvedValue({ valid: true }),
     });
+    mockState.realBuilderEnabled = true;
 
     expect(result.status).toBe("error");
     expect(result.spec).toBeNull();
@@ -112,7 +116,7 @@ describe("scrubSecrets (ST-A3, #206)", () => {
   });
 
   it("detects high-entropy strings", () => {
-    expect(looksLikeSecret("xJ7$kL9#mN2pQ4rT6")).toBe(true);
+    expect(looksLikeSecret("xJ7$kL9#mN2pQ4rT6vW8yB3cD5eF")).toBe(true);
     expect(looksLikeSecret("short")).toBe(false);
     expect(looksLikeSecret("normal description text")).toBe(false);
   });
