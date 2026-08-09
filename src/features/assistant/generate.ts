@@ -93,7 +93,7 @@ YAML만 출력하세요. 설명은 출력하지 마세요.`;
   return {
     spec: null,
     status: "partial",
-    attempts,
+    attempts: MAX_REPAIR_ATTEMPTS + 1,
     remaining_problems: lastProblems,
   };
 }
