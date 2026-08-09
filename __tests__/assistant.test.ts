@@ -6,6 +6,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@/shared/lib/builderApi", () => ({
+  isRealBuilderEnabled: () => true,
+}));
+
 import { generateBuildSpec } from "@/features/assistant/generate";
 import type { AssistProvider, AssistMessage } from "@/features/assistant/provider";
 import { scrubSecrets, restoreSecrets, isSecretKey, looksLikeSecret } from "@/features/assistant/scrub";

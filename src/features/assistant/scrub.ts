@@ -15,8 +15,8 @@ const SECRET_KEY_PATTERNS = [
   /^.*[_-]?secret$/i,
 ];
 
-const ENTROPY_THRESHOLD = 40;
-const MIN_LENGTH_FOR_ENTROPY = 16;
+const ENTROPY_THRESHOLD = 60;
+const MIN_LENGTH_FOR_ENTROPY = 24;
 
 export function isSecretKey(keyName: string): boolean {
   return SECRET_KEY_PATTERNS.some((p) => p.test(keyName));
