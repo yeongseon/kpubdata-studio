@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { builderApi, setAuthTokenProvider } from "./builderApi";
+import { builderApi, setAuthErrorCallback, setAuthTokenProvider } from "./builderApi";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -111,5 +111,39 @@ describe("apiFetch auth header injection (#186)", () => {
 
     const headers = requestInitOf(fetchMock).headers as Record<string, string>;
     expect(headers.Authorization).toBeUndefined();
+  });
+});
+
+describe("auth error callback on 401 (#189, S4)", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    setAuthTokenProvider(null);
+    setAuthErrorCallback(null);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setAuthTokenProvider(null);
+    setAuthErrorCallback(null);
+  });
+
+  it("calls auth error callback on 401", async () => {
+    const cb = vi.fn();
+    setAuthErrorCallback(cb);
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(401, { error: "unauthorized" }));
+
+    await expect(builderApi.version()).rejects.toMatchObject({ status: 401 });
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call auth error callback on 403", async () => {
+    const cb = vi.fn();
+    setAuthErrorCallback(cb);
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(403, { error: "forbidden" }));
+
+    await expect(builderApi.version()).rejects.toMatchObject({ status: 403 });
+    expect(cb).not.toHaveBeenCalled();
   });
 });

@@ -73,6 +73,14 @@ export function setAuthTokenProvider(provider: AuthTokenProvider | null): void {
   authTokenProvider = provider;
 }
 
+export type AuthErrorCallback = () => void;
+
+let authErrorCallback: AuthErrorCallback | null = null;
+
+export function setAuthErrorCallback(cb: AuthErrorCallback | null): void {
+  authErrorCallback = cb;
+}
+
 /** 자동 타임아웃 기본값(ms). Builder /build는 외부 API를 호출해 느릴 수 있어 넉넉히 잡는다. */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -208,7 +216,9 @@ export async function apiFetch<T>(
   }
 
   if (!response.ok) {
-    // 사용자에게 명시적인 에러 메시지 제공 (#159)
+    if (response.status === 401 && authErrorCallback) {
+      authErrorCallback();
+    }
     const message = formatApiErrorMessage(response.status, parsed);
     throw new ApiError(response.status, message, parsed);
   }
