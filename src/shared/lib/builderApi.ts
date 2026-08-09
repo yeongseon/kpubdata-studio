@@ -22,7 +22,7 @@ import * as schemas from "./builderApi.schema";
 import { z } from "zod";
 
 /** Builder API 계약 버전. builder #209의 API_CONTRACT_VERSION과 일치해야 한다. */
-export const API_CONTRACT_VERSION = "1.0.0";
+export const API_CONTRACT_VERSION = "1.1.0";
 
 /** 실제 Builder 호출 활성화 여부(미설정 시 mock 사용). */
 export function isRealBuilderEnabled(): boolean {
@@ -71,11 +71,6 @@ let authTokenProvider: AuthTokenProvider | null = null;
  */
 export function setAuthTokenProvider(provider: AuthTokenProvider | null): void {
   authTokenProvider = provider;
-}
-
-/** 테스트 격리용: 등록된 provider를 해제한다. */
-export function _resetAuthTokenProvider(): void {
-  authTokenProvider = null;
 }
 
 /** 자동 타임아웃 기본값(ms). Builder /build는 외부 API를 호출해 느릴 수 있어 넉넉히 잡는다. */
