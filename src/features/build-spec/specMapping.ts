@@ -29,6 +29,12 @@ export interface BuilderSpec {
     dataset: string;
     params: Record<string, string>;
     alias?: string;
+    /** 소스 스키마 계약 (VAL-1). Studio SourceRef.schema 와 동일 구조. */
+    schema?: {
+      required: string[];
+      dtypes: Record<string, string>;
+      casts: Record<string, string>;
+    };
   }>;
   exports: BuilderExport[];
   metadata: Record<string, string>;
@@ -84,6 +90,7 @@ export function toBuilderSpec(spec: BuildSpec): BuilderSpec {
       dataset: source.dataset,
       params: source.params,
       ...(source.alias ? { alias: source.alias } : {}),
+      ...(source.schema ? { schema: source.schema } : {}),
     })),
     exports: spec.exports.map((target) => ({
       kind: target.format,
@@ -120,6 +127,7 @@ export function fromBuilderSpec(spec: BuilderSpec): BuildSpec {
       dataset: source.dataset,
       params: source.params,
       ...(source.alias ? { alias: source.alias } : {}),
+      ...(source.schema ? { schema: source.schema } : {}),
     })),
     exports: spec.exports.map((e) => {
       // Builder의 output_path는 Studio ExportTarget에 대응 필드가 없어 options에 보존한다(#121).

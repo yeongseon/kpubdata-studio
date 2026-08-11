@@ -19,12 +19,20 @@ export const recordSchema = z.record(z.string(), z.string());
 /** export 옵션은 문자열 키에 임의 값(unknown)을 허용한다 (ExportTarget.options 규약과 정렬) */
 export const exportOptionsSchema = z.record(z.string(), z.unknown());
 
+/** 소스 스키마 계약 (VAL-1). Builder sources[].schema 와 1:1. */
+export const schemaContractSchema = z.object({
+  required: z.array(z.string()),
+  dtypes: z.record(z.string(), z.string()),
+  casts: z.record(z.string(), z.string()),
+});
+
 /** 단일 원본 데이터 참조가 가져야 할 필드를 검증하는 스키마 */
 export const sourceRefSchema = z.object({
   provider: z.string().min(1, "Provider is required."),
   dataset: z.string().min(1, "Dataset is required."),
   params: recordSchema,
   alias: z.string().min(1, "Alias cannot be empty.").optional(),
+  schema: schemaContractSchema.optional(),
 });
 
 /** 결과물 export 대상 정의를 검증하는 스키마 */
