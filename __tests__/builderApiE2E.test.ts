@@ -17,7 +17,7 @@ describe("Builder API E2E (MSW)", () => {
   it("GET /version returns service info", async () => {
     const result = await builderApi.version();
     expect(result.service).toBe("kpubdata-builder");
-    expect(result.api_version).toBe("1.1.0");
+    expect(result.api_version).toBe("1.2.0");
   });
 
   it("POST /validate accepts a spec and returns valid", async () => {
