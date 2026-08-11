@@ -42,10 +42,9 @@ ${options.catalogContext ? `사용 가능한 provider/dataset:\n${options.catalo
 목록 밖의 provider/dataset은 사용하지 마세요.
 YAML만 출력하세요. 설명은 출력하지 마세요.`;
 
-  let attempts = 0;
   let lastProblems: string[] = [];
 
-  for (attempts = 1; attempts <= MAX_REPAIR_ATTEMPTS + 1; attempts++) {
+  for (let attempts = 1; attempts <= MAX_REPAIR_ATTEMPTS + 1; attempts++) {
     const messages: AssistMessage[] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
