@@ -13,10 +13,23 @@ import {
 } from "@/shared/lib/builderApi";
 import type { BuildSpec } from "@/shared/lib/types";
 
+export interface PreviewSourceFailure {
+  sourceKey: string;
+  error: string;
+}
+
+export class PreviewSourceFailureError extends Error {
+  constructor(readonly failures: PreviewSourceFailure[]) {
+    super(`모든 미리보기 소스가 실패했습니다: ${formatFailures(failures)}`);
+    this.name = "PreviewSourceFailureError";
+  }
+}
+
 /** 미리보기 결과(샘플 행 배열과 컬럼명→타입 스키마 맵). */
 export interface PreviewResult {
   rows: Record<string, unknown>[];
   schema: Record<string, string>;
+  warnings: PreviewSourceFailure[];
 }
 
 /** mock 모드에서 보여줄 결정적 샘플 행. */
@@ -33,6 +46,17 @@ const MOCK_SCHEMA: Record<string, string> = {
   measured_at: "string",
 };
 
+function formatFailures(failures: readonly PreviewSourceFailure[]): string {
+  return failures.map((failure) => `${failure.sourceKey}: ${failure.error}`).join("; ");
+}
+
+function sourceFailure(source: PreviewResponse["previews"][number]): PreviewSourceFailure {
+  return {
+    sourceKey: source.source_key,
+    error: source.error ?? "원인을 알 수 없는 소스 오류",
+  };
+}
+
 /**
  * Builder /preview 응답을 UI가 쓰는 `{ rows, schema }`로 변환한다.
  *
@@ -43,15 +67,22 @@ const MOCK_SCHEMA: Record<string, string> = {
  * @returns 대표 소스의 샘플 행과 컬럼명→타입 스키마.
  */
 function transformPreviewResponse(response: PreviewResponse): PreviewResult {
-  const source =
-    response.previews.find((preview) => preview.status === "ok") ?? response.previews[0];
-  if (!source) return { rows: [], schema: {} };
+  const source = response.previews.find((preview) => preview.status === "ok");
+  if (!source) {
+    const failures = response.previews.map(sourceFailure);
+    if (failures.length > 0) throw new PreviewSourceFailureError(failures);
+    return { rows: [], schema: {}, warnings: [] };
+  }
+
+  const warnings = response.previews
+    .filter((preview) => preview.status === "failed")
+    .map(sourceFailure);
 
   const schema: Record<string, string> = {};
   for (const column of source.schema) {
     schema[column.name] = column.dtype;
   }
-  return { rows: source.sample, schema };
+  return { rows: source.sample, schema, warnings };
 }
 
 /**
@@ -63,7 +94,7 @@ function transformPreviewResponse(response: PreviewResponse): PreviewResult {
  */
 export async function previewBuild(spec: BuildSpec, signal?: AbortSignal): Promise<PreviewResult> {
   if (!isRealBuilderEnabled()) {
-    return { rows: MOCK_ROWS, schema: MOCK_SCHEMA };
+    return { rows: MOCK_ROWS, schema: MOCK_SCHEMA, warnings: [] };
   }
 
   const response = await builderApi.preview(serializeSpec(spec), signal);
