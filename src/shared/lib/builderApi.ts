@@ -352,6 +352,9 @@ export type ArtifactsResponse = schemas.ArtifactsResponse;
 export type PreviewColumn = schemas.PreviewColumn;
 export type PreviewSource = schemas.PreviewSource;
 export type PreviewResponse = schemas.PreviewResponse;
+export type CatalogDataset = schemas.CatalogDataset;
+export type CatalogProvider = schemas.CatalogProvider;
+export type CatalogResponse = schemas.CatalogResponse;
 
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
@@ -392,5 +395,5 @@ export const builderApi = {
 
   /** GET /catalog — provider/dataset 카탈로그 (#416, BL2). */
   catalog: (signal?: AbortSignal) =>
-    apiFetch<schemas.CatalogResponse>("/catalog", { signal }),
+    apiFetch("/catalog", { signal }, schemas.catalogResponseSchema),
 };
