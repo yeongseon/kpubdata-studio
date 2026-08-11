@@ -22,6 +22,9 @@ export type PublishStatus =
   | "published"
   | "publish_failed";
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
 export interface BuildSpec {
   /** Studio와 Builder 전체에서 공통으로 사용하는 데이터셋 식별자 */
   datasetId: string;
@@ -51,8 +54,7 @@ export interface SourceRef {
   provider: string;
   /** provider 내부의 dataset 이름 또는 코드 */
   dataset: string;
-  /** provider 요청 시 전달할 문자열 기반 파라미터 집합 */
-  params: Record<string, string>;
+  params: Record<string, JsonValue>;
   /** 동일 provider/dataset을 여러 번 사용할 때 구분용 별칭 */
   alias?: string;
   /** 소스 스키마 계약 (VAL-1). undefined면 Silver 검증을 생략한다 (하위 호환). */
@@ -61,7 +63,7 @@ export interface SourceRef {
 
 export interface ExportTarget {
   /** 결과물을 어떤 형식으로 내보낼지 결정하는 식별자 */
-  format: "markdown" | "jsonl" | "parquet" | "huggingface";
+  format: string;
   /** 특정 export 형식에만 필요한 추가 옵션 집합 */
   options?: Record<string, unknown>;
 }
