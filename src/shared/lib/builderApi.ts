@@ -21,8 +21,8 @@ import { API_BASE } from "@/shared/config/env";
 import * as schemas from "./builderApi.schema";
 import { z } from "zod";
 
-/** Builder API 계약 버전. builder #209의 API_CONTRACT_VERSION과 일치해야 한다. */
-export const API_CONTRACT_VERSION = "1.1.0";
+/** Builder API 계약 버전. builder SSOT의 API_CONTRACT_VERSION과 일치해야 한다. */
+export const API_CONTRACT_VERSION = "1.2.0";
 
 /** 실제 Builder 호출 활성화 여부(미설정 시 mock 사용). */
 export function isRealBuilderEnabled(): boolean {
