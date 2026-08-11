@@ -21,6 +21,19 @@ export const handlers = [
     });
   }),
 
+  http.get(`${API_BASE}/catalog`, () => {
+    return HttpResponse.json({
+      providers: [
+        {
+          name: "datago",
+          datasets: [
+            { name: "air_quality", title: "대기오염", requires_service_key: true },
+          ],
+        },
+      ],
+    });
+  }),
+
   /**
    * POST /validate — BuildSpec YAML 검증 (동기식)
    */
