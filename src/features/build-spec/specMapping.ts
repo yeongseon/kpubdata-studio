@@ -10,7 +10,7 @@
  *   - exports[].format → exports[].kind (+ output_path 파생)
  *   - sources 필드(provider/dataset/params/alias)는 이름이 동일하다.
  */
-import type { BuildSpec, ExportTarget } from "@/shared/lib/types";
+import type { BuildSpec, ExportTarget, JsonValue } from "@/shared/lib/types";
 
 /** Builder가 기대하는 export 대상(snake_case). */
 interface BuilderExport {
@@ -27,7 +27,7 @@ export interface BuilderSpec {
   sources: Array<{
     provider: string;
     dataset: string;
-    params: Record<string, string>;
+    params: Record<string, JsonValue>;
     alias?: string;
     /** 소스 스키마 계약 (VAL-1). Studio SourceRef.schema 와 동일 구조. */
     schema?: {
@@ -40,38 +40,25 @@ export interface BuilderSpec {
   metadata: Record<string, string>;
 }
 
-const FORMAT_EXTENSION: Record<ExportTarget["format"], string> = {
+const FORMAT_EXTENSION: Record<string, string> = {
   jsonl: "jsonl",
   markdown: "md",
   parquet: "parquet",
   huggingface: "",
 };
 
-/** Studio가 지원하는 export 형식 집합. Builder 응답의 kind 검증에 사용한다. */
-const KNOWN_FORMATS = new Set<ExportTarget["format"]>(
-  Object.keys(FORMAT_EXTENSION) as ExportTarget["format"][],
-);
-
-/**
- * Builder export의 kind를 Studio 형식으로 검증·변환한다.
- *
- * 알 수 없는 kind는 조용히 잘못된 스펙을 만들지 않도록 즉시 실패시킨다(#121).
- */
-function parseExportFormat(kind: string): ExportTarget["format"] {
-  if (KNOWN_FORMATS.has(kind as ExportTarget["format"])) {
-    return kind as ExportTarget["format"];
-  }
-  throw new Error(`알 수 없는 export kind입니다: ${kind}`);
-}
-
 /** export별 output_path를 파생한다. huggingface는 디렉터리, 그 외는 파일 경로. */
-function deriveOutputPath(spec: BuildSpec, target: ExportTarget): string {
+function deriveOutputPath(spec: BuildSpec, target: ExportTarget, index: number): string {
+  const explicitPath = target.options?.["outputPath"];
+  if (typeof explicitPath === "string" && explicitPath.length > 0) return explicitPath;
+
   const base = spec.metadata["outputPath"] ?? `artifacts/builds/${spec.datasetId}`;
   if (target.format === "huggingface") {
-    const outputPath = target.options?.outputPath;
-    return typeof outputPath === "string" ? outputPath : base;
+    return index === 0 ? base : `${base}-${index + 1}`;
   }
-  return `${base}/data.${FORMAT_EXTENSION[target.format]}`;
+  const extension = FORMAT_EXTENSION[target.format] ?? target.format;
+  const suffix = index === 0 ? "" : `-${index + 1}`;
+  return `${base}/data${suffix}.${extension}`;
 }
 
 /**
@@ -92,9 +79,9 @@ export function toBuilderSpec(spec: BuildSpec): BuilderSpec {
       ...(source.alias ? { alias: source.alias } : {}),
       ...(source.schema ? { schema: source.schema } : {}),
     })),
-    exports: spec.exports.map((target) => ({
+    exports: spec.exports.map((target, index) => ({
       kind: target.format,
-      output_path: deriveOutputPath(spec, target),
+      output_path: deriveOutputPath(spec, target, index),
       ...(target.options ? { options: target.options } : {}),
     })),
     metadata: spec.metadata,
@@ -136,7 +123,7 @@ export function fromBuilderSpec(spec: BuilderSpec): BuildSpec {
         options["outputPath"] = e.output_path;
       }
       return {
-        format: parseExportFormat(e.kind),
+        format: e.kind,
         ...(Object.keys(options).length > 0 ? { options } : {}),
       };
     }),
