@@ -14,6 +14,7 @@ import { previewBuild } from "@/features/preview/api";
 import { useBuild } from "@/features/runs/useBuild";
 import { useBuildJob } from "@/features/runs/useBuildJob";
 import { validateSpec } from "@/features/validation/api";
+import { builderApi, type CatalogDataset, type CatalogProvider } from "@/shared/lib/builderApi";
 import { buildFormValuesSchema, buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
 import type { BuildSpec } from "@/shared/lib/types";
 import {
@@ -32,20 +33,18 @@ import {
 
 const exportFormats = exportFormatSchema.options;
 
-// Provider는 직접 입력 대신 선택형으로 제공한다(제안 §5.2.2). dataset 자동 로딩은
-// #29 Builder API 연동 시 추가한다.
-const PROVIDER_OPTIONS = [
-  { value: "bok", label: "한국은행 ECOS (BOK)" },
-  { value: "datago", label: "공공데이터포털 (data.go.kr)" },
-  { value: "kosis", label: "통계청 KOSIS" },
-  { value: "krx", label: "한국거래소 (KRX)" },
-  { value: "law", label: "국가법령정보센터" },
-  { value: "localdata", label: "지역정보포털 (LocalData)" },
-  { value: "lofin", label: "지방재정365 (LOFIN)" },
-  { value: "semas", label: "소상공인시장진흥공단 (SEMAS)" },
-  { value: "seoul", label: "서울 열린데이터광장" },
-  { value: "sgis", label: "통계지리정보서비스 (SGIS)" },
-] as const;
+const PROVIDER_LABELS: Readonly<Record<string, string>> = {
+  bok: "한국은행 ECOS (BOK)",
+  datago: "공공데이터포털 (data.go.kr)",
+  kosis: "통계청 KOSIS",
+  krx: "한국거래소 (KRX)",
+  law: "국가법령정보센터",
+  localdata: "지역정보포털 (LocalData)",
+  lofin: "지방재정365 (LOFIN)",
+  semas: "소상공인시장진흥공단 (SEMAS)",
+  seoul: "서울 열린데이터광장",
+  sgis: "통계지리정보서비스 (SGIS)",
+};
 
 interface BuildFormValues {
   datasetId: string;
@@ -93,7 +92,7 @@ const TEMPLATES: BuildTemplate[] = [
       title: "대기오염 정보",
       description: "data.go.kr 대기오염 측정 데이터셋",
       provider: "datago",
-      sourceDataset: "air-quality",
+      sourceDataset: "air_quality",
       sourceParams: '{"sidoName": "서울"}',
       outputPath: "artifacts/builds/air-quality",
       exportFormats: ["jsonl"],
@@ -108,7 +107,7 @@ const TEMPLATES: BuildTemplate[] = [
       title: "기준금리 추이",
       description: "한국은행 ECOS 기준금리 시계열 데이터셋",
       provider: "bok",
-      sourceDataset: "interest-rate",
+      sourceDataset: "base_rate",
       sourceParams: '{"stat_code": "722Y001"}',
       outputPath: "artifacts/builds/bok-interest-rate",
       exportFormats: ["jsonl", "parquet"],
@@ -123,7 +122,7 @@ const TEMPLATES: BuildTemplate[] = [
       title: "인구 통계",
       description: "통계청 KOSIS 인구 통계 데이터셋",
       provider: "kosis",
-      sourceDataset: "population",
+      sourceDataset: "population_migration",
       sourceParams: '{"region": "11"}',
       outputPath: "artifacts/builds/population",
       exportFormats: ["jsonl"],
@@ -252,6 +251,32 @@ interface ValidationState {
   errors: string[];
 }
 
+type CatalogState =
+  | { readonly status: "loading"; readonly providers: readonly CatalogProvider[]; readonly error?: undefined }
+  | { readonly status: "loaded"; readonly providers: readonly CatalogProvider[]; readonly error?: undefined }
+  | { readonly status: "error"; readonly providers: readonly CatalogProvider[]; readonly error: string };
+
+function providerLabel(provider: string): string {
+  return PROVIDER_LABELS[provider] ?? provider;
+}
+
+function catalogProvider(providers: readonly CatalogProvider[], provider: string): CatalogProvider | undefined {
+  return providers.find((entry) => entry.name === provider);
+}
+
+function catalogDataset(
+  providers: readonly CatalogProvider[],
+  provider: string,
+  dataset: string,
+): CatalogDataset | undefined {
+  return catalogProvider(providers, provider)?.datasets.find((entry) => entry.name === dataset);
+}
+
+function isTemplateAvailable(template: BuildTemplate, catalog: CatalogState): boolean {
+  if (!template.values.provider || !template.values.sourceDataset || catalog.status !== "loaded") return true;
+  return catalogDataset(catalog.providers, template.values.provider, template.values.sourceDataset) !== undefined;
+}
+
 /**
  * 단계별 New Build Wizard 페이지 컴포넌트.
  *
@@ -276,6 +301,7 @@ export function NewBuildPage() {
   // 편집 모드에서는 초안을 복원하면 불러온 스펙을 덮어써 버리므로 배너를 띄우지 않는다.
   const [draftAvailable, setDraftAvailable] = useState(() => !buildId && hasDraft());
   const [draftSaved, setDraftSaved] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogState>({ status: "loading", providers: [] });
   const job = useBuildJob();
 
   const {
@@ -285,10 +311,17 @@ export function NewBuildPage() {
     watch,
     getValues,
     reset,
+    setValue,
   } = useForm<BuildFormValues>({ defaultValues: initialValues, mode: "onChange" });
 
   const values = watch();
   const specPreview = useMemo(() => toBuildSpec(values, baseSpec), [values, baseSpec]);
+  const selectedProvider = values.provider;
+  const providerOptions = catalog.providers.map((provider) => ({
+    value: provider.name,
+    label: providerLabel(provider.name),
+  }));
+  const datasetOptions = catalogProvider(catalog.providers, selectedProvider)?.datasets ?? [];
 
   // 마지막으로 검증한 폼 입력의 스냅샷. 검증 이후 입력이 바뀌면 검증 결과를 초기화하기 위해
   // 비교 기준으로 사용한다(stale validation 방지, #72).
@@ -308,6 +341,31 @@ export function NewBuildPage() {
       setValidation({ status: "idle", isValid: false, errors: [] });
     }
   }, [values, validation.status]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    builderApi.catalog(controller.signal)
+      .then((response) => {
+        setCatalog({ status: "loaded", providers: response.providers });
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        setCatalog({
+          status: "error",
+          providers: [],
+          error: cause instanceof Error ? cause.message : "Builder catalog를 불러오지 못했습니다.",
+        });
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (catalog.status !== "loaded" || selectedProvider === "") return;
+    const datasets = catalogProvider(catalog.providers, selectedProvider)?.datasets ?? [];
+    if (datasets.length === 0) return;
+    if (datasets.some((dataset) => dataset.name === values.sourceDataset)) return;
+    setValue("sourceDataset", datasets[0].name, { shouldDirty: true, shouldValidate: true });
+  }, [catalog, selectedProvider, setValue, values.sourceDataset]);
 
   // 편집 모드에서 build가 로드되면 폼을 초기화한다.
   //
@@ -488,20 +546,44 @@ export function NewBuildPage() {
               <p className="text-sm text-muted-foreground">
                 자주 쓰는 공공데이터 조합으로 시작하거나 빈 빌드로 처음부터 설정하세요.
               </p>
+              {catalog.status === "loading" ? (
+                <p className="text-sm text-muted-foreground">Builder catalog를 불러오는 중입니다...</p>
+              ) : null}
+              {catalog.status === "error" ? (
+                <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+                  {catalog.error}
+                </p>
+              ) : null}
               <div className="grid gap-3 sm:grid-cols-2">
-                {TEMPLATES.map((template) => (
-                  <button
-                    key={template.id}
-                    type="button"
-                    onClick={() => selectTemplate(template)}
-                    className="rounded-2xl border border-border bg-card p-4 text-left transition hover:border-accent/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <p className="text-base font-semibold tracking-tight">{template.name}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {template.description}
-                    </p>
-                  </button>
-                ))}
+                {TEMPLATES.map((template) => {
+                  const available = isTemplateAvailable(template, catalog);
+                  const resolvedDataset = catalogDataset(
+                    catalog.providers,
+                    template.values.provider,
+                    template.values.sourceDataset,
+                  );
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      disabled={!available}
+                      onClick={() => selectTemplate(template)}
+                      className="rounded-2xl border border-border bg-card p-4 text-left transition enabled:hover:border-accent/50 enabled:hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <p className="text-base font-semibold tracking-tight">{template.name}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {template.description}
+                      </p>
+                      {template.values.provider && template.values.sourceDataset ? (
+                        <p className="mt-3 text-xs font-medium text-muted-foreground">
+                          {resolvedDataset
+                            ? `${providerLabel(template.values.provider)} / ${resolvedDataset.title}`
+                            : "현재 Builder catalog에 없는 source입니다."}
+                        </p>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : null}
@@ -557,7 +639,7 @@ export function NewBuildPage() {
                 {(field) => (
                   <Select {...field} {...register("provider", { required: "제공자를 선택해주세요." })}>
                     <option value="">제공자 선택…</option>
-                    {PROVIDER_OPTIONS.map((option) => (
+                    {providerOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -569,17 +651,32 @@ export function NewBuildPage() {
                 id="sourceDataset"
                 label="데이터셋 (Dataset)"
                 required
-                help="제공자 내부의 데이터셋 코드. (자동 목록은 Builder API 연동 후 제공)"
+                help="Builder catalog에서 제공하는 provider 내부 데이터셋 코드입니다."
                 error={errors.sourceDataset?.message}
               >
                 {(field) => (
-                  <TextInput
-                    placeholder="air-quality"
+                  <Select
                     {...field}
+                    disabled={!selectedProvider || datasetOptions.length === 0}
                     {...register("sourceDataset", { required: "데이터셋을 입력해주세요." })}
-                  />
+                  >
+                    <option value="">데이터셋 선택…</option>
+                    {datasetOptions.map((dataset) => (
+                      <option key={dataset.name} value={dataset.name}>
+                        {dataset.title} ({dataset.name})
+                      </option>
+                    ))}
+                  </Select>
                 )}
               </FormField>
+              {catalog.status === "loading" ? (
+                <p className="text-sm text-muted-foreground">Builder catalog를 불러오는 중입니다...</p>
+              ) : null}
+              {catalog.status === "error" ? (
+                <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+                  {catalog.error}
+                </p>
+              ) : null}
             </div>
           ) : null}
 

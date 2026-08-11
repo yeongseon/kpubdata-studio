@@ -155,6 +155,34 @@ describe("builderApi client (#29)", () => {
     });
   });
 
+  it("catalog() parses Builder provider/dataset catalog responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, {
+        providers: [
+          {
+            name: "datago",
+            datasets: [
+              { name: "air_quality", title: "대기오염", requires_service_key: true },
+            ],
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.catalog();
+
+    expect(result.providers[0]?.name).toBe("datago");
+    expect(result.providers[0]?.datasets[0]).toMatchObject({
+      name: "air_quality",
+      title: "대기오염",
+      requires_service_key: true,
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/catalog");
+    expect(init.method).toBe("GET");
+  });
+
   it("surfaces outcomes[].error on a 502 with no top-level error (#75)", async () => {
     vi.stubGlobal(
       "fetch",

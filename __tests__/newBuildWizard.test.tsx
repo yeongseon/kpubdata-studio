@@ -1,7 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { NewBuildPage } from "@/pages/NewBuildPage";
+import { API_BASE } from "@/shared/config/env";
+import { mswServer } from "../vitest.setup";
 
 function renderWizard() {
   return render(
@@ -16,6 +19,29 @@ function skipTemplateStep() {
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
 }
 
+function useCatalogFixture() {
+  mswServer.use(
+    http.get(`${API_BASE}/catalog`, () =>
+      HttpResponse.json({
+        providers: [
+          {
+            name: "datago",
+            datasets: [
+              { name: "air_quality", title: "대기오염", requires_service_key: true },
+            ],
+          },
+          {
+            name: "bok",
+            datasets: [
+              { name: "base_rate", title: "기준금리", requires_service_key: false },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+}
+
 describe("New Build Wizard", () => {
   it("starts on the template step", () => {
     renderWizard();
@@ -23,12 +49,44 @@ describe("New Build Wizard", () => {
     expect(screen.getByRole("button", { name: /대기오염 정보/ })).toBeInTheDocument();
   });
 
-  it("selecting a template prefills the form and advances to identity", () => {
+  it("selecting a catalog-backed template prefills the current Builder dataset id", async () => {
+    useCatalogFixture();
     renderWizard();
+    await waitFor(() => expect(screen.getByRole("button", { name: /대기오염 정보/ })).toBeEnabled());
+
     fireEvent.click(screen.getByRole("button", { name: /대기오염 정보/ }));
 
     expect(screen.getByRole("heading", { name: "기본 정보" })).toBeInTheDocument();
     expect(screen.getByLabelText(/데이터셋 ID/)).toHaveValue("datago-air-quality");
+    skipTemplateStep();
+    await screen.findByRole("heading", { name: "데이터 소스" });
+    expect(screen.getByLabelText(/데이터셋 \(Dataset\)/)).toHaveValue("air_quality");
+  });
+
+  it("marks templates missing from Builder catalog unavailable", async () => {
+    useCatalogFixture();
+    renderWizard();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /인구 통계/ })).toBeDisabled());
+    expect(screen.getByRole("button", { name: /대기오염 정보/ })).toBeEnabled();
+    expect(screen.getByText(/현재 Builder catalog에 없는 source/)).toBeInTheDocument();
+  });
+
+  it("uses Builder catalog providers and datasets in the source selector", async () => {
+    useCatalogFixture();
+    renderWizard();
+    skipTemplateStep();
+    fireEvent.change(screen.getByLabelText(/데이터셋 ID/), { target: { value: "custom" } });
+    fireEvent.change(screen.getByLabelText(/제목/), { target: { value: "Custom" } });
+    fireEvent.change(screen.getByLabelText(/설명/), { target: { value: "Custom dataset" } });
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+
+    await screen.findByRole("heading", { name: "데이터 소스" });
+    fireEvent.change(screen.getByLabelText(/제공자/), { target: { value: "datago" } });
+
+    await waitFor(() => expect(screen.getByLabelText(/데이터셋 \(Dataset\)/)).toHaveValue("air_quality"));
+    expect(screen.getByRole("option", { name: /대기오염/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /population/ })).not.toBeInTheDocument();
   });
 
   it("blocks advancing while required fields are empty", async () => {
@@ -62,7 +120,7 @@ describe("New Build Wizard", () => {
 
     await screen.findByRole("heading", { name: "데이터 소스" });
     fireEvent.change(screen.getByLabelText(/제공자/), { target: { value: "datago" } });
-    fireEvent.change(screen.getByLabelText(/데이터셋/), { target: { value: "air-quality" } });
+    fireEvent.change(screen.getByLabelText(/데이터셋 \(Dataset\)/), { target: { value: "air_quality" } });
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
 
     await screen.findByRole("heading", { name: "파라미터" });
