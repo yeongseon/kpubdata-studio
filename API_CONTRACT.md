@@ -60,7 +60,7 @@ Builder API의 계약 버전을 확인합니다. Studio가 기동 시 호환성�
 **요청:** 없음
 **응답 예시:**
 ```json
-{ "service": "kpubdata-builder", "api_version": "1.0.0" }
+{ "service": "kpubdata-builder", "api_version": "1.2.0" }
 ```
 
 ---
@@ -82,7 +82,7 @@ Builder API의 계약 버전을 확인합니다. Studio가 기동 시 호환성�
 
 **응답 예시 (성공):**
 ```json
-{ "status": "valid", "dataset_id": "weather_report", "api_version": "1.0.0" }
+{ "status": "valid", "dataset_id": "weather_report", "api_version": "1.2.0" }
 ```
 
 **응답 예시 (검증 실패, HTTP 400):**
@@ -148,7 +148,7 @@ Builder API의 계약 버전을 확인합니다. Studio가 기동 시 호환성�
     { "source_key": "kma__forecast", "status": "ok", "stages_completed": ["bronze", "silver"], "error": null }
   ],
   "manifest": "output/run_99/manifest.json",
-  "api_version": "1.0.0"
+  "api_version": "1.2.0"
 }
 ```
 
@@ -161,7 +161,7 @@ Builder API의 계약 버전을 확인합니다. Studio가 기동 시 호환성�
     { "source_key": "kma__forecast", "status": "failed", "stages_completed": [], "error": "upstream API timeout" }
   ],
   "manifest": "output/run_99/manifest.json",
-  "api_version": "1.0.0"
+  "api_version": "1.2.0"
 }
 ```
 
@@ -302,7 +302,7 @@ flowchart TD
 
 ## Builder 통합 현황 (#36)
 
-Studio는 Builder 계약 **v1.0.0**(builder #209의 `API_CONTRACT_VERSION`)을 대상으로 한다.
+Studio는 Builder 계약 **v1.2.0**(Builder SSOT의 `API_CONTRACT_VERSION`)을 대상으로 한다.
 계약 버전과 클라이언트 오퍼레이션 집합은 `__tests__/contractConformance.test.ts`가 고정해,
 한쪽이 바뀌면 CI에서 깨진다.
 

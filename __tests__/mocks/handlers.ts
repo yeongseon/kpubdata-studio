@@ -14,14 +14,14 @@ export const handlers = [
   ),
 
   http.get(`${BASE}/version`, () =>
-    HttpResponse.json({ service: "kpubdata-builder", api_version: "1.1.0" }),
+    HttpResponse.json({ service: "kpubdata-builder", api_version: "1.2.0" }),
   ),
 
   http.post(`${BASE}/validate`, () =>
     HttpResponse.json({
       status: "valid",
       dataset_id: "dataset.sample",
-      api_version: "1.1.0",
+      api_version: "1.2.0",
     }),
   ),
 
@@ -49,7 +49,7 @@ export const handlers = [
         { source_key: "sample", status: "ok", stages_completed: ["bronze", "silver", "gold"], error: null },
       ],
       manifest: "/data/test-run-001/manifest.json",
-      api_version: "1.1.0",
+      api_version: "1.2.0",
     }),
   ),
 
