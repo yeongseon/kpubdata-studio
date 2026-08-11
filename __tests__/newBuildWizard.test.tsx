@@ -1,10 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NewBuildPage } from "@/pages/NewBuildPage";
 import { API_BASE } from "@/shared/config/env";
 import { mswServer } from "../vitest.setup";
+
+const { previewBuildMock } = vi.hoisted(() => ({
+  previewBuildMock: vi.fn(),
+}));
+
+vi.mock("@/features/preview/api", () => ({
+  previewBuild: previewBuildMock,
+}));
 
 function renderWizard() {
   return render(
@@ -41,6 +49,29 @@ function useCatalogFixture() {
     ),
   );
 }
+
+async function goToPreviewStep() {
+  renderWizard();
+  skipTemplateStep();
+  fireEvent.change(screen.getByLabelText(/데이터셋 ID/), { target: { value: "kma-daily" } });
+  fireEvent.change(screen.getByLabelText(/제목/), { target: { value: "기상청 일별" } });
+  fireEvent.change(screen.getByLabelText(/설명/), { target: { value: "일별 관측 데이터" } });
+  fireEvent.click(screen.getByRole("button", { name: "다음" }));
+
+  await screen.findByRole("heading", { name: "데이터 소스" });
+  fireEvent.change(screen.getByLabelText(/제공자/), { target: { value: "datago" } });
+  fireEvent.change(screen.getByLabelText(/데이터셋/), { target: { value: "air-quality" } });
+  fireEvent.click(screen.getByRole("button", { name: "다음" }));
+
+  await screen.findByRole("heading", { name: "파라미터" });
+  fireEvent.click(screen.getByRole("button", { name: "다음" }));
+
+  await screen.findByRole("heading", { name: "미리보기" });
+}
+
+afterEach(() => {
+  previewBuildMock.mockReset();
+});
 
 describe("New Build Wizard", () => {
   it("starts on the template step", () => {
@@ -129,5 +160,20 @@ describe("New Build Wizard", () => {
 
     expect(await screen.findByText(/올바른 JSON이 아닙니다/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "파라미터" })).toBeInTheDocument();
+  });
+
+  it("shows source failure warnings beside successful preview rows (#235)", async () => {
+    previewBuildMock.mockResolvedValue({
+      rows: [{ id: "x" }],
+      schema: { id: "string" },
+      warnings: [{ sourceKey: "datago.air", error: "인증 실패" }],
+    });
+
+    await goToPreviewStep();
+    fireEvent.click(screen.getByRole("button", { name: "미리보기 새로고침" }));
+
+    expect(await screen.findByText("1개 샘플 행 · 1개 컬럼")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("datago.air: 인증 실패");
+    expect(screen.queryByText("조건에 맞는 데이터가 없습니다")).not.toBeInTheDocument();
   });
 });

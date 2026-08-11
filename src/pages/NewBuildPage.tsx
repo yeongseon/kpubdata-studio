@@ -242,6 +242,7 @@ interface PreviewState {
   status: "idle" | "loading" | "loaded" | "error";
   rows: Record<string, unknown>[];
   schema: Record<string, string>;
+  warnings: string[];
   error?: string;
 }
 
@@ -289,7 +290,7 @@ export function NewBuildPage() {
   const isEditMode = !!buildId && build !== null;
 
   const [step, setStep] = useState(0);
-  const [preview, setPreview] = useState<PreviewState>({ status: "idle", rows: [], schema: {} });
+  const [preview, setPreview] = useState<PreviewState>({ status: "idle", rows: [], schema: {}, warnings: [] });
   const [validation, setValidation] = useState<ValidationState>({
     status: "idle",
     isValid: false,
@@ -375,7 +376,7 @@ export function NewBuildPage() {
     if (!isEditMode || !build || buildLoading) return;
     setBaseSpec(build.spec);
     reset(toFormValues(build.spec));
-    setPreview({ status: "idle", rows: [], schema: {} });
+    setPreview({ status: "idle", rows: [], schema: {}, warnings: [] });
     setValidation({ status: "idle", isValid: false, errors: [] });
     validatedSnapshotRef.current = null;
     setStep(1); // 템플릿 단계를 건너뛰고 기본 정보부터 시작
@@ -389,7 +390,7 @@ export function NewBuildPage() {
     reset(template.values);
     // 템플릿으로 새로 시작하므로 편집 중이던 원본 스펙의 잔여 소스/메타데이터를 버린다.
     setBaseSpec(null);
-    setPreview({ status: "idle", rows: [], schema: {} });
+    setPreview({ status: "idle", rows: [], schema: {}, warnings: [] });
     setValidation({ status: "idle", isValid: false, errors: [] });
     validatedSnapshotRef.current = null;
     setStep(1);
@@ -440,18 +441,24 @@ export function NewBuildPage() {
   async function runPreview() {
     const next = toBuildSpec(getValues(), baseSpec);
     if (next.error || !next.spec) {
-      setPreview({ status: "error", rows: [], schema: {}, error: next.error });
+      setPreview({ status: "error", rows: [], schema: {}, warnings: [], error: next.error });
       return;
     }
-    setPreview({ status: "loading", rows: [], schema: {} });
+    setPreview({ status: "loading", rows: [], schema: {}, warnings: [] });
     try {
       const result = await previewBuild(next.spec);
-      setPreview({ status: "loaded", rows: result.rows, schema: result.schema });
+      setPreview({
+        status: "loaded",
+        rows: result.rows,
+        schema: result.schema,
+        warnings: result.warnings.map((warning) => `${warning.sourceKey}: ${warning.error}`),
+      });
     } catch (cause) {
       setPreview({
         status: "error",
         rows: [],
         schema: {},
+        warnings: [],
         error: cause instanceof Error ? cause.message : "미리보기에 실패했습니다.",
       });
     }
@@ -735,6 +742,19 @@ export function NewBuildPage() {
                   title="조건에 맞는 데이터가 없습니다"
                   description="날짜 범위나 지역 조건을 조정한 뒤 '미리보기 새로고침'을 눌러 다시 시도하세요."
                 />
+              ) : null}
+              {preview.status === "loaded" && preview.warnings.length > 0 ? (
+                <ul className="space-y-2">
+                  {preview.warnings.map((warning) => (
+                    <li
+                      key={warning}
+                      role="alert"
+                      className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+                    >
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
               ) : null}
               {preview.status === "loaded" && preview.rows.length > 0 ? (
                 <p className="text-sm text-muted-foreground">
