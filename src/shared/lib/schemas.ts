@@ -13,8 +13,22 @@ export const exportFormatSchema = z.enum([
   "huggingface",
 ]);
 
-/** 문자열 키와 문자열 값만 허용하는 공통 레코드 스키마 */
+export type JsonValueInput = string | number | boolean | null | JsonValueInput[] | { [key: string]: JsonValueInput };
+
+export const jsonValueSchema: z.ZodType<JsonValueInput> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number().finite(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
 export const recordSchema = z.record(z.string(), z.string());
+
+export const jsonRecordSchema = z.record(z.string(), jsonValueSchema);
 
 /** export 옵션은 문자열 키에 임의 값(unknown)을 허용한다 (ExportTarget.options 규약과 정렬) */
 export const exportOptionsSchema = z.record(z.string(), z.unknown());
@@ -30,14 +44,14 @@ export const schemaContractSchema = z.object({
 export const sourceRefSchema = z.object({
   provider: z.string().min(1, "Provider is required."),
   dataset: z.string().min(1, "Dataset is required."),
-  params: recordSchema,
+  params: jsonRecordSchema,
   alias: z.string().min(1, "Alias cannot be empty.").optional(),
   schema: schemaContractSchema.optional(),
 });
 
 /** 결과물 export 대상 정의를 검증하는 스키마 */
 export const exportTargetSchema = z.object({
-  format: exportFormatSchema,
+  format: z.string().min(1, "Export format is required."),
   options: exportOptionsSchema.optional(),
 });
 
@@ -65,7 +79,7 @@ export const buildFormValuesSchema = z.object({
   sourceDataset: z.string(),
   sourceParams: z.string(),
   outputPath: z.string(),
-  exportFormats: z.array(exportFormatSchema),
+  exportFormats: z.array(z.string()),
 });
 
 /** `buildFormValuesSchema`를 통과한 폼 입력 타입 추론 결과 */

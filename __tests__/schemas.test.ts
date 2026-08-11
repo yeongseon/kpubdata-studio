@@ -21,6 +21,25 @@ describe("buildSpecSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts Builder-compatible JSON params and open export kinds (#234)", () => {
+    const result = buildSpecSchema.safeParse({
+      datasetId: "air-quality-seoul",
+      title: "Seoul Air Quality",
+      description: "Collects city air quality observations.",
+      sources: [
+        {
+          provider: "datago",
+          dataset: "air_quality",
+          params: { page: 1, includeMeta: true, filters: { grade: ["good"] } },
+        },
+      ],
+      exports: [{ format: "csv", options: { outputPath: "exports/data.csv" } }],
+      metadata: { outputPath: "artifacts/seoul-air" },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("rejects an invalid build spec", () => {
     const result = buildSpecSchema.safeParse({
       datasetId: "",
