@@ -8,12 +8,7 @@
  */
 
 import { http, HttpResponse } from "msw";
-
-/**
- * Builder API 기본 URL (VITE_USE_REAL_BUILDER=false인 테스트 환경).
- * 실제 fetch 요청은 이 URL로 향하며, MSW가 인터셉트한다.
- */
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from "@/shared/config/env";
 
 export const handlers = [
   /**

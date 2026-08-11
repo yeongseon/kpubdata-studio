@@ -4,8 +4,8 @@
  * MSW (Mock Service Worker)를 사용하여 실제 HTTP 요청을 모의 Builder API로
  * 인터셉트하고, 7개 최소 검증 시나리오를 실행한다.
  *
- * 이 테스트는 vi.stubGlobal로 mock하지 않고, 진짜 fetch 호출을 수행하며
- * MSW가 모의 응답을 반환하도록 설정되어 있다.
+ * 시나리오 1~4는 진짜 fetch 호출을 수행하고 MSW가 모의 응답을 반환한다.
+ * 시나리오 5~7은 timeout/retry/network 경계를 검증하기 위해 fetch를 직접 대체한다.
  */
 
 import { describe, expect, it, vi } from "vitest";
