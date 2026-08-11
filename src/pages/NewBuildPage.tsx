@@ -55,7 +55,7 @@ interface BuildFormValues {
   sourceDataset: string;
   sourceParams: string;
   outputPath: string;
-  exportFormats: Array<(typeof exportFormats)[number]>;
+  exportFormats: string[];
 }
 
 const initialValues: BuildFormValues = {

@@ -18,12 +18,16 @@ import type { ExportTarget } from "@/shared/lib/types";
  * (`.../data.<ext>`) mock/실연동 manifest의 파일 목록 표기를 일관되게 유지한다.
  * huggingface는 파일이 아닌 리포지토리 레이아웃이라 데이터 파일을 생성하지 않는다.
  */
-const EXPORT_EXTENSION: Record<ExportTarget["format"], string> = {
+const EXPORT_EXTENSION: Record<string, string> = {
   jsonl: "jsonl",
   markdown: "md",
   parquet: "parquet",
   huggingface: "",
 };
+
+function exportExtension(target: ExportTarget): string {
+  return EXPORT_EXTENSION[target.format] ?? target.format;
+}
 
 /**
  * 빌드 ID 기반의 결정적 mock manifest를 만든다(#30, #29 연동 전 임시).
@@ -56,7 +60,7 @@ function mockManifest(buildId: string): BuildManifest {
             .filter((target) => target.format !== "huggingface")
             .map(
               (target) =>
-                `artifacts/builds/${buildId}/data.${EXPORT_EXTENSION[target.format]}`,
+                `artifacts/builds/${buildId}/data.${exportExtension(target)}`,
             ),
           `artifacts/builds/${buildId}/README.md`,
           `artifacts/builds/${buildId}/manifest.json`,
