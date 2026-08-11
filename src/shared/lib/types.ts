@@ -37,6 +37,15 @@ export interface BuildSpec {
   metadata: Record<string, string>;
 }
 
+export interface SchemaContract {
+  /** 반드시 존재해야 하는 컬럼 이름 목록 (Builder validate_table required_columns). */
+  required: string[];
+  /** 컬럼별 기대 dtype 문자열 (Builder _NAMED_DTYPES 키). */
+  dtypes: Record<string, string>;
+  /** 정규화 시 적용할 컬럼별 캐스팅 (Builder normalize_table casts). */
+  casts: Record<string, string>;
+}
+
 export interface SourceRef {
   /** provider 어댑터 이름 */
   provider: string;
@@ -46,6 +55,8 @@ export interface SourceRef {
   params: Record<string, string>;
   /** 동일 provider/dataset을 여러 번 사용할 때 구분용 별칭 */
   alias?: string;
+  /** 소스 스키마 계약 (VAL-1). undefined면 Silver 검증을 생략한다 (하위 호환). */
+  schema?: SchemaContract;
 }
 
 export interface ExportTarget {
