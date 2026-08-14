@@ -18,7 +18,7 @@ async function navigateTo(path: string) {
 describe("router 딥링크 회귀 (#247)", () => {
   beforeEach(() => {
     // jsdom에는 matchMedia가 없으므로 system 테마 분기를 피하도록 light로 고정한다.
-    act(() => useUIStore.setState({ theme: "light", isSidebarOpen: false }));
+    act(() => useUIStore.setState({ theme: "light", isMobileSidebarOpen: false }));
   });
 
   it("legacy /validate, /preview, /artifacts 단독 라우트는 계속 동작한다", async () => {

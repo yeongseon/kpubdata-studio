@@ -136,12 +136,16 @@ function avatarInitial(email: string | null): string {
  * @returns 사이드바, 헤더, 본문 슬롯, 전역 Kubi drawer를 포함한 전체 레이아웃.
  */
 export function Layout() {
-  const closeSidebar = useUIStore((state) => state.closeSidebar);
-  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
+  const closeMobileSidebar = useUIStore((state) => state.closeMobileSidebar);
+  const isMobileSidebarOpen = useUIStore((state) => state.isMobileSidebarOpen);
+  const isDesktopSidebarCollapsed = useUIStore((state) => state.isDesktopSidebarCollapsed);
   const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
   const setTheme = useUIStore((state) => state.setTheme);
   const theme = useUIStore((state) => state.theme);
-  const toggleSidebar = useUIStore((state) => state.toggleSidebar);
+  const toggleMobileSidebar = useUIStore((state) => state.toggleMobileSidebar);
+  const toggleDesktopSidebarCollapsed = useUIStore(
+    (state) => state.toggleDesktopSidebarCollapsed,
+  );
   const email = useAuthStore((state) => state.email);
   const { pathname } = useLocation();
   const headerCta = headerCtaFor(pathname);
@@ -151,66 +155,94 @@ export function Layout() {
   }, [theme]);
 
   useEffect(() => {
-    closeSidebar();
-  }, [closeSidebar]);
+    closeMobileSidebar();
+  }, [closeMobileSidebar]);
 
   // 모바일 사이드바가 열려 있을 때 ESC로 닫을 수 있게 한다(접근성, 제안 §12.2).
+  // 데스크톱 collapse는 오버레이가 아니므로 ESC 대상이 아니다 — 이 핸들러는 모바일 상태만 본다.
   // Kubi drawer의 ESC 처리는 drawer 자신이 열려 있을 때만 담당한다(KubiDrawer 참고).
   useEffect(() => {
-    if (!isSidebarOpen) return;
+    if (!isMobileSidebarOpen) return;
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") closeSidebar();
+      if (event.key === "Escape") closeMobileSidebar();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isSidebarOpen, closeSidebar]);
+  }, [isMobileSidebarOpen, closeMobileSidebar]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
-        {isSidebarOpen ? (
+        {isMobileSidebarOpen ? (
           <button
             aria-label="내비게이션 닫기"
             className="fixed inset-0 z-30 bg-zinc-950/45 lg:hidden"
-            onClick={closeSidebar}
+            onClick={closeMobileSidebar}
             type="button"
           />
         ) : null}
 
         <aside
           className={[
-            "fixed inset-y-0 left-0 z-40 flex w-72 flex-col overflow-y-auto border-r border-border bg-card px-4 py-5 transition-transform lg:static lg:translate-x-0",
-            isSidebarOpen ? "translate-x-0" : "-translate-x-full",
+            "fixed inset-y-0 left-0 z-40 flex w-72 flex-col overflow-y-auto border-r border-border bg-card px-4 py-5 transition-all lg:static lg:translate-x-0",
+            isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
+            isDesktopSidebarCollapsed ? "lg:w-20 lg:px-2" : "lg:w-72",
           ].join(" ")}
         >
           <div className="flex items-start justify-between gap-3 pb-5">
             <div>
               <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-foreground">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-foreground">
                   K
                 </span>
-                <Link className="text-base font-semibold tracking-tight" to="/">
+                <Link
+                  className={[
+                    "text-base font-semibold tracking-tight",
+                    isDesktopSidebarCollapsed ? "lg:sr-only" : "",
+                  ].join(" ")}
+                  to="/"
+                >
                   KPubData Studio
                 </Link>
               </div>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              <p
+                className={[
+                  "mt-3 text-sm leading-relaxed text-muted-foreground",
+                  isDesktopSidebarCollapsed ? "lg:sr-only" : "",
+                ].join(" ")}
+              >
                 데이터 탐색부터 빌드, 품질, Kubi 분석까지 한 흐름으로 진행하세요.
               </p>
             </div>
             <button
               aria-label="사이드바 닫기"
               className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:hidden"
-              onClick={closeSidebar}
+              onClick={closeMobileSidebar}
               type="button"
             >
               ✕
+            </button>
+            {/* 데스크톱 전용 접기/펼치기 토글 — 모바일 닫기 버튼과 반대로 lg 이상에서만 노출되어
+                항상 접근 가능하다(#247). collapsed 상태에서도 이 버튼 자체는 숨지 않는다. */}
+            <button
+              aria-label={isDesktopSidebarCollapsed ? "사이드바 펼치기" : "사이드바 접기"}
+              className="hidden shrink-0 rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:inline-flex"
+              onClick={toggleDesktopSidebarCollapsed}
+              type="button"
+            >
+              {isDesktopSidebarCollapsed ? "»" : "«"}
             </button>
           </div>
 
           <nav className="mt-2 flex flex-1 flex-col gap-5">
             {navGroups.map((group) => (
               <div key={group.label}>
-                <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <p
+                  className={[
+                    "px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+                    isDesktopSidebarCollapsed ? "lg:sr-only" : "",
+                  ].join(" ")}
+                >
                   {group.label}
                 </p>
                 <div className="space-y-1">
@@ -219,11 +251,13 @@ export function Layout() {
                       className={navigationClassName}
                       end={item.end}
                       key={item.to}
-                      onClick={closeSidebar}
+                      onClick={closeMobileSidebar}
                       title={item.description}
                       to={item.to}
                     >
-                      {item.label}
+                      <span className={isDesktopSidebarCollapsed ? "lg:sr-only" : undefined}>
+                        {item.label}
+                      </span>
                     </NavLink>
                   ))}
                 </div>
@@ -233,16 +267,23 @@ export function Layout() {
             <div className="mt-auto space-y-1 border-t border-border pt-3">
               <NavLink
                 className={navigationClassName}
-                onClick={closeSidebar}
+                onClick={closeMobileSidebar}
                 title="Studio 환경설정"
                 to="/settings"
               >
-                Settings (설정)
+                <span className={isDesktopSidebarCollapsed ? "lg:sr-only" : undefined}>
+                  Settings (설정)
+                </span>
               </NavLink>
             </div>
           </nav>
 
-          <div className="mt-4 rounded-lg border border-border bg-muted p-3">
+          <div
+            className={[
+              "mt-4 rounded-lg border border-border bg-muted p-3",
+              isDesktopSidebarCollapsed ? "lg:sr-only" : "",
+            ].join(" ")}
+          >
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium">테마</p>
               <select
@@ -266,7 +307,7 @@ export function Layout() {
                 <button
                   aria-label="사이드바 열기/닫기"
                   className="inline-flex rounded-lg border border-border bg-card p-2 text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:hidden"
-                  onClick={toggleSidebar}
+                  onClick={toggleMobileSidebar}
                   type="button"
                 >
                   ☰
