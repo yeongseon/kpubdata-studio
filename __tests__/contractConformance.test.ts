@@ -2,7 +2,8 @@
  * Builder API 계약 적합성 테스트 (#36).
  *
  * Studio가 의존하는 Builder 계약 버전과 엔드포인트 집합을 고정해, 한쪽이 바뀌면 CI에서
- * 깨지도록 한다. Builder 측 SSOT(API_CONTRACT_VERSION="1.6.0")와 일치해야 한다.
+ * 깨지도록 한다. Builder 측 SSOT(API_CONTRACT_VERSION="1.7.0", Silver/Gold read-only
+ * `/query` 추가 — builder #504)와 일치해야 한다.
  */
 import { describe, expect, it } from "vitest";
 import { API_CONTRACT_VERSION, builderApi } from "@/shared/lib/builderApi";
@@ -23,11 +24,12 @@ const EXPECTED_OPERATIONS = [
   "getBuildStageDetail",
   "getBuildQuality",
   "getDatasetQualityHistory",
+  "query",
 ] as const;
 
 describe("Builder API contract conformance (#36)", () => {
-  it("pins the contract version Studio targets (must match builder #209)", () => {
-    expect(API_CONTRACT_VERSION).toBe("1.6.0");
+  it("pins the contract version Studio targets (must match builder #209, #504)", () => {
+    expect(API_CONTRACT_VERSION).toBe("1.7.0");
   });
 
   it("exposes exactly the expected client operations", () => {

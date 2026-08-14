@@ -31,6 +31,7 @@ import {
   warnOrFailResults,
   type CategorySummary,
 } from "@/features/quality/model";
+import { useKubiStore } from "@/features/kubi/useKubiSession";
 import { useUIStore } from "@/shared/hooks/useUIStore";
 import type {
   BuildQualityResponse,
@@ -77,6 +78,7 @@ function MetricCard({ label, value, sub }: { label: string; value: ReactNode; su
 export function QualityPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
+  const seedKubiQuestion = useKubiStore((state) => state.seedQuestion);
 
   const [datasetsState, setDatasetsState] = useState<AsyncState<DatasetSummary[]>>({ status: "loading" });
   const [runsState, setRunsState] = useState<AsyncState<DatasetRunSummary[]>>({ status: "idle" });
@@ -281,7 +283,15 @@ export function QualityPage() {
         title="Quality Center"
         description="점수 대신 실제 검증 통과 여부(PASS/WARN/FAIL)와 규칙별 이슈를 보여줍니다."
         actions={
-          <Button variant="secondary" onClick={openKubiDrawer}>Kubi 분석</Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              seedKubiQuestion("현재 Quality WARN/FAIL의 원인과 우선 조치 방법을 분석해줘.");
+              openKubiDrawer();
+            }}
+          >
+            Kubi 분석
+          </Button>
         }
       />
 
@@ -345,7 +355,16 @@ export function QualityPage() {
             <RulePassRate groups={categoryGroups} contextLabel={contextLabel} />
           </div>
 
-          <RecentIssues issues={issues} evaluatedTotal={scopedResults.length} contextLabel={contextLabel} selectedRun={selectedRun} onKubi={openKubiDrawer} />
+          <RecentIssues
+            issues={issues}
+            evaluatedTotal={scopedResults.length}
+            contextLabel={contextLabel}
+            selectedRun={selectedRun}
+            onKubi={(issue) => {
+              seedKubiQuestion(`"${issue.category} · ${issue.rule}" 규칙이 ${issue.status.toUpperCase()}인 이유와 조치 방법을 분석해줘.`);
+              openKubiDrawer();
+            }}
+          />
 
           <SchemaDriftCard drift={scopedDrift} contextLabel={contextLabel} />
         </>
@@ -448,7 +467,7 @@ function RulePassRate({ groups, contextLabel }: { groups: { category: string; re
   );
 }
 
-function RecentIssues({ issues, evaluatedTotal, contextLabel, selectedRun, onKubi }: { issues: QualityCheckResult[]; evaluatedTotal: number; contextLabel: string; selectedRun?: DatasetRunSummary; onKubi: () => void }) {
+function RecentIssues({ issues, evaluatedTotal, contextLabel, selectedRun, onKubi }: { issues: QualityCheckResult[]; evaluatedTotal: number; contextLabel: string; selectedRun?: DatasetRunSummary; onKubi: (issue: QualityCheckResult) => void }) {
   const runTimestamp = formatDateTime(selectedRun?.finished_at ?? selectedRun?.started_at);
   return (
     <Card className="overflow-hidden p-0">
@@ -481,7 +500,7 @@ function RecentIssues({ issues, evaluatedTotal, contextLabel, selectedRun, onKub
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
                       {selectedRun ? <Link className="text-xs font-medium text-accent-subtle-foreground underline" to={`/builds/${encodeURIComponent(selectedRun.run_id)}`}>Build 보기</Link> : null}
-                      <Button variant="ghost" size="sm" onClick={onKubi}>Kubi 분석</Button>
+                      <Button variant="ghost" size="sm" onClick={() => onKubi(result)}>Kubi 분석</Button>
                     </div>
                   </td>
                 </tr>

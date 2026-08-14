@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Layout } from "@/app/Layout";
@@ -33,7 +33,9 @@ describe("global Kubi drawer (#247)", () => {
     renderLayoutAt("/quality");
     fireEvent.click(screen.getByRole("button", { name: "Kubi 열기" }));
 
-    expect(screen.getByText("Quality 화면 문맥")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Kubi AI Assistant" });
+    expect(within(dialog).getByText("PAGE")).toBeInTheDocument();
+    expect(within(dialog).getByText("Quality")).toBeInTheDocument();
   });
 
   it("closes on Escape", () => {

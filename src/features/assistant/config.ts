@@ -6,6 +6,7 @@
  * 기본값은 저장하지 않는 쪽이다.
  */
 import { create } from "zustand";
+import { checkLlmBaseUrl } from "./baseUrl";
 
 const STORAGE_KEY = "kpubdata-assist-key";
 const STORAGE_WARNING =
@@ -17,10 +18,28 @@ interface AssistConfigState {
   baseUrl: string;
   persistToStorage: boolean;
   isConfigured: boolean;
+  /** 이 config로 실제 요청을 보내도 되는지(#256 리뷰 §2 — HTTPS만 허용). */
+  baseUrlSafe: boolean;
+  /** 안전하지 않을 때 사용자에게 보여줄 사유. */
+  baseUrlError?: string;
+  /** 실제 요청에 쓰일 정규화된 base URL(빈 입력이면 기본값). */
+  resolvedBaseUrl: string;
+  /** 기본 Provider 주소를 그대로 쓰는지 — 아니면 UI가 경고를 보여준다. */
+  isDefaultBaseUrl: boolean;
   setConfig: (config: { apiKey: string; model?: string; baseUrl?: string }) => void;
   enablePersistence: () => void;
   disablePersistence: () => void;
   clear: () => void;
+}
+
+function baseUrlFields(baseUrl: string) {
+  const check = checkLlmBaseUrl(baseUrl);
+  return {
+    baseUrlSafe: check.safe,
+    baseUrlError: check.reason,
+    resolvedBaseUrl: check.resolvedUrl,
+    isDefaultBaseUrl: check.isDefault,
+  };
 }
 
 function _loadPersistedKey(): string {
@@ -46,12 +65,15 @@ export const useAssistConfig = create<AssistConfigState>((set, get) => ({
   baseUrl: "",
   persistToStorage: false,
   isConfigured: false,
+  ...baseUrlFields(""),
   setConfig: (config) => {
+    const baseUrl = config.baseUrl ?? "";
     set({
       apiKey: config.apiKey,
       model: config.model ?? "",
-      baseUrl: config.baseUrl ?? "",
+      baseUrl,
       isConfigured: config.apiKey.length > 0,
+      ...baseUrlFields(baseUrl),
     });
     if (get().persistToStorage) savePersistedKey(config.apiKey);
   },

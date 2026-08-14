@@ -16,6 +16,7 @@ import {
 } from "@/features/datasets/model";
 import { QualityBadge } from "@/features/quality/QualityBadge";
 import { qualityResultsForSource, summarizeQuality } from "@/features/quality/model";
+import { useKubiStore } from "@/features/kubi/useKubiSession";
 import { useUIStore } from "@/shared/hooks/useUIStore";
 import type {
   BuildQualityResponse,
@@ -66,6 +67,7 @@ export function DatasetDetailPage() {
   const { datasetId = "" } = useParams<{ datasetId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
+  const seedKubiQuestion = useKubiStore((state) => state.seedQuestion);
   const [core, setCore] = useState<CoreState>({ status: "loading" });
   const [stagesState, setStagesState] = useState<AsyncState<RunStagesResponse>>({ status: "idle" });
   const [qualityState, setQualityState] = useState<AsyncState<BuildQualityResponse>>({ status: "idle" });
@@ -203,7 +205,7 @@ export function DatasetDetailPage() {
         {selectedTab === "preview" ? <PreviewTab state={stageDetailState} qualityState={qualityState} qualityStatus={validation} qualityResults={selectedQualityResults} onOpenQuality={() => updateContext({ tab: "quality" })} /> : null}
         {selectedTab === "quality" ? <QualityTab state={qualityState} status={validation} results={selectedQualityResults} drift={selectedDrift} datasetId={datasetId} runId={selectedRunId} source={selectedSource} stage={selectedStage} /> : null}
         {selectedTab === "builds" ? <BuildsTab runs={core.runs} selectedRunId={selectedRunId} /> : null}
-        {selectedTab === "ai" ? <Card><h3 className="text-lg font-semibold">Kubi에서 분석</h3><p className="mt-2 text-sm text-muted-foreground">현재 Dataset Detail의 datasetId 문맥으로 전역 Kubi drawer를 엽니다. LLM·Evidence·SQL·Action은 아직 실행하지 않습니다.</p><Button className="mt-5" onClick={openKubiDrawer}>이 데이터셋을 Kubi에서 분석</Button></Card> : null}
+        {selectedTab === "ai" ? <Card><h3 className="text-lg font-semibold">Kubi에서 분석</h3><p className="mt-2 text-sm text-muted-foreground">현재 Dataset Detail의 datasetId/run/stage 문맥으로 전역 Kubi drawer를 엽니다. Kubi는 이 화면의 실제 Builder evidence만 근거로 답합니다.</p><Button className="mt-5" onClick={() => { seedKubiQuestion(`"${core.dataset?.title ?? datasetId}" 데이터셋의 현재 상태와 품질을 분석해줘.`); openKubiDrawer(); }}>이 데이터셋을 Kubi에서 분석</Button></Card> : null}
       </section>
     </main>
   );

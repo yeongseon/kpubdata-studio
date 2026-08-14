@@ -424,6 +424,55 @@ export const datasetQualityHistoryResponseSchema = z.object({
   runs: z.array(datasetQualityHistoryEntrySchema),
 });
 
+/**
+ * ============================================
+ * Read-only Query API (1.7.0, #504)
+ * ============================================
+ */
+
+export const queryStageSchema = z.enum(["silver", "gold"]);
+
+export const queryRequestSchema = z.object({
+  dataset_id: z.string().min(1),
+  run_id: z.string().min(1),
+  stage: queryStageSchema,
+  source: z.string().min(1).optional(),
+  sql: z.string().min(1).max(65536),
+  limit: z.number().int().min(1).max(500).optional(),
+});
+
+export const jsonQueryValueSchema = z.json();
+
+export const queryResponseSchema = z.object({
+  columns: z.array(z.string()),
+  rows: z.array(z.record(z.string(), jsonQueryValueSchema)),
+  truncated: z.boolean(),
+  execution_ms: z.number().int().nonnegative(),
+});
+
+/** Builder `/query` 오류 응답: 다른 엔드포인트와 달리 클라이언트 분기용 `code`를 포함한다. */
+export const queryErrorCodeSchema = z.enum([
+  "forbidden",
+  "artifact_unavailable",
+  "invalid_context",
+  "unsafe_query",
+  "query_busy",
+  "query_timeout",
+  "query_execution_failed",
+  "invalid_request",
+]);
+
+export const queryErrorResponseSchema = z.object({
+  error: z.string(),
+  code: queryErrorCodeSchema.optional(),
+});
+
+export type QueryStage = z.infer<typeof queryStageSchema>;
+export type QueryRequest = z.infer<typeof queryRequestSchema>;
+export type QueryResponse = z.infer<typeof queryResponseSchema>;
+export type QueryErrorCode = z.infer<typeof queryErrorCodeSchema>;
+export type QueryErrorResponse = z.infer<typeof queryErrorResponseSchema>;
+
 export type StageStatus = z.infer<typeof stageStatusSchema>;
 export type DatasetSourceRef = z.infer<typeof datasetSourceRefSchema>;
 export type SourceStageStatus = z.infer<typeof sourceStageStatusSchema>;

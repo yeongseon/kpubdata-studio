@@ -22,7 +22,6 @@ describe("새 IA placeholder 화면 (#247)", () => {
     [<DiscoverPage />, "데이터 탐색"],
     [<WorkspacePage />, "작업대"],
     [<AddDataPage />, "데이터 추가"],
-    [<KubiPage />, "Kubi AI Assistant"],
     [<ReportsPage />, "리포트"],
     [<ProviderPage />, "Provider"],
     [<MonitoringPage />, "모니터링"],
@@ -30,6 +29,12 @@ describe("새 IA placeholder 화면 (#247)", () => {
     renderPage(element);
     expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
     expect(screen.getByText("아직 준비 중인 화면입니다")).toBeInTheDocument();
+  });
+
+  it("Kubi is replaced with the real context-aware Kubi screen (#256)", () => {
+    renderPage(<KubiPage />);
+    expect(screen.getByRole("heading", { name: "Kubi · AI Data Copilot" })).toBeInTheDocument();
+    expect(screen.queryByText("아직 준비 중인 화면입니다")).not.toBeInTheDocument();
   });
 
   it("Dataset Catalog is replaced with the built dataset P0 screen", async () => {
