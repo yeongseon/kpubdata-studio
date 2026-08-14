@@ -22,7 +22,6 @@ describe("새 IA placeholder 화면 (#247)", () => {
     [<DiscoverPage />, "데이터 탐색"],
     [<WorkspacePage />, "작업대"],
     [<AddDataPage />, "데이터 추가"],
-    [<QualityPage />, "품질 센터"],
     [<KubiPage />, "Kubi AI Assistant"],
     [<ReportsPage />, "리포트"],
     [<ProviderPage />, "Provider"],
@@ -36,6 +35,12 @@ describe("새 IA placeholder 화면 (#247)", () => {
   it("Dataset Catalog is replaced with the built dataset P0 screen", async () => {
     renderPage(<DatasetCatalogPage />);
     expect(await screen.findByRole("heading", { name: "Dataset Catalog" })).toBeInTheDocument();
+    expect(screen.queryByText("아직 준비 중인 화면입니다")).not.toBeInTheDocument();
+  });
+
+  it("Quality Center is replaced with the real Builder-backed P0 screen (#254)", async () => {
+    renderPage(<QualityPage />);
+    expect(await screen.findByRole("heading", { name: "Quality Center" })).toBeInTheDocument();
     expect(screen.queryByText("아직 준비 중인 화면입니다")).not.toBeInTheDocument();
   });
 
