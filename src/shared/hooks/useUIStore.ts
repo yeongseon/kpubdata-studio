@@ -1,9 +1,10 @@
 /**
  * 앱 셸 전반에서 재사용하는 UI 전역 상태 스토어.
  *
- * 사이드바 열림 여부와 테마 선택처럼 페이지를 넘나들며 유지해야 하는 시각 상태를 관리한다.
- * 테마는 `persist` 미들웨어로 localStorage에 저장해 새로고침해도 유지된다(#83). 사이드바는
- * 데스크톱에서 모바일 드로어를 되살리지 않도록 의도적으로 저장하지 않는다(항상 닫힌 상태로 시작).
+ * 사이드바 열림 여부, 전역 Kubi drawer 열림 여부, 테마 선택처럼 페이지를 넘나들며 유지해야
+ * 하는 시각 상태를 관리한다. 테마는 `persist` 미들웨어로 localStorage에 저장해 새로고침해도
+ * 유지된다(#83). 사이드바와 Kubi drawer는 페이지를 새로고침할 때마다 되살리지 않도록
+ * 의도적으로 저장하지 않는다(항상 닫힌 상태로 시작, #247).
  */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -14,6 +15,8 @@ export type ThemeMode = "system" | "light" | "dark";
 interface UIState {
   /** 모바일/태블릿 레이아웃에서 사이드바가 열려 있는지 여부 */
   isSidebarOpen: boolean;
+  /** 전역 Kubi drawer가 열려 있는지 여부 (#247) */
+  isKubiDrawerOpen: boolean;
   /** 사용자가 선택한 테마 모드 */
   theme: ThemeMode;
   /** 사이드바 열림/닫힘 상태를 뒤집는 액션 */
@@ -22,6 +25,12 @@ interface UIState {
   openSidebar: () => void;
   /** 사이드바를 강제로 닫는 액션 */
   closeSidebar: () => void;
+  /** Kubi drawer를 여는 액션 */
+  openKubiDrawer: () => void;
+  /** Kubi drawer를 닫는 액션 */
+  closeKubiDrawer: () => void;
+  /** Kubi drawer 열림/닫힘 상태를 뒤집는 액션 */
+  toggleKubiDrawer: () => void;
   /** 테마 모드를 새 값으로 갱신하는 액션 */
   setTheme: (theme: ThemeMode) => void;
 }
@@ -35,10 +44,14 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       isSidebarOpen: false,
+      isKubiDrawerOpen: false,
       theme: "system",
       toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
       openSidebar: () => set({ isSidebarOpen: true }),
       closeSidebar: () => set({ isSidebarOpen: false }),
+      openKubiDrawer: () => set({ isKubiDrawerOpen: true }),
+      closeKubiDrawer: () => set({ isKubiDrawerOpen: false }),
+      toggleKubiDrawer: () => set((state) => ({ isKubiDrawerOpen: !state.isKubiDrawerOpen })),
       setTheme: (theme) => set({ theme }),
     }),
     {
