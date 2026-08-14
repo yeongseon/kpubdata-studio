@@ -397,8 +397,12 @@ export const schemaDriftFindingSchema = z.object({
   detail: z.string(),
 }).strict();
 
+export const qualityAvailabilitySchema = z.enum(["available", "partial", "unavailable"]);
+
 export const buildQualityResponseSchema = z.object({
   run_id: z.string(),
+  availability: qualityAvailabilitySchema,
+  evaluated_checks: z.number().int().nonnegative(),
   quality_results: z.record(z.string(), z.array(qualityCheckResultSchema)),
   schema_drift: z.record(z.string(), z.array(schemaDriftFindingSchema)),
 });
@@ -433,6 +437,7 @@ export type RunStagesResponse = z.infer<typeof runStagesResponseSchema>;
 export type StageDetailResponse = z.infer<typeof stageDetailResponseSchema>;
 export type QualityCheckResult = z.infer<typeof qualityCheckResultSchema>;
 export type SchemaDriftFinding = z.infer<typeof schemaDriftFindingSchema>;
+export type QualityAvailability = z.infer<typeof qualityAvailabilitySchema>;
 export type BuildQualityResponse = z.infer<typeof buildQualityResponseSchema>;
 export type DatasetQualityHistoryEntry = z.infer<typeof datasetQualityHistoryEntrySchema>;
 export type DatasetQualityHistoryResponse = z.infer<typeof datasetQualityHistoryResponseSchema>;

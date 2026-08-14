@@ -6,6 +6,8 @@ import type { BuildQualityResponse, RunStageEntry } from "@/shared/lib/builderAp
 function quality(statuses: Array<"pass" | "warn" | "fail">): BuildQualityResponse {
   return {
     run_id: "run-1",
+    availability: "available",
+    evaluated_checks: statuses.length,
     quality_results: {
       source: statuses.map((status, index) => ({
         source_key: "source",

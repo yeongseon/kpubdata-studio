@@ -105,6 +105,8 @@ export const MOCK_STAGES: Record<string, RunStagesResponse> = {
 export const MOCK_QUALITY: Record<string, BuildQualityResponse> = {
   "air-2026-08-14": {
     run_id: "air-2026-08-14",
+    availability: "partial",
+    evaluated_checks: 2,
     quality_results: {
       datago__air: [{ source_key: "datago__air", category: "missing", rule: "max_null_ratio", column: "pm10", status: "pass", actual: 0.01, threshold: 0.05, affected_rows: 10, evaluated_rows: 1000, detail: null }],
       kma__weather: [{ source_key: "kma__weather", category: "schema", rule: "required_column", column: "temperature", status: "fail", actual: false, threshold: true, affected_rows: null, evaluated_rows: null, detail: "필수 컬럼이 없습니다." }],
@@ -113,15 +115,19 @@ export const MOCK_QUALITY: Record<string, BuildQualityResponse> = {
   },
   "air-2026-08-13": {
     run_id: "air-2026-08-13",
+    availability: "available",
+    evaluated_checks: 2,
     quality_results: {
       datago__air: [{ source_key: "datago__air", category: "row_count", rule: "min_rows", column: null, status: "pass", actual: 1000, threshold: 100, affected_rows: null, evaluated_rows: 1000, detail: null }],
       kma__weather: [{ source_key: "kma__weather", category: "missing", rule: "max_null_ratio", column: "humidity", status: "warn", actual: 0.08, threshold: 0.05, affected_rows: 16, evaluated_rows: 200, detail: null }],
     },
     schema_drift: { datago__air: [], kma__weather: [] },
   },
-  "population-2026-08-13": { run_id: "population-2026-08-13", quality_results: {}, schema_drift: {} },
+  "population-2026-08-13": { run_id: "population-2026-08-13", availability: "unavailable", evaluated_checks: 0, quality_results: {}, schema_drift: {} },
   "transport-2026-08-12": {
     run_id: "transport-2026-08-12",
+    availability: "available",
+    evaluated_checks: 1,
     quality_results: { seoul__transport: [{ source_key: "seoul__transport", category: "duplicate", rule: "max_duplicate_rate", column: null, status: "pass", actual: 0, threshold: 0.01, affected_rows: 0, evaluated_rows: 540, detail: null }] },
     schema_drift: { seoul__transport: [] },
   },

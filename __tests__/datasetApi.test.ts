@@ -52,11 +52,14 @@ describe("Builder 1.6.0 dataset/stage/quality client (#253)", () => {
   it("validates run stages and quality responses", async () => {
     vi.stubGlobal("fetch", vi.fn()
       .mockResolvedValueOnce(mockResponse(200, { run_id: "run-1", sources: [{ source_key: "air", bronze: { status: "completed", available: true }, silver: { status: "failed", available: false }, gold: { status: "not_run", available: false } }] }))
-      .mockResolvedValueOnce(mockResponse(200, { run_id: "run-1", quality_results: { air: [{ source_key: "air", category: "missing", rule: "max_null_ratio", column: "value", status: "warn", actual: 0.2, threshold: 0.1, affected_rows: 2, evaluated_rows: 10, detail: null }] }, schema_drift: { air: [] } }))
+      .mockResolvedValueOnce(mockResponse(200, { run_id: "run-1", availability: "partial", evaluated_checks: 1, quality_results: { air: [{ source_key: "air", category: "missing", rule: "max_null_ratio", column: "value", status: "warn", actual: 0.2, threshold: 0.1, affected_rows: 2, evaluated_rows: 10, detail: null }] }, schema_drift: { air: [] } }))
       .mockResolvedValueOnce(mockResponse(200, { dataset_id: "air-quality", runs: [{ run_id: "run-1", timestamp: null, status: "ok", pass_count: 0, warn_count: 1, fail_count: 0, evaluated_checks: 1, rule_pass_rate: 0, validated_rows: 10 }] })));
 
     expect((await builderApi.listBuildStages("run-1")).sources[0].silver.status).toBe("failed");
-    expect((await builderApi.getBuildQuality("run-1")).quality_results.air[0].status).toBe("warn");
+    const quality = await builderApi.getBuildQuality("run-1");
+    expect(quality.quality_results.air[0].status).toBe("warn");
+    expect(quality.availability).toBe("partial");
+    expect(quality.evaluated_checks).toBe(1);
     expect((await builderApi.getDatasetQualityHistory("air-quality")).runs[0].evaluated_checks).toBe(1);
   });
 
