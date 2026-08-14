@@ -57,7 +57,7 @@ describe("router 딥링크 회귀 (#247)", () => {
     expect(screen.getByRole("heading", { name: "품질 센터" })).toBeInTheDocument();
 
     await navigateTo("/datasets/air-quality");
-    expect(screen.getByRole("heading", { name: "데이터셋: air-quality" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "대기질 통합 데이터" })).toBeInTheDocument();
   });
 
   it("존재하지 않는 화면은 관련 없는 기존 화면을 재사용하지 않고 오류 폴백으로 처리한다", async () => {

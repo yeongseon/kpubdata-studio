@@ -22,7 +22,6 @@ describe("새 IA placeholder 화면 (#247)", () => {
     [<DiscoverPage />, "데이터 탐색"],
     [<WorkspacePage />, "작업대"],
     [<AddDataPage />, "데이터 추가"],
-    [<DatasetCatalogPage />, "데이터셋 카탈로그"],
     [<QualityPage />, "품질 센터"],
     [<KubiPage />, "Kubi AI Assistant"],
     [<ReportsPage />, "리포트"],
@@ -34,6 +33,12 @@ describe("새 IA placeholder 화면 (#247)", () => {
     expect(screen.getByText("아직 준비 중인 화면입니다")).toBeInTheDocument();
   });
 
+  it("Dataset Catalog is replaced with the built dataset P0 screen", async () => {
+    renderPage(<DatasetCatalogPage />);
+    expect(await screen.findByRole("heading", { name: "Dataset Catalog" })).toBeInTheDocument();
+    expect(screen.queryByText("아직 준비 중인 화면입니다")).not.toBeInTheDocument();
+  });
+
   it("Add Data placeholder links back to the working New Build wizard", () => {
     renderPage(<AddDataPage />);
     expect(screen.getByRole("link", { name: "새 빌드 만들기" })).toHaveAttribute(
@@ -42,7 +47,7 @@ describe("새 IA placeholder 화면 (#247)", () => {
     );
   });
 
-  it("Dataset Detail shows the datasetId from the route param", () => {
+  it("Dataset Detail loads the dataset identified by the route param", async () => {
     render(
       <MemoryRouter initialEntries={["/datasets/air-quality"]}>
         <Routes>
@@ -51,8 +56,7 @@ describe("새 IA placeholder 화면 (#247)", () => {
       </MemoryRouter>,
     );
 
-    expect(
-      screen.getByRole("heading", { name: "데이터셋: air-quality" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "대기질 통합 데이터" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Run 선택")).toHaveValue("air-2026-08-14");
   });
 });

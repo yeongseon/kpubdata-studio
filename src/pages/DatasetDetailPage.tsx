@@ -1,21 +1,247 @@
-/**
- * Dataset Detail 화면 (`/datasets/:datasetId`) — placeholder (#247).
- *
- * Quality/Kubi/Reports/Publish 탭을 포함한 실제 구현은 #253(P0)과 #253의 Publish 확장(P1)에서
- * 진행한다. 여기서는 route param을 받아 어떤 데이터셋인지만 안내한다.
- */
-import { useParams } from "react-router-dom";
-import { PlaceholderPage } from "@/shared/ui";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import {
+  getBuildQuality,
+  getBuildStageDetail,
+  getDataset,
+  listBuildStages,
+  listDatasetRuns,
+} from "@/features/datasets/api";
+import { StageBadge } from "@/features/datasets/components/StageBadge";
+import {
+  DATASET_STAGES,
+  formatDateTime,
+  highestCompletedStage,
+  type DatasetStage,
+} from "@/features/datasets/model";
+import { QualityBadge } from "@/features/quality/QualityBadge";
+import { qualityResultsForSource, summarizeQuality } from "@/features/quality/model";
+import { useUIStore } from "@/shared/hooks/useUIStore";
+import type {
+  BuildQualityResponse,
+  DatasetDetailResponse,
+  DatasetRunSummary,
+  RunStagesResponse,
+  StageDetailResponse,
+} from "@/shared/lib/builderApi";
+import { Button, Card, EmptyState, ErrorState, PageHeader, Skeleton } from "@/shared/ui";
+
+type DetailTab = "overview" | "schema" | "preview" | "quality" | "builds" | "ai";
+
+const TABS: { id: DetailTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "schema", label: "Schema" },
+  { id: "preview", label: "Preview" },
+  { id: "quality", label: "Quality" },
+  { id: "builds", label: "Builds" },
+  { id: "ai", label: "AI" },
+];
+
+interface CoreState {
+  status: "loading" | "loaded" | "error";
+  dataset?: DatasetDetailResponse;
+  runs?: DatasetRunSummary[];
+  error?: string;
+}
+
+interface AsyncState<T> {
+  status: "idle" | "loading" | "loaded" | "error";
+  data?: T;
+  error?: string;
+}
+
+const selectClassName =
+  "h-9 rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+function formatJson(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+function Definition({ label, children }: { label: string; children: ReactNode }) {
+  return <div><dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</dt><dd className="mt-1 break-words text-sm text-foreground">{children}</dd></div>;
+}
 
 export function DatasetDetailPage() {
-  const { datasetId } = useParams<{ datasetId: string }>();
+  const { datasetId = "" } = useParams<{ datasetId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
+  const [core, setCore] = useState<CoreState>({ status: "loading" });
+  const [stagesState, setStagesState] = useState<AsyncState<RunStagesResponse>>({ status: "idle" });
+  const [qualityState, setQualityState] = useState<AsyncState<BuildQualityResponse>>({ status: "idle" });
+  const [stageDetailState, setStageDetailState] = useState<AsyncState<StageDetailResponse>>({ status: "idle" });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCore({ status: "loading" });
+    Promise.all([getDataset(datasetId, controller.signal), listDatasetRuns(datasetId, 50, controller.signal)])
+      .then(([dataset, runs]) => setCore({ status: "loaded", dataset, runs: runs.runs }))
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        setCore({ status: "error", error: cause instanceof Error ? cause.message : "데이터셋을 불러오지 못했습니다." });
+      });
+    return () => controller.abort();
+  }, [datasetId]);
+
+  const requestedRun = searchParams.get("run");
+  const selectedRunId = requestedRun || core.dataset?.latest_run_id || "";
+  const invalidRun = Boolean(requestedRun && core.runs && !core.runs.some((run) => run.run_id === requestedRun));
+
+  useEffect(() => {
+    if (!selectedRunId || invalidRun) {
+      setStagesState({ status: "idle" });
+      setQualityState({ status: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    setStagesState({ status: "loading" });
+    setQualityState({ status: "loading" });
+    listBuildStages(selectedRunId, controller.signal)
+      .then((data) => setStagesState({ status: "loaded", data }))
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) setStagesState({ status: "error", error: cause instanceof Error ? cause.message : "Stage 상태를 불러오지 못했습니다." });
+      });
+    getBuildQuality(selectedRunId, controller.signal)
+      .then((data) => setQualityState({ status: "loaded", data }))
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) setQualityState({ status: "error", error: cause instanceof Error ? cause.message : "Quality 결과를 불러오지 못했습니다." });
+      });
+    return () => controller.abort();
+  }, [selectedRunId, invalidRun]);
+
+  const requestedSource = searchParams.get("source");
+  const sourceEntries = stagesState.data?.sources ?? [];
+  const invalidSource = Boolean(requestedSource && stagesState.status === "loaded" && !sourceEntries.some((source) => source.source_key === requestedSource));
+  const selectedSource = requestedSource || sourceEntries[0]?.source_key || "";
+  const sourceStageEntry = sourceEntries.find((source) => source.source_key === selectedSource);
+  const requestedStage = searchParams.get("stage");
+  const validRequestedStage = DATASET_STAGES.includes(requestedStage as DatasetStage) ? requestedStage as DatasetStage : undefined;
+  const selectedStage = validRequestedStage ?? (sourceStageEntry ? highestCompletedStage(sourceStageEntry) : "bronze");
+
+  useEffect(() => {
+    if (!selectedRunId || !selectedSource || invalidRun || invalidSource) {
+      setStageDetailState({ status: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    setStageDetailState({ status: "loading" });
+    getBuildStageDetail(selectedRunId, selectedStage, selectedSource, 20, controller.signal)
+      .then((data) => setStageDetailState({ status: "loaded", data }))
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) setStageDetailState({ status: "error", error: cause instanceof Error ? cause.message : "Stage 상세를 불러오지 못했습니다." });
+      });
+    return () => controller.abort();
+  }, [selectedRunId, selectedSource, selectedStage, invalidRun, invalidSource]);
+
+  function updateContext(updates: Record<string, string | null>) {
+    const next = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(updates)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    setSearchParams(next);
+  }
+
+  const tabParam = searchParams.get("tab") as DetailTab | null;
+  const selectedTab = TABS.some((tab) => tab.id === tabParam) ? tabParam as DetailTab : "overview";
+  const selectedRun = core.runs?.find((run) => run.run_id === selectedRunId);
+  const validation = summarizeQuality(qualityState.data, selectedSource);
+  const selectedQualityResults = qualityResultsForSource(qualityState.data, selectedSource);
+  const selectedDrift = qualityState.data?.schema_drift[selectedSource] ?? [];
+
+  const summaryRowCount = useMemo(() => {
+    const detail = stageDetailState.data;
+    if (detail?.stage === "bronze") return detail.record_count;
+    if (detail?.stage === "silver" || detail?.stage === "gold") return detail.row_count;
+    return null;
+  }, [stageDetailState.data]);
+
+  if (core.status === "loading") {
+    return <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10"><PageHeader eyebrow="Dataset" title={datasetId} description="데이터셋 정보를 불러오는 중입니다." /><Card><Skeleton className="h-40 w-full" /></Card></main>;
+  }
+
+  if (core.status === "error" || !core.dataset || !core.runs) {
+    return <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10"><PageHeader eyebrow="Dataset" title={datasetId || "데이터셋 상세"} /><ErrorState title="데이터셋을 불러오지 못했습니다" message={core.error} /></main>;
+  }
+
+  if (invalidRun) {
+    return (
+      <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
+        <PageHeader eyebrow="Dataset" title={core.dataset.title} description={core.dataset.dataset_id} />
+        <Card variant="error" role="alert"><p className="font-semibold">선택한 run에 접근할 수 없습니다.</p><p className="mt-2 text-sm">URL의 run `{requestedRun}`은 이 데이터셋의 접근 가능한 실행 이력에 없습니다. latest run으로 자동 변경하지 않았습니다.</p><Button className="mt-4" variant="secondary" onClick={() => updateContext({ run: null, source: null, stage: null })}>latest run 보기</Button></Card>
+      </main>
+    );
+  }
 
   return (
-    <PlaceholderPage
-      eyebrow="Dataset"
-      title={datasetId ? `데이터셋: ${datasetId}` : "데이터셋 상세"}
-      description="스키마, Quality, Kubi 분석, Reports, Publish 탭을 한 화면에서 제공합니다."
-      note="Dataset Detail 화면은 #253에서 구현됩니다."
-    />
+    <main className="flex flex-1 flex-col gap-5 px-5 py-7 sm:px-8 lg:px-10 lg:py-8">
+      <PageHeader
+        eyebrow="Dataset"
+        title={core.dataset.title}
+        description={<><span className="block font-mono text-xs">{core.dataset.dataset_id}</span><span className="mt-1 block">{core.dataset.sources.map((source) => source.provider).join(", ")} · {selectedSource || "source 불러오는 중"} · Build {selectedRunId}{selectedRunId === core.dataset.latest_run_id ? " (latest)" : ""}</span></>}
+        actions={<><span className="inline-flex items-center gap-2 rounded-full bg-accent-subtle px-3 py-1 text-xs font-semibold capitalize text-accent-subtle-foreground"><span>{selectedStage}</span><span className="font-normal">{sourceStageEntry?.[selectedStage].status ?? "unavailable"}</span></span><QualityBadge status={validation} /></>}
+      />
+
+      <Card className="flex flex-wrap items-end gap-3 p-3">
+        <label className="min-w-52 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Run<select aria-label="Run 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedRunId} onChange={(event) => updateContext({ run: event.target.value === core.dataset?.latest_run_id ? null : event.target.value, source: null, stage: null })}>{core.runs.map((run) => <option key={run.run_id} value={run.run_id}>{run.run_id}{run.run_id === core.dataset?.latest_run_id ? " (latest)" : ""}</option>)}</select></label>
+        <label className="min-w-52 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Source<select aria-label="Source 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedSource} disabled={stagesState.status !== "loaded"} onChange={(event) => updateContext({ source: event.target.value, stage: null })}>{sourceEntries.map((source) => <option key={source.source_key} value={source.source_key}>{source.source_key}</option>)}</select></label>
+        <label className="min-w-44 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Stage<select aria-label="Stage 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedStage} disabled={!sourceStageEntry} onChange={(event) => updateContext({ stage: event.target.value })}>{DATASET_STAGES.map((stageName) => <option key={stageName} value={stageName}>{stageName} · {sourceStageEntry?.[stageName].status ?? "unavailable"}</option>)}</select></label>
+        <div className="flex min-h-9 items-center gap-2 px-2 text-xs text-muted-foreground"><span>Status</span><strong className="text-foreground">{selectedRun?.status ?? core.dataset.status}</strong></div>
+      </Card>
+
+      {stagesState.status === "error" ? <Card variant="error" role="alert">{stagesState.error}</Card> : invalidSource ? <Card variant="error" role="alert">URL의 source `{requestedSource}`는 선택한 run에 존재하지 않습니다.</Card> : null}
+
+      <div className="border-b border-border" role="tablist" aria-label="Dataset detail tabs">
+        <div className="flex gap-1 overflow-x-auto">
+          {TABS.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={selectedTab === tab.id} onClick={() => updateContext({ tab: tab.id === "overview" ? null : tab.id })} className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium ${selectedTab === tab.id ? "border-accent text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{tab.label}</button>)}
+        </div>
+      </div>
+
+      <section role="tabpanel" aria-label={TABS.find((tab) => tab.id === selectedTab)?.label}>
+        {selectedTab === "overview" ? <OverviewTab dataset={core.dataset} selectedRun={selectedRun} selectedSource={selectedSource} selectedStage={selectedStage} sourceStages={sourceStageEntry} stageDetail={stageDetailState.data} stageError={stageDetailState.error} rowCount={summaryRowCount} validation={validation} onSelectStage={(stageName) => updateContext({ stage: stageName })} onSelectTab={(tab) => updateContext({ tab })} /> : null}
+        {selectedTab === "schema" ? <SchemaTab state={stageDetailState} drift={selectedDrift} /> : null}
+        {selectedTab === "preview" ? <PreviewTab state={stageDetailState} qualityState={qualityState} qualityStatus={validation} qualityResults={selectedQualityResults} onOpenQuality={() => updateContext({ tab: "quality" })} /> : null}
+        {selectedTab === "quality" ? <QualityTab state={qualityState} status={validation} results={selectedQualityResults} drift={selectedDrift} /> : null}
+        {selectedTab === "builds" ? <BuildsTab runs={core.runs} selectedRunId={selectedRunId} /> : null}
+        {selectedTab === "ai" ? <Card><h3 className="text-lg font-semibold">Kubi에서 분석</h3><p className="mt-2 text-sm text-muted-foreground">현재 Dataset Detail의 datasetId 문맥으로 전역 Kubi drawer를 엽니다. LLM·Evidence·SQL·Action은 아직 실행하지 않습니다.</p><Button className="mt-5" onClick={openKubiDrawer}>이 데이터셋을 Kubi에서 분석</Button></Card> : null}
+      </section>
+    </main>
   );
+}
+
+function MetricCard({ label, value, sub }: { label: string; value: ReactNode; sub: ReactNode }) {
+  return <Card className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p><div className="mt-2 text-2xl font-bold tracking-tight">{value}</div><div className="mt-1 text-xs text-muted-foreground">{sub}</div></Card>;
+}
+
+function OverviewTab({ dataset, selectedRun, selectedSource, selectedStage, sourceStages, stageDetail, stageError, rowCount, validation, onSelectStage, onSelectTab }: { dataset: DatasetDetailResponse; selectedRun?: DatasetRunSummary; selectedSource: string; selectedStage: DatasetStage; sourceStages?: RunStagesResponse["sources"][number]; stageDetail?: StageDetailResponse; stageError?: string; rowCount: number | null; validation: ReturnType<typeof summarizeQuality>; onSelectStage: (stage: DatasetStage) => void; onSelectTab: (tab: DetailTab) => void }) {
+  const columnCount = stageDetail?.stage === "silver" ? stageDetail.schema.length : stageDetail?.stage === "gold" ? stageDetail.columns.length : null;
+  return <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Rows" value={rowCount === null ? "—" : rowCount.toLocaleString("ko-KR")} sub={selectedStage} /><MetricCard label="Columns" value={columnCount ?? "—"} sub="Builder stage response" /><MetricCard label="Validation" value={<QualityBadge status={validation} />} sub={selectedSource || "선택된 source 없음"} /><MetricCard label="Updated" value={<span className="text-lg">{formatDateTime(selectedRun?.finished_at ?? selectedRun?.started_at ?? dataset.updated_at)}</span>} sub={`Build ${selectedRun?.run_id ?? dataset.latest_run_id}`} /></div><div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]"><Card><h3 className="text-sm font-semibold">Lineage</h3>{sourceStages ? <div className="mt-4 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center"><div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-center text-sm font-semibold">Source<span className="mt-1 block text-xs font-normal text-muted-foreground">{selectedSource}</span></div>{DATASET_STAGES.map((stageName) => <div key={stageName} className="contents"><span aria-hidden="true" className="text-center text-muted-foreground">→</span><button type="button" aria-label={`${stageName} ${sourceStages[stageName].status}`} aria-pressed={selectedStage === stageName} onClick={() => onSelectStage(stageName)} className={`rounded-lg border px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selectedStage === stageName ? "border-accent bg-accent-subtle" : "border-border bg-card hover:bg-muted"}`}><span className="block text-sm font-semibold capitalize">{stageName}</span><span className="mt-1 block"><StageBadge status={sourceStages[stageName].status} /></span></button></div>)}</div> : <Skeleton className="mt-4 h-24 w-full" />}</Card><Card><h3 className="text-sm font-semibold">Stage Detail · <span className="capitalize">{selectedStage}</span></h3>{stageError ? <p className="mt-3 text-sm text-red-700 dark:text-red-300">{stageError}</p> : !stageDetail ? <Skeleton className="mt-4 h-24 w-full" /> : <><dl className="mt-4 space-y-3"><Definition label="Status"><StageBadge status={stageDetail.status} /></Definition><Definition label="Available">{stageDetail.available ? "yes" : "no"}</Definition><Definition label="Provider / Source">{dataset.sources.map((source) => `${source.provider}.${source.dataset}`).join(", ")} · {selectedSource}</Definition><Definition label="Output">{stageDetail.stage === "gold" ? (stageDetail.exports.map((item) => item.kind).join(", ") || "없음") : "이 stage 응답에서 제공하지 않음"}</Definition></dl><div className="mt-4 flex gap-2"><Button variant="secondary" size="sm" onClick={() => onSelectTab("preview")}>Preview</Button><Button variant="secondary" size="sm" onClick={() => onSelectTab("quality")}>Quality 보기</Button></div></>}</Card></div></div>;
+}
+
+function SchemaTab({ state, drift }: { state: AsyncState<StageDetailResponse>; drift: BuildQualityResponse["schema_drift"][string] }) {
+  if (state.status === "loading" || state.status === "idle") return <Card><Skeleton className="h-40 w-full" /></Card>;
+  if (state.status === "error" || !state.data) return <Card variant="error" role="alert">{state.error}</Card>;
+  const detail = state.data;
+  if (detail.stage === "silver" && detail.schema.length > 0) return <Card className="overflow-hidden p-0"><div className="border-b border-border px-5 py-4"><h3 className="text-sm font-semibold">Schema Drift</h3><p className="mt-1 text-xs text-muted-foreground">선택한 persisted schema와 Builder가 보고한 변경만 표시합니다.</p></div><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3">Column</th><th className="px-5 py-3">Type</th><th className="px-5 py-3">Missing</th><th className="px-5 py-3">변경</th></tr></thead><tbody>{detail.schema.map((column) => { const finding = drift.find((item) => item.column === column.name); const nullCount = detail.statistics?.null_counts[column.name]; const rowCount = detail.statistics?.row_count; return <tr key={column.name} className="border-b border-border last:border-0"><td className="px-5 py-3 font-medium">{column.name}</td><td className="px-5 py-3">{column.dtype}</td><td className="px-5 py-3">{nullCount !== undefined && rowCount ? `${((nullCount / rowCount) * 100).toFixed(1)}%` : "—"}</td><td className="px-5 py-3">{finding ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">{finding.kind}</span> : "—"}</td></tr>; })}</tbody></table></div></Card>;
+  if (detail.stage === "gold" && detail.columns.length > 0) return <Card className="overflow-hidden p-0"><div className="border-b border-border px-5 py-4"><h3 className="text-sm font-semibold">Schema Drift</h3><p className="mt-1 text-xs text-muted-foreground">Gold 응답은 column 이름만 제공하며 dtype을 추론하지 않습니다.</p></div><table className="w-full text-left text-sm"><thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3">Column</th><th className="px-5 py-3">Type</th><th className="px-5 py-3">Missing</th><th className="px-5 py-3">변경</th></tr></thead><tbody>{detail.columns.map((column) => <tr key={column} className="border-b border-border last:border-0"><td className="px-5 py-3 font-medium">{column}</td><td className="px-5 py-3">—</td><td className="px-5 py-3">—</td><td className="px-5 py-3">{drift.find((item) => item.column === column)?.kind ?? "—"}</td></tr>)}</tbody></table></Card>;
+  return <Card><EmptyState title="Schema 없음/지원되지 않음" description={`${detail.stage} stage 응답이 schema를 제공하지 않습니다.`} /></Card>;
+}
+
+function PreviewTab({ state, qualityState, qualityStatus, qualityResults, onOpenQuality }: { state: AsyncState<StageDetailResponse>; qualityState: AsyncState<BuildQualityResponse>; qualityStatus: ReturnType<typeof summarizeQuality>; qualityResults: ReturnType<typeof qualityResultsForSource>; onOpenQuality: () => void }) {
+  if (state.status === "loading" || state.status === "idle") return <Card><Skeleton className="h-40 w-full" /></Card>;
+  if (state.status === "error" || !state.data) return <Card variant="error" role="alert">{state.error}</Card>;
+  if (state.data.stage !== "silver" || state.data.sample.length === 0) return <Card><EmptyState title="미리보기 없음/지원되지 않음" description={`${state.data.stage} stage는 persisted sample을 제공하지 않습니다.`} /></Card>;
+  const columns = [...new Set(state.data.sample.flatMap((row) => Object.keys(row)))];
+  return <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]"><Card className="min-w-0 overflow-hidden p-0"><div className="flex flex-wrap items-end justify-between gap-3 border-b border-border px-5 py-4"><div><h3 className="text-sm font-semibold">Sample data</h3><p className="mt-1 text-xs text-muted-foreground">Builder가 저장한 Silver sample 일부를 확인합니다.</p></div><div className="text-xs text-muted-foreground">{state.data.sample.length} rows · {columns.length} columns</div></div><div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead className="border-b border-border bg-muted/40"><tr>{columns.map((column) => <th key={column} className="px-5 py-3 font-semibold">{column}</th>)}</tr></thead><tbody>{state.data.sample.map((row, index) => <tr key={index} className="border-b border-border last:border-0">{columns.map((column) => <td key={column} className="max-w-64 truncate px-5 py-3">{formatJson(row[column])}</td>)}</tr>)}</tbody></table></div></Card><Card><h3 className="text-sm font-semibold">Validation</h3><div className="mt-4 text-2xl font-bold"><QualityBadge status={qualityStatus} /></div><div className="mt-4 space-y-3">{qualityState.status === "error" ? <p className="text-sm text-red-700 dark:text-red-300">Quality 조회 실패</p> : qualityResults.length === 0 ? <p className="text-sm text-muted-foreground">평가된 결과가 없습니다.</p> : qualityResults.slice(0, 5).map((result, index) => <div key={`${result.rule}-${index}`} className="flex items-center justify-between gap-3 border-b border-border pb-2 text-sm last:border-0"><span>{result.category}</span><QualityBadge status={result.status.toUpperCase() as "PASS" | "WARN" | "FAIL"} /></div>)}</div><Button className="mt-4 w-full" variant="secondary" onClick={onOpenQuality}>상세 Quality 보기</Button></Card></div>;
+}
+
+function QualityTab({ state, status, results, drift }: { state: AsyncState<BuildQualityResponse>; status: ReturnType<typeof summarizeQuality>; results: ReturnType<typeof qualityResultsForSource>; drift: BuildQualityResponse["schema_drift"][string] }) {
+  if (state.status === "loading" || state.status === "idle") return <Card><Skeleton className="h-40 w-full" /></Card>;
+  if (state.status === "error") return <Card variant="error"><QualityBadge status="N/A" /><p className="mt-3 text-sm">{state.error}</p></Card>;
+  const counts = results.reduce((current, result) => ({ ...current, [result.status]: current[result.status] + 1 }), { pass: 0, warn: 0, fail: 0 });
+  return <div className="space-y-4"><div className="grid gap-4 lg:grid-cols-2"><Card><h3 className="text-sm font-semibold">Validation summary</h3><div className="mt-4 flex items-end gap-3"><span className="text-3xl font-bold">{results.length}</span><span className="pb-1 text-sm text-muted-foreground">evaluated checks</span></div><div className="mt-4 flex flex-wrap gap-2"><QualityBadge status={status} /><span className="text-xs text-muted-foreground">PASS {counts.pass} · WARN {counts.warn} · FAIL {counts.fail}</span></div><p className="mt-3 text-xs text-muted-foreground">평가 결과가 없으면 N/A이며 별도 점수를 계산하지 않습니다.</p></Card><Card><h3 className="text-sm font-semibold">Schema Drift</h3>{drift.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">관찰된 schema drift가 없습니다.</p> : <div className="mt-4 space-y-3">{drift.map((finding, index) => <div key={`${finding.kind}-${index}`} className="flex items-start justify-between gap-3 border-b border-border pb-3 text-sm last:border-0"><div><strong>{finding.kind}</strong><p className="mt-1 text-xs text-muted-foreground">{finding.detail}</p></div><span className="font-mono text-xs">{finding.column ?? "—"}</span></div>)}</div>}</Card></div>{results.length === 0 ? <Card><EmptyState title="평가된 Quality 결과가 없습니다" description="N/A는 PASS가 아닙니다." /></Card> : <Card className="overflow-hidden p-0"><div className="border-b border-border px-5 py-4"><h3 className="text-sm font-semibold">Recent quality issues</h3></div><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground"><tr><th className="px-4 py-3">Rule</th><th className="px-4 py-3">Result</th><th className="px-4 py-3">Column</th><th className="px-4 py-3">Actual</th><th className="px-4 py-3">Threshold</th></tr></thead><tbody>{results.map((result, index) => <tr key={`${result.rule}-${result.column}-${index}`} className="border-b border-border last:border-0"><td className="px-4 py-3 font-medium">{result.category} · {result.rule}</td><td className="px-4 py-3"><QualityBadge status={result.status.toUpperCase() as "PASS" | "WARN" | "FAIL"} /></td><td className="px-4 py-3">{result.column ?? "—"}</td><td className="px-4 py-3 font-mono text-xs">{formatJson(result.actual)}</td><td className="px-4 py-3 font-mono text-xs">{formatJson(result.threshold)}</td></tr>)}</tbody></table></div></Card>}</div>;
+}
+
+function BuildsTab({ runs, selectedRunId }: { runs: DatasetRunSummary[]; selectedRunId: string }) {
+  return <Card className="overflow-hidden p-0"><div className="border-b border-border px-5 py-4"><h3 className="text-sm font-semibold">Recent Builds</h3><p className="mt-1 text-xs text-muted-foreground">이 데이터셋의 접근 가능한 run 이력입니다.</p></div><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3">Build</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Updated</th><th className="px-5 py-3"></th></tr></thead><tbody>{runs.map((run) => <tr key={run.run_id} className={`border-b border-border last:border-0 ${run.run_id === selectedRunId ? "bg-accent-subtle" : ""}`}><td className="px-5 py-3 font-mono text-xs">{run.run_id}{run.run_id === selectedRunId ? " · selected" : ""}</td><td className="px-5 py-3">{run.status}</td><td className="px-5 py-3">{formatDateTime(run.finished_at ?? run.started_at)}</td><td className="px-5 py-3 text-right"><Link className="font-medium text-accent-subtle-foreground underline" to={`/builds/${encodeURIComponent(run.run_id)}`}>보기</Link></td></tr>)}</tbody></table></div></Card>;
 }

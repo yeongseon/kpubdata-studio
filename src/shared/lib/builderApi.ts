@@ -22,7 +22,7 @@ import * as schemas from "./builderApi.schema";
 import { z } from "zod";
 
 /** Builder API 계약 버전. builder SSOT의 API_CONTRACT_VERSION과 일치해야 한다. */
-export const API_CONTRACT_VERSION = "1.2.0";
+export const API_CONTRACT_VERSION = "1.6.0";
 
 /** 실제 Builder 호출 활성화 여부(미설정 시 mock 사용). */
 export function isRealBuilderEnabled(): boolean {
@@ -355,6 +355,22 @@ export type PreviewResponse = schemas.PreviewResponse;
 export type CatalogDataset = schemas.CatalogDataset;
 export type CatalogProvider = schemas.CatalogProvider;
 export type CatalogResponse = schemas.CatalogResponse;
+export type StageStatus = schemas.StageStatus;
+export type DatasetSourceRef = schemas.DatasetSourceRef;
+export type SourceStageStatus = schemas.SourceStageStatus;
+export type DatasetSummary = schemas.DatasetSummary;
+export type DatasetDetailResponse = schemas.DatasetDetailResponse;
+export type DatasetsResponse = schemas.DatasetsResponse;
+export type DatasetRunSummary = schemas.DatasetRunSummary;
+export type DatasetRunsResponse = schemas.DatasetRunsResponse;
+export type RunStageEntry = schemas.RunStageEntry;
+export type RunStagesResponse = schemas.RunStagesResponse;
+export type StageDetailResponse = schemas.StageDetailResponse;
+export type QualityCheckResult = schemas.QualityCheckResult;
+export type SchemaDriftFinding = schemas.SchemaDriftFinding;
+export type BuildQualityResponse = schemas.BuildQualityResponse;
+export type DatasetQualityHistoryEntry = schemas.DatasetQualityHistoryEntry;
+export type DatasetQualityHistoryResponse = schemas.DatasetQualityHistoryResponse;
 
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
@@ -396,4 +412,71 @@ export const builderApi = {
   /** GET /catalog — provider/dataset 카탈로그 (#416, BL2). */
   catalog: (signal?: AbortSignal) =>
     apiFetch("/catalog", { signal }, schemas.catalogResponseSchema),
+
+  /** GET /datasets — 실제 built dataset 목록. `/catalog` 원천 목록과 구분한다. */
+  listDatasets: (limit?: number, signal?: AbortSignal) => {
+    const query = limit !== undefined ? `?limit=${limit}` : "";
+    return apiFetch(`/datasets${query}`, { signal }, schemas.datasetsResponseSchema);
+  },
+
+  /** GET /datasets/{dataset_id} — latest accessible run 기준 dataset 상세. */
+  getDataset: (datasetId: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/datasets/${encodeURIComponent(datasetId)}`,
+      { signal },
+      schemas.datasetDetailResponseSchema,
+    ),
+
+  /** GET /datasets/{dataset_id}/runs — dataset의 접근 가능한 run history. */
+  listDatasetRuns: (datasetId: string, limit?: number, signal?: AbortSignal) => {
+    const query = limit !== undefined ? `?limit=${limit}` : "";
+    return apiFetch(
+      `/datasets/${encodeURIComponent(datasetId)}/runs${query}`,
+      { signal },
+      schemas.datasetRunsResponseSchema,
+    );
+  },
+
+  /** GET /builds/{run_id}/stages — source별 Bronze/Silver/Gold 상태. */
+  listBuildStages: (runId: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/builds/${encodeURIComponent(runId)}/stages`,
+      { signal },
+      schemas.runStagesResponseSchema,
+    ),
+
+  /** GET /builds/{run_id}/stages/{stage} — 선택 source/stage의 안전한 상세. */
+  getBuildStageDetail: (
+    runId: string,
+    stage: schemas.StageDetailResponse["stage"],
+    source: string,
+    limit?: number,
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams({ source });
+    if (limit !== undefined) params.set("limit", String(limit));
+    return apiFetch(
+      `/builds/${encodeURIComponent(runId)}/stages/${stage}?${params.toString()}`,
+      { signal },
+      schemas.stageDetailResponseSchema,
+    );
+  },
+
+  /** GET /builds/{run_id}/quality — run scoped quality와 schema drift. */
+  getBuildQuality: (runId: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/builds/${encodeURIComponent(runId)}/quality`,
+      { signal },
+      schemas.buildQualityResponseSchema,
+    ),
+
+  /** GET /datasets/{dataset_id}/quality/history — dataset quality 이력. */
+  getDatasetQualityHistory: (datasetId: string, limit?: number, signal?: AbortSignal) => {
+    const query = limit !== undefined ? `?limit=${limit}` : "";
+    return apiFetch(
+      `/datasets/${encodeURIComponent(datasetId)}/quality/history${query}`,
+      { signal },
+      schemas.datasetQualityHistoryResponseSchema,
+    );
+  },
 };

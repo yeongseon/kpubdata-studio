@@ -179,7 +179,7 @@ export function Layout() {
 
         <aside
           className={[
-            "fixed inset-y-0 left-0 z-40 flex w-72 flex-col overflow-y-auto border-r border-border bg-card px-4 py-5 transition-transform lg:static lg:translate-x-0",
+            "fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border bg-card px-4 py-5 transition-transform lg:static lg:translate-x-0",
             isSidebarOpen ? "translate-x-0" : "-translate-x-full",
           ].join(" ")}
         >
@@ -259,7 +259,7 @@ export function Layout() {
           </div>
         </aside>
 
-        <div className="flex min-h-screen flex-1 flex-col lg:pl-0">
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-0">
           <header className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur">
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 sm:px-8">
               <div className="flex min-w-0 items-center gap-3">
