@@ -110,7 +110,13 @@ describe("Layout desktop sidebar collapse (#247)", () => {
     expect(aside.className).not.toContain("lg:w-72");
     // 사이드바 링크는 collapsed 상태에서도 여전히 접근 가능해야 한다(텍스트는 시각적으로만 숨김).
     const nav = screen.getByRole("navigation");
-    expect(within(nav).getByRole("link", { name: "Home (홈)" })).toBeInTheDocument();
+    const homeLink = within(nav).getByRole("link", { name: "Home (홈)" });
+    const homeIcon = within(homeLink).getByTestId("nav-icon-home");
+
+    expect(homeLink).toBeInTheDocument();
+    expect(homeIcon).toBeVisible();
+    expect(homeIcon).not.toHaveClass("lg:sr-only");
+    expect(homeIcon).toHaveAttribute("aria-hidden", "true");
   });
 
   it("restores the expanded width after collapsing then expanding again", () => {

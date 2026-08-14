@@ -5,7 +5,7 @@
  * 전역 Kubi drawer mount를 한곳에서 관리하며 실제 라우트 콘텐츠는 `Outlet`을 통해 주입한다.
  * 메뉴 구성은 `kpubdata_ui_prototype_v1.html` IA(WORKSPACE/DATA/AI/SYSTEM)를 따른다(#247).
  */
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/features/auth/store";
 import { KubiDrawer } from "@/features/kubi/KubiDrawer";
@@ -36,8 +36,40 @@ interface NavItem {
   label: string;
   /** 링크 title(hover 설명) */
   description: string;
+  /** collapsed 상태에서도 메뉴를 식별할 수 있게 항상 표시하는 아이콘 */
+  icon: ReactNode;
   /** index 라우트처럼 정확히 일치할 때만 active로 표시할지 여부 */
   end?: boolean;
+}
+
+interface SidebarIconProps {
+  /** 테스트와 디버깅에서 아이콘을 식별할 이름 */
+  name: string;
+  /** 아이콘을 그리는 SVG 요소 */
+  children: ReactNode;
+}
+
+/** 새 아이콘 의존성 없이 사이드바에서 공통으로 쓰는 선형 SVG 아이콘이다. */
+function SidebarIcon({ name, children }: SidebarIconProps) {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-5 w-5 shrink-0 items-center justify-center"
+      data-testid={`nav-icon-${name}`}
+    >
+      <svg
+        className="h-5 w-5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.75"
+        viewBox="0 0 24 24"
+      >
+        {children}
+      </svg>
+    </span>
+  );
 }
 
 interface NavGroup {
@@ -53,32 +85,141 @@ const navGroups: NavGroup[] = [
   {
     label: "WORKSPACE",
     items: [
-      { to: "/", label: "Home (홈)", description: "최근 작업 요약과 빠른 시작", end: true },
-      { to: "/discover", label: "Discover (탐색)", description: "Provider·데이터셋 탐색" },
-      { to: "/workspace", label: "Workspace (작업대)", description: "최근 작업과 저장한 BuildSpec" },
+      {
+        to: "/",
+        label: "Home (홈)",
+        description: "최근 작업 요약과 빠른 시작",
+        end: true,
+        icon: (
+          <SidebarIcon name="home">
+            <path d="m3 11 9-8 9 8" />
+            <path d="M5 10v10h14V10M9 20v-6h6v6" />
+          </SidebarIcon>
+        ),
+      },
+      {
+        to: "/discover",
+        label: "Discover (탐색)",
+        description: "Provider·데이터셋 탐색",
+        icon: (
+          <SidebarIcon name="discover">
+            <circle cx="12" cy="12" r="9" />
+            <path d="m15 9-2 4-4 2 2-4 4-2Z" />
+          </SidebarIcon>
+        ),
+      },
+      {
+        to: "/workspace",
+        label: "Workspace (작업대)",
+        description: "최근 작업과 저장한 BuildSpec",
+        icon: (
+          <SidebarIcon name="workspace">
+            <rect width="16" height="14" x="4" y="6" rx="2" />
+            <path d="M9 6V4h6v2M4 11h16" />
+          </SidebarIcon>
+        ),
+      },
     ],
   },
   {
     label: "DATA",
     items: [
-      { to: "/add", label: "Add Data (데이터 추가)", description: "Public API·File·URL로 데이터 추가" },
-      { to: "/datasets", label: "Dataset Catalog (데이터셋)", description: "발행된 데이터셋 검색" },
-      { to: "/builds", label: "Builds / Runs (빌드)", description: "빌드와 실행 이력" },
-      { to: "/quality", label: "Quality (품질)", description: "빌드·데이터셋 품질 결과" },
+      {
+        to: "/add",
+        label: "Add Data (데이터 추가)",
+        description: "Public API·File·URL로 데이터 추가",
+        icon: (
+          <SidebarIcon name="add">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v8M8 12h8" />
+          </SidebarIcon>
+        ),
+      },
+      {
+        to: "/datasets",
+        label: "Dataset Catalog (데이터셋)",
+        description: "발행된 데이터셋 검색",
+        icon: (
+          <SidebarIcon name="datasets">
+            <ellipse cx="12" cy="5" rx="7" ry="3" />
+            <path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+          </SidebarIcon>
+        ),
+      },
+      {
+        to: "/builds",
+        label: "Builds / Runs (빌드)",
+        description: "빌드와 실행 이력",
+        icon: (
+          <SidebarIcon name="builds">
+            <circle cx="12" cy="12" r="9" />
+            <path d="m10 8 6 4-6 4V8Z" />
+          </SidebarIcon>
+        ),
+      },
+      {
+        to: "/quality",
+        label: "Quality (품질)",
+        description: "빌드·데이터셋 품질 결과",
+        icon: (
+          <SidebarIcon name="quality">
+            <circle cx="12" cy="12" r="9" />
+            <path d="m8 12 3 3 5-6" />
+          </SidebarIcon>
+        ),
+      },
     ],
   },
   {
     label: "AI",
     items: [
-      { to: "/kubi", label: "Kubi", description: "Context-aware AI 어시스턴트" },
-      { to: "/reports", label: "Reports (리포트)", description: "분석 리포트 생성·열람" },
+      {
+        to: "/kubi",
+        label: "Kubi",
+        description: "Context-aware AI 어시스턴트",
+        icon: (
+          <SidebarIcon name="kubi">
+            <rect width="14" height="12" x="5" y="7" rx="3" />
+            <path d="M12 3v4M9 12h.01M15 12h.01M9 16h6" />
+          </SidebarIcon>
+        ),
+      },
+      {
+        to: "/reports",
+        label: "Reports (리포트)",
+        description: "분석 리포트 생성·열람",
+        icon: (
+          <SidebarIcon name="reports">
+            <path d="M6 3h9l3 3v15H6V3Z" />
+            <path d="M14 3v4h4M9 12h6M9 16h6" />
+          </SidebarIcon>
+        ),
+      },
     ],
   },
   {
     label: "SYSTEM",
     items: [
-      { to: "/provider", label: "Provider (제공기관)", description: "Provider 연결·자격 증명" },
-      { to: "/monitoring", label: "Monitoring (모니터링)", description: "실행·시스템 모니터링" },
+      {
+        to: "/provider",
+        label: "Provider (제공기관)",
+        description: "Provider 연결·자격 증명",
+        icon: (
+          <SidebarIcon name="provider">
+            <path d="M4 21V7l8-4 8 4v14M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01" />
+          </SidebarIcon>
+        ),
+      },
+      {
+        to: "/monitoring",
+        label: "Monitoring (모니터링)",
+        description: "실행·시스템 모니터링",
+        icon: (
+          <SidebarIcon name="monitoring">
+            <path d="M3 12h4l2-5 4 10 2-5h6" />
+          </SidebarIcon>
+        ),
+      },
     ],
   },
 ];
@@ -255,6 +396,7 @@ export function Layout() {
                       title={item.description}
                       to={item.to}
                     >
+                      {item.icon}
                       <span className={isDesktopSidebarCollapsed ? "lg:sr-only" : undefined}>
                         {item.label}
                       </span>
@@ -271,6 +413,10 @@ export function Layout() {
                 title="Studio 환경설정"
                 to="/settings"
               >
+                <SidebarIcon name="settings">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.3 1A7 7 0 0 0 15 6l-.3-2.5h-4L10.4 6a7 7 0 0 0-1.7 1L6.5 6 4.5 9.5 6.5 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.3-1A7 7 0 0 0 10.4 18l.3 2.5h4L15 18a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.5a7 7 0 0 0 .1-1Z" />
+                </SidebarIcon>
                 <span className={isDesktopSidebarCollapsed ? "lg:sr-only" : undefined}>
                   Settings (설정)
                 </span>
