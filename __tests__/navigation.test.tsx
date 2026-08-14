@@ -15,7 +15,13 @@ function renderLayoutAt(path: string) {
 describe("grouped sidebar navigation (#247)", () => {
   beforeEach(() => {
     // jsdom에는 matchMedia가 없으므로 system 테마 분기를 피하도록 light로 고정한다.
-    act(() => useUIStore.setState({ theme: "light", isSidebarOpen: false }));
+    act(() =>
+      useUIStore.setState({
+        theme: "light",
+        isMobileSidebarOpen: false,
+        isDesktopSidebarCollapsed: false,
+      }),
+    );
   });
 
   it("renders the WORKSPACE/DATA/AI/SYSTEM groups from the HTML prototype IA", () => {
@@ -75,13 +81,13 @@ describe("grouped sidebar navigation (#247)", () => {
 
   it("closes the mobile sidebar when a nav link is clicked", () => {
     renderLayoutAt("/");
-    act(() => useUIStore.setState({ isSidebarOpen: true }));
-    expect(useUIStore.getState().isSidebarOpen).toBe(true);
+    act(() => useUIStore.setState({ isMobileSidebarOpen: true }));
+    expect(useUIStore.getState().isMobileSidebarOpen).toBe(true);
 
     const nav = screen.getByRole("navigation");
     fireEvent.click(within(nav).getByRole("link", { name: "Discover (탐색)" }));
 
-    expect(useUIStore.getState().isSidebarOpen).toBe(false);
+    expect(useUIStore.getState().isMobileSidebarOpen).toBe(false);
   });
 
   it("opens and closes the mobile sidebar overlay", () => {
@@ -89,10 +95,22 @@ describe("grouped sidebar navigation (#247)", () => {
     expect(screen.queryByRole("button", { name: "내비게이션 닫기" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "사이드바 열기/닫기" }));
-    expect(useUIStore.getState().isSidebarOpen).toBe(true);
+    expect(useUIStore.getState().isMobileSidebarOpen).toBe(true);
     expect(screen.getByRole("button", { name: "내비게이션 닫기" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "내비게이션 닫기" }));
-    expect(useUIStore.getState().isSidebarOpen).toBe(false);
+    expect(useUIStore.getState().isMobileSidebarOpen).toBe(false);
+  });
+
+  it("keeps every IA route link accessible while the desktop sidebar is collapsed (#247)", () => {
+    act(() => useUIStore.setState({ isDesktopSidebarCollapsed: true }));
+    renderLayoutAt("/");
+    const nav = screen.getByRole("navigation");
+
+    expect(within(nav).getByRole("link", { name: "Home (홈)" })).toHaveAttribute("href", "/");
+    expect(within(nav).getByRole("link", { name: "Quality (품질)" })).toHaveAttribute(
+      "href",
+      "/quality",
+    );
   });
 });
