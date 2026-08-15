@@ -52,8 +52,8 @@ describe("global Kubi drawer (#247)", () => {
     openButton.focus();
     fireEvent.click(openButton);
 
-    const closeButtons = screen.getAllByRole("button", { name: "Kubi 닫기" });
-    const drawerCloseButton = closeButtons[1];
+    // overlay는 접근성 트리에서 제외되므로 header X 버튼이 유일한 "Kubi 닫기"다.
+    const drawerCloseButton = screen.getByRole("button", { name: "Kubi 닫기" });
     expect(drawerCloseButton).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "Tab" });
@@ -63,14 +63,18 @@ describe("global Kubi drawer (#247)", () => {
     expect(openButton).toHaveFocus();
   });
 
-  it("closes via the close button (overlay + header X share the same label)", () => {
+  it("closes via the click-only overlay and the header close button", () => {
     renderLayoutAt("/");
 
     fireEvent.click(screen.getByRole("button", { name: "Kubi 열기" }));
-    const closeButtons = screen.getAllByRole("button", { name: "Kubi 닫기" });
-    expect(closeButtons).toHaveLength(2); // overlay button + header X 버튼
+    // overlay는 aria-hidden이라 role 질의에 잡히지 않는다.
+    expect(screen.queryAllByRole("button", { name: "Kubi 닫기" })).toHaveLength(1);
 
-    fireEvent.click(closeButtons[0]);
+    fireEvent.click(screen.getByTestId("kubi-drawer-overlay"));
+    expect(screen.queryByRole("dialog", { name: "Kubi AI Assistant" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Kubi 열기" }));
+    fireEvent.click(screen.getByRole("button", { name: "Kubi 닫기" }));
     expect(screen.queryByRole("dialog", { name: "Kubi AI Assistant" })).not.toBeInTheDocument();
   });
 

@@ -491,7 +491,7 @@ export function Layout() {
 
                 {/* avatar 진입점 — #263에서 실제 프로필/로그아웃 메뉴로 확장될 구조(#247). */}
                 <Link
-                  aria-label={email ? `${email} 계정 메뉴로 이동` : "로그인이 필요합니다 — 설정으로 이동"}
+                  aria-label={email ? `${email} 설정으로 이동` : "로그인이 필요합니다 — 설정으로 이동"}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-sm font-semibold text-foreground hover:bg-accent-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   title={email ?? "로그인이 필요합니다"}
                   to="/settings"
