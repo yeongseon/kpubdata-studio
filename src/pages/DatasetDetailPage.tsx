@@ -117,6 +117,15 @@ export function DatasetDetailPage() {
   const validRequestedStage = DATASET_STAGES.includes(requestedStage as DatasetStage) ? requestedStage as DatasetStage : undefined;
   const selectedStage = validRequestedStage ?? (sourceStageEntry ? highestCompletedStage(sourceStageEntry) : "bronze");
 
+  // 잘못된 stage 파라미터는 URL에서 제거해 UI fallback 상태와 URL을 일치시킨다.
+  useEffect(() => {
+    if (requestedStage && !validRequestedStage) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("stage");
+      setSearchParams(next);
+    }
+  }, [requestedStage, validRequestedStage, searchParams, setSearchParams]);
+
   useEffect(() => {
     if (!selectedRunId || !selectedSource || invalidRun || invalidSource) {
       setStageDetailState({ status: "idle" });
@@ -183,7 +192,7 @@ export function DatasetDetailPage() {
 
       <Card className="flex flex-wrap items-end gap-3 p-3">
         <label className="min-w-52 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Run<select aria-label="Run 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedRunId} onChange={(event) => updateContext({ run: event.target.value === core.dataset?.latest_run_id ? null : event.target.value, source: null, stage: null })}>{core.runs.map((run) => <option key={run.run_id} value={run.run_id}>{run.run_id}{run.run_id === core.dataset?.latest_run_id ? " (latest)" : ""}</option>)}</select></label>
-        <label className="min-w-52 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Source<select aria-label="Source 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedSource} disabled={stagesState.status !== "loaded"} onChange={(event) => updateContext({ source: event.target.value, stage: null })}>{sourceEntries.map((source) => <option key={source.source_key} value={source.source_key}>{source.source_key}</option>)}</select></label>
+        <label className="min-w-52 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Source<select aria-label="Source 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedSource} disabled={stagesState.status !== "loaded"} onChange={(event) => updateContext({ source: event.target.value, stage: null })}>{invalidSource && requestedSource ? <option value={requestedSource}>{requestedSource} (존재하지 않는 source)</option> : null}{sourceEntries.map((source) => <option key={source.source_key} value={source.source_key}>{source.source_key}</option>)}</select></label>
         <label className="min-w-44 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Stage<select aria-label="Stage 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedStage} disabled={!sourceStageEntry} onChange={(event) => updateContext({ stage: event.target.value })}>{DATASET_STAGES.map((stageName) => <option key={stageName} value={stageName}>{stageName} · {sourceStageEntry?.[stageName].status ?? "unavailable"}</option>)}</select></label>
         <div className="flex min-h-9 items-center gap-2 px-2 text-xs text-muted-foreground"><span>Status</span><strong className="text-foreground">{selectedRun?.status ?? core.dataset.status}</strong></div>
       </Card>

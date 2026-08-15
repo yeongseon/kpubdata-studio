@@ -44,6 +44,26 @@ describe("Dataset Detail P0 (#253)", () => {
     expect(screen.queryByLabelText("Run 선택")).not.toBeInTheDocument();
   });
 
+  it("keeps an invalid source visible in the select with a recovery path", async () => {
+    renderDetail("/datasets/air-quality?source=ghost__source");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("ghost__source");
+    const sourceSelect = screen.getByLabelText("Source 선택");
+    expect(sourceSelect).toHaveValue("ghost__source");
+    expect(within(sourceSelect).getByRole("option", { selected: true })).toHaveTextContent(
+      "존재하지 않는 source",
+    );
+    fireEvent.change(sourceSelect, { target: { value: "datago__air" } });
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("source=datago__air"));
+  });
+
+  it("removes an invalid stage param from the URL to match the fallback UI", async () => {
+    renderDetail("/datasets/air-quality?stage=platinum");
+    await screen.findByLabelText("Run 선택");
+    await waitFor(() => expect(screen.getByTestId("location")).not.toHaveTextContent("stage=platinum"));
+    expect(screen.getByLabelText("Stage 선택")).toHaveValue("gold");
+  });
+
   it("synchronizes source selection and chooses bronze when no higher stage completed", async () => {
     renderDetail();
     const sourceSelect = await screen.findByLabelText("Source 선택");

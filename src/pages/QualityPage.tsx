@@ -327,15 +327,21 @@ export function QualityPage() {
           <span>·</span><span>Availability</span><strong className="text-foreground">{qualityState.data?.availability ?? "—"}</strong>
           <QualityStateBadge state={overallState} />
         </div>
-        {datasetDetailHref ? <Link className="ml-auto text-xs font-medium text-accent-subtle-foreground underline" to={datasetDetailHref}>Dataset Detail에서 보기</Link> : null}
+        {datasetDetailHref && selectedSource ? <Link className="ml-auto text-xs font-medium text-accent-subtle-foreground underline" to={datasetDetailHref}>Dataset Detail에서 보기</Link> : null}
       </Card>
 
-      {stagesState.status === "error" ? <Card variant="error" role="alert">{stagesState.error}</Card> : invalidSource ? <Card variant="error" role="alert">URL의 source `{requestedSource}`는 선택한 run에 존재하지 않습니다.</Card> : null}
+      {stagesState.status === "error" ? <Card variant="error" role="alert">{stagesState.error}</Card> : null}
 
       {qualityState.status === "error" ? (
         <Card variant="error" role="alert">
           <p className="font-semibold">Quality 결과를 불러오지 못했습니다</p>
           <p className="mt-2 text-sm">{qualityState.error}</p>
+        </Card>
+      ) : invalidSource ? (
+        <Card variant="error" role="alert">
+          <p className="font-semibold">잘못된 source 필터입니다</p>
+          <p className="mt-2 text-sm">URL의 source `{requestedSource}`는 선택한 run에 존재하지 않습니다. 유효한 source를 선택할 때까지 결과를 표시하지 않습니다.</p>
+          <Button className="mt-4" variant="secondary" onClick={() => updateContext({ source: null, stage: null })}>전체 소스로 초기화</Button>
         </Card>
       ) : qualityState.status === "loading" || qualityState.status === "idle" ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Card key={index} className="p-5"><Skeleton className="h-16 w-full" /></Card>)}</div>
