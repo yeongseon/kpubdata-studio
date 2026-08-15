@@ -96,7 +96,13 @@ describe("Quality Center P0 (#254)", () => {
     await waitFor(() => expect(screen.getByLabelText("Run 선택")).toHaveValue("air-2026-08-14"));
     expect(screen.queryByRole("link", { name: "Dataset Detail에서 보기" })).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Source 선택"), { target: { value: "kma__weather" } });
+    // Source select는 stagesState가 "loaded"될 때까지 disabled 상태다 — 이 대기 없이 바로
+    // fireEvent.change를 보내면(느린 러너에서는 stagesState 로딩이 아직 끝나지 않아) change가
+    // 씹혀 selectedSource가 절대 바뀌지 않고 아래 findByRole만 타임아웃하는 flaky 실패로 이어진다.
+    const sourceSelect = screen.getByLabelText("Source 선택");
+    await waitFor(() => expect(sourceSelect).toBeEnabled());
+
+    fireEvent.change(sourceSelect, { target: { value: "kma__weather" } });
     const link = await screen.findByRole("link", { name: "Dataset Detail에서 보기" });
     expect(link).toHaveAttribute("href", expect.stringContaining("source=kma__weather"));
   });

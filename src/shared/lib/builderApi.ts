@@ -21,8 +21,18 @@ import { API_BASE } from "@/shared/config/env";
 import * as schemas from "./builderApi.schema";
 import { z } from "zod";
 
-/** Builder API 계약 버전. builder SSOT의 API_CONTRACT_VERSION과 일치해야 한다. */
-export const API_CONTRACT_VERSION = "1.6.0";
+/**
+ * Studio가 실제로 검토·연동한 Builder API 계약 버전(고정 pin, "최신 Builder main과 항상
+ * 동일"이 아니다). 1.6.0 -> 1.7.0: Silver/Gold read-only `/query` 추가(#504, additive —
+ * 기존 엔드포인트는 변경 없음).
+ *
+ * Builder는 additive 변경마다 이 값을 계속 올린다(예: 1.8.0 — per-user provider
+ * credentials). Studio는 그 operation을 아직 구현하지 않았으므로(Provider API 연동은
+ * Studio #259 범위) 여기서 숫자만 따라 올리지 않는다 — 그러면 아직 없는 기능을
+ * 지원한다고 오인시킨다. exact-equality pin 정책 자체(버전마다 무조건 맞출지,
+ * capability 기준으로 협상할지)는 builder #521에서 논의 중이며 여기서 선결하지 않는다.
+ */
+export const API_CONTRACT_VERSION = "1.7.0";
 
 /** 실제 Builder 호출 활성화 여부(미설정 시 mock 사용). */
 export function isRealBuilderEnabled(): boolean {
@@ -371,6 +381,10 @@ export type SchemaDriftFinding = schemas.SchemaDriftFinding;
 export type BuildQualityResponse = schemas.BuildQualityResponse;
 export type DatasetQualityHistoryEntry = schemas.DatasetQualityHistoryEntry;
 export type DatasetQualityHistoryResponse = schemas.DatasetQualityHistoryResponse;
+export type QueryStage = schemas.QueryStage;
+export type QueryRequest = schemas.QueryRequest;
+export type QueryResponse = schemas.QueryResponse;
+export type QueryErrorCode = schemas.QueryErrorCode;
 
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
@@ -479,4 +493,18 @@ export const builderApi = {
       schemas.datasetQualityHistoryResponseSchema,
     );
   },
+
+  /**
+   * POST /query — server-resolved Silver/Gold table에 read-only SQL 실행 (#504, 1.7.0).
+   *
+   * Bronze는 Builder가 거부한다(Studio도 UI 단에서 선제 차단, `features/kubi/query.ts`).
+   * SQL은 사용자가 명시적으로 실행을 선택했을 때만 호출해야 하며, 자동 재시도하지 않는다
+   * (429/504가 이미 포화·타임아웃 신호이므로 재시도가 상황을 악화시킬 수 있다).
+   */
+  query: (request: schemas.QueryRequest, signal?: AbortSignal) =>
+    apiFetch(
+      "/query",
+      { method: "POST", body: request, signal, retries: 0 },
+      schemas.queryResponseSchema,
+    ),
 };

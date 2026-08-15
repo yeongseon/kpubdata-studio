@@ -123,9 +123,27 @@ describe("Dataset Detail P0 (#253)", () => {
     expect(within(panel).getAllByRole("link", { name: "보기" })[0]).toHaveAttribute("href", "/builds/air-2026-08-14");
   });
 
-  it("opens only the global Kubi drawer state from AI", async () => {
+  it("renders Kubi inline on the AI tab with this dataset's context, not a drawer launcher (#256 review)", async () => {
     renderDetail("/datasets/air-quality?tab=ai");
-    fireEvent.click(await screen.findByRole("button", { name: "이 데이터셋을 Kubi에서 분석" }));
-    expect(useUIStore.getState().isKubiDrawerOpen).toBe(true);
+    const panel = await screen.findByRole("tabpanel", { name: "AI" });
+    // 프로토타입처럼 AI 탭 자체가 Kubi 전체 화면(context bar/질문/답변)이어야 한다 — drawer를 대신 여는 launcher card가 아니다.
+    expect(within(panel).getByText("air-quality")).toBeInTheDocument();
+    expect(within(panel).getByText(/BYOK/)).toBeInTheDocument();
+    expect(useUIStore.getState().isKubiDrawerOpen).toBe(false);
+  });
+
+  it("AI tab demo (no API key, mock mode): Generated SQL and Result Preview render deterministically, clearly labeled as demo (#256 review)", async () => {
+    renderDetail("/datasets/air-quality?tab=ai&stage=silver");
+    const panel = await screen.findByRole("tabpanel", { name: "AI" });
+
+    fireEvent.click(within(panel).getByRole("button", { name: "데모 질문 보내보기" }));
+
+    expect(await within(panel).findByText(/DEMO/)).toBeInTheDocument();
+    expect(within(panel).getByText(/SELECT region, COUNT\(\*\)/)).toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "실행" }));
+
+    expect(await within(panel).findByText("서울")).toBeInTheDocument();
+    expect(within(panel).getByText("123")).toBeInTheDocument();
   });
 });

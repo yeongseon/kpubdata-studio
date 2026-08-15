@@ -16,7 +16,7 @@ import {
 } from "@/features/datasets/model";
 import { QualityBadge } from "@/features/quality/QualityBadge";
 import { qualityResultsForSource, summarizeQuality } from "@/features/quality/model";
-import { useUIStore } from "@/shared/hooks/useUIStore";
+import { KubiContent } from "@/features/kubi/KubiContent";
 import type {
   BuildQualityResponse,
   DatasetDetailResponse,
@@ -65,7 +65,6 @@ function Definition({ label, children }: { label: string; children: ReactNode })
 export function DatasetDetailPage() {
   const { datasetId = "" } = useParams<{ datasetId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
   const [core, setCore] = useState<CoreState>({ status: "loading" });
   const [stagesState, setStagesState] = useState<AsyncState<RunStagesResponse>>({ status: "idle" });
   const [qualityState, setQualityState] = useState<AsyncState<BuildQualityResponse>>({ status: "idle" });
@@ -202,7 +201,22 @@ export function DatasetDetailPage() {
 
       <div className="border-b border-border" role="tablist" aria-label="Dataset detail tabs">
         <div className="flex gap-1 overflow-x-auto">
-          {TABS.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={selectedTab === tab.id} onClick={() => updateContext({ tab: tab.id === "overview" ? null : tab.id })} className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium ${selectedTab === tab.id ? "border-accent text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{tab.label}</button>)}
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={selectedTab === tab.id}
+              // AI 탭은 Kubi(KubiContent)가 route의 ?stage=로만 stage를 판단한다(추측 금지 원칙,
+              // context.ts 참고) — 그래서 여기서 화면에 이미 계산되어 보이는 selectedStage를
+              // URL에 명시적으로 반영해줘야, 처음 AI 탭을 열었을 때도 Generated SQL/Result
+              // Preview가 비어 보이지 않는다.
+              onClick={() => updateContext(tab.id === "ai" ? { tab: "ai", stage: selectedStage } : { tab: tab.id === "overview" ? null : tab.id })}
+              className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium ${selectedTab === tab.id ? "border-accent text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -212,7 +226,7 @@ export function DatasetDetailPage() {
         {selectedTab === "preview" ? <PreviewTab state={stageDetailState} qualityState={qualityState} qualityStatus={validation} qualityResults={selectedQualityResults} onOpenQuality={() => updateContext({ tab: "quality" })} /> : null}
         {selectedTab === "quality" ? <QualityTab state={qualityState} status={validation} results={selectedQualityResults} drift={selectedDrift} datasetId={datasetId} runId={selectedRunId} source={selectedSource} stage={selectedStage} /> : null}
         {selectedTab === "builds" ? <BuildsTab runs={core.runs} selectedRunId={selectedRunId} /> : null}
-        {selectedTab === "ai" ? <Card><h3 className="text-lg font-semibold">Kubi에서 분석</h3><p className="mt-2 text-sm text-muted-foreground">현재 Dataset Detail의 datasetId 문맥으로 전역 Kubi drawer를 엽니다. LLM·Evidence·SQL·Action은 아직 실행하지 않습니다.</p><Button className="mt-5" onClick={openKubiDrawer}>이 데이터셋을 Kubi에서 분석</Button></Card> : null}
+        {selectedTab === "ai" ? <KubiContent compact /> : null}
       </section>
     </main>
   );

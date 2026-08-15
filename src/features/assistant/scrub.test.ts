@@ -12,6 +12,7 @@ import {
   createSecretScrubber,
   hasSecretPlaceholder,
   looksLikeSecret,
+  redactSecrets,
   restoreSecrets,
   scrubSecrets,
 } from "./scrub";
@@ -118,5 +119,18 @@ describe("looksLikeSecret — Shannon 엔트로피 (#226 결함 d)", () => {
 
   it("반복 패턴 저엔트로피 문자열은 잡지 않는다", () => {
     expect(looksLikeSecret("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe(false);
+  });
+});
+
+describe("redactSecrets — 화면용 비가역 마스킹 (#277)", () => {
+  it("structured evidence의 시크릿을 placeholder 대신 REDACTED로 바꾼다", () => {
+    const redacted = redactSecrets({
+      sources: [{ params: { serviceKey: SAMPLE_SERVICE_KEY }, title: "대기질" }],
+    });
+
+    expect(redacted).toEqual({
+      sources: [{ params: { serviceKey: "[REDACTED]" }, title: "대기질" }],
+    });
+    expect(JSON.stringify(redacted)).not.toContain("__SCRUBBED_");
   });
 });

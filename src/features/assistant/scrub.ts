@@ -173,3 +173,21 @@ export function hasSecretPlaceholder(data: unknown): boolean {
   }
   return false;
 }
+
+export function redactSecrets(data: unknown): unknown {
+  const scrubber = createSecretScrubber();
+  const scrubbed = scrubber.scrub(data);
+
+  function redact(value: unknown): unknown {
+    if (typeof value === "string" && hasSecretPlaceholder(value)) return "[REDACTED]";
+    if (Array.isArray(value)) return value.map(redact);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, redact(item)]),
+      );
+    }
+    return value;
+  }
+
+  return redact(scrubbed);
+}
