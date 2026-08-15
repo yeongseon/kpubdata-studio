@@ -20,6 +20,7 @@ describe("Layout sidebar accessibility", () => {
         theme: "light",
         isMobileSidebarOpen: false,
         isDesktopSidebarCollapsed: false,
+        isKubiDrawerOpen: false,
       }),
     );
   });
@@ -56,6 +57,7 @@ describe("Layout desktop sidebar collapse (#247)", () => {
         theme: "light",
         isMobileSidebarOpen: false,
         isDesktopSidebarCollapsed: false,
+        isKubiDrawerOpen: false,
       }),
     );
   });
