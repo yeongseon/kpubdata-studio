@@ -81,6 +81,26 @@ describe("Quality Center P0 (#254)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("존재하지 않습니다");
   });
 
+  it("blocks result rendering for an invalid source and offers a reset", async () => {
+    renderQuality("/quality?dataset=air-quality&source=missing-source");
+    expect(await screen.findByText("잘못된 source 필터입니다")).toBeInTheDocument();
+    expect(screen.queryByText("Checks Passed")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "전체 소스로 초기화" }));
+    await waitFor(() => expect(screen.getByTestId("location")).not.toHaveTextContent("source="));
+    expect(await screen.findByText("Checks Passed")).toBeInTheDocument();
+  });
+
+  it("hides the Dataset Detail link for the all-sources context and shows it once a source is selected", async () => {
+    renderQuality("/quality?dataset=air-quality");
+    await waitFor(() => expect(screen.getByLabelText("Run 선택")).toHaveValue("air-2026-08-14"));
+    expect(screen.queryByRole("link", { name: "Dataset Detail에서 보기" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Source 선택"), { target: { value: "kma__weather" } });
+    const link = await screen.findByRole("link", { name: "Dataset Detail에서 보기" });
+    expect(link).toHaveAttribute("href", expect.stringContaining("source=kma__weather"));
+  });
+
   it("keeps dataset/run/source context in the URL when the user changes filters", async () => {
     renderQuality();
     const sourceSelect = await screen.findByLabelText("Source 선택");
