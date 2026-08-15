@@ -61,8 +61,9 @@ YAML만 출력하세요. 설명은 출력하지 마세요.`;
       });
     }
 
+    const exchange = provider.exchange(messages, options.signal);
     let rawOutput = "";
-    for await (const chunk of provider.stream(messages, options.signal)) {
+    for await (const chunk of exchange.output) {
       rawOutput += chunk;
     }
 
@@ -79,7 +80,23 @@ YAML만 출력하세요. 설명은 출력하지 마세요.`;
     if (options.validateFn) {
       const result = await options.validateFn(spec);
       if (result.valid) {
-        return { spec, status: "ok", attempts, remaining_problems: [] };
+        try {
+          return {
+            spec: exchange.restoreText(spec),
+            status: "ok",
+            attempts,
+            remaining_problems: [],
+          };
+        } catch (error) {
+          return {
+            spec: null,
+            status: "error",
+            attempts,
+            remaining_problems: [
+              error instanceof Error ? error.message : "시크릿 복원에 실패했습니다.",
+            ],
+          };
+        }
       }
       lastProblems = result.problems ?? ["검증 실패"];
       continue;
