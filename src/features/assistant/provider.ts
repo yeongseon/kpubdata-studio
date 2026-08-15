@@ -8,6 +8,7 @@
  */
 
 import { checkLlmBaseUrl, redactApiKey, DEFAULT_LLM_BASE_URL } from "./baseUrl";
+import { scrubSecretsInText } from "./scrub";
 
 export interface AssistMessage {
   role: "system" | "user" | "assistant";
@@ -63,6 +64,18 @@ export class ByokProvider implements AssistProvider {
       throw new Error(`LLM base URL이 안전하지 않습니다: ${check.reason}`);
     }
 
+    // Fail-closed 시크릿 스크럽(#277 리뷰): Kubi evidence(loadKubiEvidence)나 AssistantChat의
+    // contextSpec 처리 등 caller가 이미 구조화 scrub을 거쳐 messages를 만드는 게 정상 경로지만,
+    // 이 공통 전송 계층은 그 호출을 신뢰하지 않는다 — caller가 scrub을 빼먹어도 여기서 최종
+    // message.content를 한 번 더 훑어야 원문 secret이 실제로 fetch body에 실리는 걸 막을 수
+    // 있다. 문장 전체가 아니라 토큰 단위로 훑는다(`scrubSecretsInText`) — 자유 텍스트/한국어
+    // 문장 전체에 엔트로피 판정을 적용하면 정상 대화까지 오탐되기 때문이다. API Key 자체는
+    // Authorization 헤더로만 쓰이므로 이 스크럽 대상이 아니다.
+    const safeMessages: AssistMessage[] = messages.map((m) => ({
+      ...m,
+      content: scrubSecretsInText(m.content),
+    }));
+
     let response: Response;
     try {
       response = await fetch(`${check.resolvedUrl}/chat/completions`, {
@@ -73,7 +86,7 @@ export class ByokProvider implements AssistProvider {
         },
         body: JSON.stringify({
           model: this.config.model,
-          messages,
+          messages: safeMessages,
           stream: true,
         }),
         signal,

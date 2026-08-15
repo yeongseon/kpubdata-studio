@@ -85,6 +85,23 @@ export function scrubSecrets(data: unknown): ScrubResult {
   return { scrubbed, placeholders };
 }
 
+/**
+ * 자유 텍스트(LLM에 보낼 message.content 등) 안에서 공백으로 구분된 토큰 단위로
+ * 고엔트로피 시크릿처럼 보이는 토큰만 마스킹한다(#277 리뷰, outbound 공통 전송 계층의
+ * fail-closed 방어).
+ *
+ * `scrubSecrets`는 key-value 구조를 가진 객체(evidence 등)를 대상으로, 값 하나가
+ * 통째로 시크릿인지를 그 값 전체의 Shannon 엔트로피로 판단한다. 자유 텍스트 문장
+ * 전체에 같은 방식을 적용하면 한국어 등 자연어 문장도 흔히 4.0bit/char를 넘어
+ * `looksLikeSecret`가 정상 문장을 오탐한다(예: 시스템 프롬프트, 사용자 질문). 반면
+ * 실제 서비스 키/토큰은 공백 없는 하나의 토큰으로 등장하는 게 보통이므로, 문장이
+ * 아니라 토큰 단위로 같은 엔트로피 판정을 적용하면 정상 문장은 건드리지 않으면서
+ * 원문 그대로 박힌 시크릿 토큰만 마스킹할 수 있다.
+ */
+export function scrubSecretsInText(text: string): string {
+  return text.replace(/\S+/g, (token) => (looksLikeSecret(token) ? "[REDACTED]" : token));
+}
+
 export function restoreSecrets(data: unknown, placeholders: Map<string, string>): unknown {
   if (typeof data === "string" && data.startsWith(SCRUBBED_PREFIX)) {
     return placeholders.get(data) ?? data;

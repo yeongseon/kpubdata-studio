@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { looksLikeSecret, restoreSecrets, scrubSecrets } from "./scrub";
+import { looksLikeSecret, restoreSecrets, scrubSecrets, scrubSecretsInText } from "./scrub";
 
 const SAMPLE_SERVICE_KEY =
   "9dF8kQ2mZ7xV3nL1pR4wY6tB0hJ5sC8gU2iE7oA9bN3cM6dP4qK1rS8tU0vW3xY5z";
@@ -87,5 +87,29 @@ describe("looksLikeSecret — Shannon 엔트로피 (#226 결함 d)", () => {
 
   it("반복 패턴 저엔트로피 문자열은 잡지 않는다", () => {
     expect(looksLikeSecret("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe(false);
+  });
+});
+
+describe("scrubSecretsInText — 자유 텍스트 토큰 단위 스크럽 (#277 리뷰)", () => {
+  it("공백 없는 고엔트로피 토큰만 마스킹하고 나머지 문장은 그대로 둔다", () => {
+    const text = `내 서비스 키는 ${SAMPLE_SERVICE_KEY} 입니다.`;
+    const scrubbed = scrubSecretsInText(text);
+    expect(scrubbed).not.toContain(SAMPLE_SERVICE_KEY);
+    expect(scrubbed).toContain("내 서비스 키는");
+    expect(scrubbed).toContain("입니다.");
+  });
+
+  it("공백 없이 통짜로 붙은 시크릿 값도 마스킹한다", () => {
+    expect(scrubSecretsInText(SAMPLE_SERVICE_KEY)).not.toContain(SAMPLE_SERVICE_KEY);
+  });
+
+  it("정상 한국어 문장은 오탐하지 않는다(Kubi/AssistantChat 회귀)", () => {
+    const text = "대기질 데이터셋의 최근 실행 상태를 알려줘. 지난주 대비 결측치가 늘었는지도 궁금해.";
+    expect(scrubSecretsInText(text)).toBe(text);
+  });
+
+  it("정상 영어 문장도 오탐하지 않는다", () => {
+    const text = "Please summarize the latest build failure and suggest the next action.";
+    expect(scrubSecretsInText(text)).toBe(text);
   });
 });

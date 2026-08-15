@@ -10,6 +10,7 @@
 import { loadBuildSpec, saveBuildSpec } from "@/features/build-spec/specStore";
 import { saveDraft } from "@/features/build-spec/draftStorage";
 import { validateSpec } from "@/features/validation/api";
+import { isSecretKey } from "@/features/assistant/scrub";
 import { buildFormValuesSchema } from "@/shared/lib/schemas";
 import type { BuildSpec, JsonValue } from "@/shared/lib/types";
 import type { KubiAction, BuildSpecPatchOp } from "./schema";
@@ -25,12 +26,29 @@ import type { KubiContext } from "./types";
  */
 const ALLOWED_PATCH_PATH = /^\/(title|description|metadata\/[^/]+|sources\/\d+\/(alias|params\/[^/]+)|exports\/\d+\/options\/[^/]+)$/;
 
+/** `/sources/{index}/params/{key}` 경로에서 `{key}` 세그먼트만 뽑아낸다. 그 외 경로는 대상이 아니다. */
+const SOURCE_PARAM_PATCH_PATH = /^\/sources\/\d+\/params\/([^/]+)$/;
+
 export type BuildSpecPatchPreview =
   | { ok: true; before: BuildSpec; after: BuildSpec }
   | { ok: false; reason: string };
 
 function unescapePointerSegment(segment: string): string {
   return segment.replace(/~1/g, "/").replace(/~0/g, "~");
+}
+
+/**
+ * `/sources/{index}/params/{key}` patch가 credential성 필드를 건드리는지 판정한다(#277 리뷰).
+ *
+ * ADD_REPORT_BLOCK/OPEN_* 등 다른 action은 애초에 patch를 만들지 않으므로 이 검사와 무관하다.
+ * 새 secret 판정 규칙을 여기서 따로 만들지 않고, 기존 scrub(#206, #226)이 evidence/outbound
+ * 메시지에 쓰는 `isSecretKey`를 그대로 재사용한다 — "serviceKey/apiKey/token/secret로 끝나는
+ * 키"라는 하나의 정의만 유지하기 위함이다.
+ */
+function isCredentialPatchPath(path: string): boolean {
+  const match = SOURCE_PARAM_PATCH_PATH.exec(path);
+  if (!match) return false;
+  return isSecretKey(unescapePointerSegment(match[1]));
 }
 
 /** 최소 JSON Patch(add/replace/remove) 적용. 경로는 사전에 allowlist로 검증된 것만 들어온다. */
@@ -74,6 +92,16 @@ export function previewBuildSpecPatch(
     return {
       ok: false,
       reason: `허용되지 않은 경로 "${invalidPath.path}"입니다. title/description/metadata/sources[].params/sources[].alias/exports[].options만 patch할 수 있습니다.`,
+    };
+  }
+
+  // credential성 params는 allowlist를 통과했더라도 여기서 결정적으로 다시 막는다(#277 리뷰) —
+  // "prompt에 하지 말라고 적기"가 아니라 Studio gate에서 저장/validate 이전에 차단한다.
+  const credentialPath = action.patch.find((op) => isCredentialPatchPath(op.path));
+  if (credentialPath) {
+    return {
+      ok: false,
+      reason: `경로 "${credentialPath.path}"는 credential성 필드로 보여 Kubi가 patch할 수 없습니다. serviceKey/apiKey/token 등은 Provider 설정 화면에서 직접 변경하세요.`,
     };
   }
 

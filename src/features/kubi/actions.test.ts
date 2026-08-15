@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { saveBuildSpec } from "@/features/build-spec/specStore";
+import { loadBuildSpec, saveBuildSpec } from "@/features/build-spec/specStore";
 import { loadDraft } from "@/features/build-spec/draftStorage";
 import { buildFormValuesSchema } from "@/shared/lib/schemas";
 import type { BuildSpec } from "@/shared/lib/types";
@@ -81,6 +81,50 @@ describe("previewBuildSpecPatch / applyBuildSpecPatch (#256 §10)", () => {
       expect(preview.after.sources).toEqual(BASE_SPEC.sources);
       expect(preview.after.exports).toEqual(BASE_SPEC.exports);
     }
+  });
+
+  it.each(["region", "pageSize"])(
+    "allows an ordinary (non-credential) source param patch: /sources/0/params/%s",
+    (key) => {
+      saveBuildSpec("run-1", BASE_SPEC);
+      const action: Extract<KubiAction, { type: "PATCH_BUILDSPEC" }> = {
+        type: "PATCH_BUILDSPEC",
+        runId: "run-1",
+        patch: [{ op: "add", path: `/sources/0/params/${key}`, value: "x" }],
+        reason: "test",
+      };
+      expect(previewBuildSpecPatch(action).ok).toBe(true);
+    },
+  );
+
+  it.each(["serviceKey", "apiKey", "token", "SERVICEKEY", "Api_Key", "TOKEN"])(
+    "rejects a credential-like source param patch: /sources/0/params/%s (#277 리뷰)",
+    (key) => {
+      saveBuildSpec("run-1", BASE_SPEC);
+      const action: Extract<KubiAction, { type: "PATCH_BUILDSPEC" }> = {
+        type: "PATCH_BUILDSPEC",
+        runId: "run-1",
+        patch: [{ op: "add", path: `/sources/0/params/${key}`, value: "leaked" }],
+        reason: "test",
+      };
+      const preview = previewBuildSpecPatch(action);
+      expect(preview.ok).toBe(false);
+      if (!preview.ok) expect(preview.reason).toMatch(/credential/);
+    },
+  );
+
+  it("never saves the spec or calls Builder /validate for a rejected credential patch", async () => {
+    saveBuildSpec("run-1", BASE_SPEC);
+    const action: Extract<KubiAction, { type: "PATCH_BUILDSPEC" }> = {
+      type: "PATCH_BUILDSPEC",
+      runId: "run-1",
+      patch: [{ op: "add", path: "/sources/0/params/serviceKey", value: "leaked-secret-value" }],
+      reason: "test",
+    };
+    const preview = previewBuildSpecPatch(action);
+    expect(preview.ok).toBe(false);
+    // 저장된 spec은 원본 그대로다 — reject된 patch는 loadBuildSpec에 반영되지 않는다.
+    expect(loadBuildSpec("run-1")).toEqual(BASE_SPEC);
   });
 
   it("applies an approved patch: saves it and re-runs Builder /validate", async () => {

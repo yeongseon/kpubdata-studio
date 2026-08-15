@@ -7,6 +7,20 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createProvider, describeLlmHttpError } from "./provider";
+import type { AssistMessage } from "./provider";
+
+/** stream()이 응답 바디를 즉시 소진하는 no-op SSE 스트림 mock. */
+function mockStreamResponse(): Response {
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: async () => ({ done: true, value: undefined }),
+      }),
+    },
+  } as unknown as Response;
+}
 
 const SENSITIVE_BODY = JSON.stringify({
   error: {
@@ -116,5 +130,52 @@ describe("ByokProvider.stream — HTTP error sanitization (#256 리뷰 §2)", ()
     }
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).not.toContain(apiKey);
+  });
+});
+
+describe("ByokProvider.stream — fail-closed 시크릿 스크럽 (#277 리뷰)", () => {
+  // scrubSecrets가 잡아내는 고엔트로피 값(길이>=24, base64풍) — src/features/assistant/scrub.test.ts와 동일한 형태.
+  const HIGH_ENTROPY_SECRET = "9dF8kQ2mZ7xV3nL1pR4wY6tB0hJ5sC8gU2iE7oA9bN3cM6dP4qK1rS8tU0vW3xY5z";
+
+  it("scrubs a raw secret value in message content even when the caller never called scrubSecrets", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockStreamResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createProvider({ apiKey: "sk-test-key", model: "gpt-4o-mini", baseUrl: "" });
+
+    const messages: AssistMessage[] = [{ role: "user", content: HIGH_ENTROPY_SECRET }];
+    await drain(provider.stream(messages));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).not.toContain(HIGH_ENTROPY_SECRET);
+  });
+
+  it("still sends a normal Kubi/assistant request body unchanged (no false-positive scrub of ordinary text)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockStreamResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createProvider({ apiKey: "sk-test-key", model: "gpt-4o-mini", baseUrl: "" });
+
+    const messages: AssistMessage[] = [
+      { role: "system", content: "당신은 KPubData Studio의 데이터 어시스턴트입니다." },
+      { role: "user", content: "대기질 데이터셋의 최근 실행 상태를 알려줘." },
+    ];
+    await drain(provider.stream(messages));
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.messages).toEqual(messages);
+  });
+
+  it("keeps the API key in the Authorization header (only message content is scrub target)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockStreamResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const apiKey = "sk-test-key-abc123";
+    const provider = createProvider({ apiKey, model: "gpt-4o-mini", baseUrl: "" });
+
+    await drain(provider.stream([{ role: "user", content: HIGH_ENTROPY_SECRET }]));
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Bearer ${apiKey}`);
   });
 });
