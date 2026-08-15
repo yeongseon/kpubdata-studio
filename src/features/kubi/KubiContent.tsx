@@ -56,7 +56,12 @@ function ContextBar({ context, pageLabel, qualityLabel }: { context: KubiContext
   );
 }
 
-function ApiKeySetup() {
+/**
+ * BYOK(API Key/Model/Base URL) 설정 폼. `KubiContent`(BYOK 미설정 시 기본 노출)와
+ * `KubiReportPanel`(#258 — "AI 설정"을 눌렀을 때만 노출)이 이 컴포넌트 하나를 공유한다.
+ * 새 BYOK storage/security semantics를 만들지 않는다 — `useAssistConfig`만 그대로 재사용한다.
+ */
+export function ApiKeySetup() {
   const { apiKey, model, baseUrl, isDefaultBaseUrl, baseUrlSafe, baseUrlError, persistToStorage, setConfig, enablePersistence, disablePersistence } =
     useAssistConfig();
   const [draftKey, setDraftKey] = useState(apiKey);

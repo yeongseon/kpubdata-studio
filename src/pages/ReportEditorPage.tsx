@@ -19,20 +19,22 @@ import { useNavigate, useParams } from "react-router-dom";
 import { buildDeterministicSections } from "@/features/reports/deterministicSections";
 import { buildEvidenceRefs, fetchReportEvidence } from "@/features/reports/evidence";
 import { downloadHtml, downloadMarkdown } from "@/features/reports/export";
+import { buildSectionSummaries } from "@/features/reports/narrativeSummary";
 import { createReport, getReport, saveReport } from "@/features/reports/repository";
 import { checkReportEvidenceStatus, type EvidenceStalenessResult } from "@/features/reports/staleness";
 import type {
   BuilderEvidenceBlock,
+  BuilderEvidenceSection,
   KubiInterpretationBlock,
   ReportDraft,
   UserContentBlock,
 } from "@/features/reports/types";
 import { BlockView } from "@/features/reports/components/BlockView";
 import { KubiInboxPanel } from "@/features/reports/components/KubiInboxPanel";
+import { KubiReportPanel } from "@/features/reports/components/KubiReportPanel";
 import { ReportContextSidebar } from "@/features/reports/components/ReportContextSidebar";
 import { UserContentEditor } from "@/features/reports/components/UserContentEditor";
 import { listKubiReportNotes } from "@/features/kubi/reportInbox";
-import { useUIStore } from "@/shared/hooks/useUIStore";
 import { Button, Card, EmptyState, ErrorState, PageHeader, TextInput } from "@/shared/ui";
 
 function newBlockId(): string {
@@ -43,7 +45,6 @@ function newBlockId(): string {
 export function ReportEditorPage() {
   const { reportId } = useParams<{ reportId: string }>();
   const navigate = useNavigate();
-  const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
 
   const [report, setReport] = useState<ReportDraft | null | undefined>(undefined);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -60,6 +61,11 @@ export function ReportEditorPage() {
 
   const [titleDraft, setTitleDraft] = useState("");
   const [pendingKubiNoteCount, setPendingKubiNoteCount] = useState(0);
+
+  // legacy summary(#258 legacy summary 수정): `summary`가 추가되기 전에 저장된 BUILDER_EVIDENCE
+  // 블록은 이 값이 없다. 저장된 draft 자체를 임의로 migration하지 않고, 화면 표현만 현재
+  // evidence 기준으로 보강한다 — evidence 재조회에 실패하면 null로 남아 기존처럼 표만 보인다.
+  const [legacySummaries, setLegacySummaries] = useState<Record<BuilderEvidenceSection, string> | null>(null);
 
   useEffect(() => {
     if (!reportId) {
@@ -101,6 +107,30 @@ export function ReportEditorPage() {
     // report/runStalenessCheck 자체는 매 렌더 새 참조가 될 수 있어 의도적으로 의존성에서 제외한다.
     // 이 재확인은 판정만 할 뿐 baseRunId를 절대 바꾸지 않는다(#258 §8 불변식) — STALE이어도
     // "최신 Run으로 새 Report 만들기"를 사용자가 명시적으로 눌러야만 별도 Report가 새로 생긴다.
+  }, [loadedReportId]);
+
+  useEffect(() => {
+    if (!report) return;
+    const hasLegacyBlock = report.blocks.some(
+      (block) => block.provenance === "BUILDER_EVIDENCE" && !block.summary,
+    );
+    if (!hasLegacyBlock) {
+      setLegacySummaries(null);
+      return;
+    }
+    const controller = new AbortController();
+    fetchReportEvidence(report.datasetId, report.baseRunId, controller.signal)
+      .then((evidence) => {
+        if (controller.signal.aborted) return;
+        setLegacySummaries(buildSectionSummaries(evidence));
+      })
+      .catch(() => {
+        // evidence 재조회 실패 — 저장된 draft(표만 있는 legacy 표시)를 그대로 유지한다.
+        // summary 생성 실패 때문에 Report 전체를 깨지 않는다(#258 legacy summary §1).
+      });
+    return () => controller.abort();
+    // report.id가 바뀔 때만 다시 계산한다 — 위 staleness 재확인과 동일한 이유로 report 객체
+    // 참조 자체는 의존성에서 제외한다(예: 제목만 바꿔도 재조회가 다시 일어나지 않게).
   }, [loadedReportId]);
 
   function persist(next: ReportDraft) {
@@ -164,19 +194,6 @@ export function ReportEditorPage() {
   function handleApproveKubiBlock(block: KubiInterpretationBlock) {
     if (!report) return;
     persist({ ...report, blocks: [...report.blocks, block] });
-  }
-
-  /**
-   * "현재 문맥으로 Kubi 분석" — 전역 Kubi drawer는 URL의 pathname+search에서 context를
-   * 읽으므로(`features/kubi/context.ts`), Report가 고정한 `datasetId`/`baseRunId`를 그대로
-   * `?dataset=&run=` 쿼리에 실어 보낸다. 최신 run으로 자동 전환하지 않는다(#258 §8/§6과
-   * 동일 불변식) — staleness가 STALE이어도 여기서 넘기는 값은 항상 이 Report의 기준값이다.
-   */
-  function handleOpenKubiForReportContext() {
-    if (!report) return;
-    const params = new URLSearchParams({ dataset: report.datasetId, run: report.baseRunId });
-    navigate(`/reports/${encodeURIComponent(report.id)}?${params.toString()}`, { replace: true });
-    openKubiDrawer();
   }
 
   async function handleRefreshEvidence() {
@@ -264,6 +281,14 @@ export function ReportEditorPage() {
   );
   const userBlocks = report.blocks.filter((block): block is UserContentBlock => block.provenance === "USER_CONTENT");
 
+  // legacy summary 보강: 저장된 블록의 summary는 그대로 두고, 화면에 보여줄 값만 현재
+  // evidence 기준 summary로 채운다(저장을 강제하지 않는다 — #258 legacy summary §1).
+  const displayEvidenceBlocks = evidenceBlocks.map((block) => {
+    if (block.summary) return block;
+    const fallback = legacySummaries?.[block.section];
+    return fallback ? { ...block, summary: fallback } : block;
+  });
+
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10" id="report-print-area">
       <style>{`
@@ -323,7 +348,7 @@ export function ReportEditorPage() {
           </Card>
 
           {/* 1~6. Builder evidence 기반 보고서 본문 — 문장 요약이 먼저 보이고, 표는 상세 근거로 접힌다. */}
-          {evidenceBlocks.map((block) => (
+          {displayEvidenceBlocks.map((block) => (
             <BlockView key={block.id} block={block} />
           ))}
 
@@ -347,9 +372,7 @@ export function ReportEditorPage() {
               ))
             )}
             <div className="print:hidden">
-              <Button variant="secondary" onClick={handleOpenKubiForReportContext}>
-                현재 문맥으로 Kubi 분석
-              </Button>
+              <KubiReportPanel report={report} onApprove={handleApproveKubiBlock} />
             </div>
             <div className="print:hidden">
               <KubiInboxPanel
@@ -393,7 +416,16 @@ export function ReportEditorPage() {
           </div>
         </div>
 
-        <div className="print:hidden">
+        {/* desktop에서는 App Shell header(`Layout.tsx`의 `sticky top-0` 헤더, 대략 4~4.5rem 높이)
+            아래에 이 sidebar도 같이 sticky로 고정한다(#258 sticky sidebar 수정) — 문서를
+            스크롤해도 Report Context가 계속 보이게 한다. sidebar가 viewport보다 길어질 수
+            있으므로 자체 높이를 viewport로 제한하고 내부 스크롤을 허용해, sticky 때문에 아래쪽
+            내용(Kubi 카드 등)이 영영 보이지 않는 상태가 되지 않게 한다. 좁은 viewport(`lg` 미만)
+            에서는 문서 아래로 collapse하는 기존 1단 레이아웃 그대로이므로 sticky를 걸지 않는다. */}
+        <div
+          className="print:hidden lg:sticky lg:top-20 lg:max-h-[calc(100vh-5.5rem)] lg:self-start lg:overflow-y-auto"
+          data-testid="report-context-sidebar-wrapper"
+        >
           <ReportContextSidebar
             report={report}
             staleness={staleness}
