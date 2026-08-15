@@ -84,6 +84,7 @@ export const buildFailedSchema = z.object({
   outcomes: z.array(buildOutcomeSchema),
   manifest: z.string(),
   api_version: z.string(),
+  error: z.string(),
 });
 
 /**
@@ -233,3 +234,210 @@ export const catalogResponseSchema = z.object({
 export type CatalogDataset = z.infer<typeof catalogDatasetSchema>;
 export type CatalogProvider = z.infer<typeof catalogProviderSchema>;
 export type CatalogResponse = z.infer<typeof catalogResponseSchema>;
+
+/**
+ * ============================================
+ * Built Dataset / Stage / Quality API (1.6.0)
+ * ============================================
+ */
+
+export const stageStatusSchema = z.enum(["completed", "failed", "not_run", "unavailable"]);
+
+export const datasetSourceRefSchema = z.object({
+  provider: z.string(),
+  dataset: z.string(),
+  alias: z.string(),
+});
+
+export const sourceStageStatusSchema = z.object({
+  bronze: stageStatusSchema,
+  silver: stageStatusSchema,
+  gold: stageStatusSchema,
+});
+
+export const datasetStageMapSchema = z.record(z.string(), sourceStageStatusSchema);
+
+export const datasetSummarySchema = z.object({
+  dataset_id: z.string(),
+  title: z.string(),
+  sources: z.array(datasetSourceRefSchema),
+  latest_run_id: z.string(),
+  status: z.enum(["ok", "failed", "cancelled"]),
+  updated_at: z.string().nullable(),
+  row_counts: z.record(z.string(), z.number().int()),
+  total_row_count: z.number().int(),
+  stages: datasetStageMapSchema,
+  quality: z.null(),
+});
+
+export const datasetDetailResponseSchema = datasetSummarySchema.extend({
+  run_count: z.number().int(),
+});
+
+export const datasetsResponseSchema = z.object({
+  datasets: z.array(datasetSummarySchema),
+});
+
+export const datasetRunSummarySchema = z.object({
+  run_id: z.string(),
+  status: z.enum(["ok", "failed", "cancelled"]),
+  started_at: z.string().nullable(),
+  finished_at: z.string().nullable(),
+  spec_digest: z.string().nullable(),
+  created_by: z.string().nullable(),
+});
+
+export const datasetRunsResponseSchema = z.object({
+  dataset_id: z.string(),
+  runs: z.array(datasetRunSummarySchema),
+});
+
+export const stageStateSchema = z.object({
+  status: stageStatusSchema,
+  available: z.boolean(),
+});
+
+export const runStageEntrySchema = z.object({
+  source_key: z.string(),
+  bronze: stageStateSchema,
+  silver: stageStateSchema,
+  gold: stageStateSchema,
+});
+
+export const runStagesResponseSchema = z.object({
+  run_id: z.string(),
+  sources: z.array(runStageEntrySchema),
+});
+
+const stageDetailBase = {
+  run_id: z.string(),
+  source_key: z.string(),
+  status: stageStatusSchema,
+  available: z.boolean(),
+};
+
+export const bronzeStageDetailResponseSchema = z.object({
+  ...stageDetailBase,
+  stage: z.literal("bronze"),
+  provider: z.string().nullable(),
+  dataset: z.string().nullable(),
+  fetched_at: z.string().nullable(),
+  record_count: z.number().int().nullable(),
+}).strict();
+
+export const silverColumnInfoSchema = z.object({
+  name: z.string(),
+  dtype: z.string(),
+  nullable: z.boolean(),
+  unique_count: z.number().int(),
+}).strict();
+
+export const tableStatisticsSchema = z.object({
+  row_count: z.number().int(),
+  null_counts: z.record(z.string(), z.number().int()),
+  duplicate_rate: z.number(),
+});
+
+export const silverValidationProblemSchema = z.object({
+  code: z.string(),
+  field: z.string().nullable(),
+  message: z.string(),
+}).strict();
+
+export const silverValidationResultSchema = z.object({
+  ok: z.boolean(),
+  problems: z.array(silverValidationProblemSchema),
+}).strict();
+
+export const silverStageDetailResponseSchema = z.object({
+  ...stageDetailBase,
+  stage: z.literal("silver"),
+  row_count: z.number().int().nullable(),
+  schema: z.array(silverColumnInfoSchema),
+  statistics: tableStatisticsSchema.nullable(),
+  validation: silverValidationResultSchema.nullable(),
+  sample: z.array(z.record(z.string(), z.json())),
+}).strict();
+
+export const goldExportSummarySchema = z.object({ kind: z.string() }).strict();
+
+export const goldStageDetailResponseSchema = z.object({
+  ...stageDetailBase,
+  stage: z.literal("gold"),
+  row_count: z.number().int().nullable(),
+  columns: z.array(z.string()),
+  splits: z.record(z.string(), z.number().int()).nullable(),
+  exports: z.array(goldExportSummarySchema),
+  sample: z.null(),
+  sample_available: z.literal(false),
+}).strict();
+
+export const stageDetailResponseSchema = z.discriminatedUnion("stage", [
+  bronzeStageDetailResponseSchema,
+  silverStageDetailResponseSchema,
+  goldStageDetailResponseSchema,
+]);
+
+export const qualityCheckResultSchema = z.object({
+  source_key: z.string(),
+  category: z.string(),
+  rule: z.string(),
+  column: z.string().nullable(),
+  status: z.enum(["pass", "warn", "fail"]),
+  actual: z.json(),
+  threshold: z.json(),
+  affected_rows: z.number().int().nullable(),
+  evaluated_rows: z.number().int().nullable(),
+  detail: z.string().nullable(),
+}).strict();
+
+export const schemaDriftFindingSchema = z.object({
+  kind: z.enum(["column_added", "column_removed", "dtype_changed", "row_count_jump"]),
+  column: z.string().nullable(),
+  detail: z.string(),
+}).strict();
+
+export const qualityAvailabilitySchema = z.enum(["available", "partial", "unavailable"]);
+
+export const buildQualityResponseSchema = z.object({
+  run_id: z.string(),
+  availability: qualityAvailabilitySchema,
+  evaluated_checks: z.number().int().nonnegative(),
+  quality_results: z.record(z.string(), z.array(qualityCheckResultSchema)),
+  schema_drift: z.record(z.string(), z.array(schemaDriftFindingSchema)),
+});
+
+export const datasetQualityHistoryEntrySchema = z.object({
+  run_id: z.string(),
+  timestamp: z.string().nullable(),
+  status: z.enum(["ok", "failed", "cancelled"]),
+  pass_count: z.number().int(),
+  warn_count: z.number().int(),
+  fail_count: z.number().int(),
+  evaluated_checks: z.number().int(),
+  rule_pass_rate: z.number().nullable(),
+  validated_rows: z.number().int().nullable(),
+});
+
+export const datasetQualityHistoryResponseSchema = z.object({
+  dataset_id: z.string(),
+  runs: z.array(datasetQualityHistoryEntrySchema),
+});
+
+export type StageStatus = z.infer<typeof stageStatusSchema>;
+export type DatasetSourceRef = z.infer<typeof datasetSourceRefSchema>;
+export type SourceStageStatus = z.infer<typeof sourceStageStatusSchema>;
+export type DatasetSummary = z.infer<typeof datasetSummarySchema>;
+export type DatasetDetailResponse = z.infer<typeof datasetDetailResponseSchema>;
+export type DatasetsResponse = z.infer<typeof datasetsResponseSchema>;
+export type DatasetRunSummary = z.infer<typeof datasetRunSummarySchema>;
+export type DatasetRunsResponse = z.infer<typeof datasetRunsResponseSchema>;
+export type RunStageEntry = z.infer<typeof runStageEntrySchema>;
+export type RunStagesResponse = z.infer<typeof runStagesResponseSchema>;
+export type StageDetailResponse = z.infer<typeof stageDetailResponseSchema>;
+export type QualityCheckResult = z.infer<typeof qualityCheckResultSchema>;
+export type SchemaDriftFinding = z.infer<typeof schemaDriftFindingSchema>;
+export type QualityAvailability = z.infer<typeof qualityAvailabilitySchema>;
+export type BuildQualityResponse = z.infer<typeof buildQualityResponseSchema>;
+export type DatasetQualityHistoryEntry = z.infer<typeof datasetQualityHistoryEntrySchema>;
+export type DatasetQualityHistoryResponse = z.infer<typeof datasetQualityHistoryResponseSchema>;
