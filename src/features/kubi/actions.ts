@@ -10,7 +10,7 @@
 import { loadBuildSpec, saveBuildSpec } from "@/features/build-spec/specStore";
 import { saveDraft } from "@/features/build-spec/draftStorage";
 import { validateSpec } from "@/features/validation/api";
-import { isSecretKey } from "@/features/assistant/scrub";
+import { hasSecretPlaceholder, isSecretKey, redactSecrets } from "@/features/assistant/scrub";
 import { buildFormValuesSchema } from "@/shared/lib/schemas";
 import type { BuildSpec, JsonValue } from "@/shared/lib/types";
 import type { KubiAction, BuildSpecPatchOp } from "./schema";
@@ -124,15 +124,45 @@ export function previewBuildSpecPatch(
 export async function applyBuildSpecPatch(
   runId: string,
   after: BuildSpec,
+  validate: typeof validateSpec = validateSpec,
 ): Promise<{ valid: boolean; errors: string[] }> {
-  saveBuildSpec(runId, after);
-  return validateSpec(after);
+  if (hasSecretPlaceholder(after)) {
+    return { valid: false, errors: ["해결되지 않은 시크릿 플레이스홀더가 포함되어 있습니다."] };
+  }
+  const result = await validate(after);
+  if (result.valid) saveBuildSpec(runId, after);
+  return result;
+}
+
+function assertSafeGeneratedValue(value: unknown): void {
+  if (hasSecretPlaceholder(value)) {
+    throw new Error("해결되지 않은 시크릿 플레이스홀더가 포함되어 있습니다.");
+  }
+}
+
+function assertSafeSourceParams(value: string): void {
+  assertSafeGeneratedValue(value);
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (JSON.stringify(redactSecrets(parsed)) !== JSON.stringify(parsed)) {
+      throw new Error("Kubi가 생성한 sourceParams에는 credential 값을 포함할 수 없습니다.");
+    }
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error("Kubi가 생성한 sourceParams는 JSON 객체여야 합니다.", {
+        cause: error,
+      });
+    }
+    throw error;
+  }
 }
 
 /** CREATE_BUILD_DRAFT이 New Build Wizard 초안 슬롯에 실제로 쓸 값을 만든다(부족한 필드는 안전한 기본값). */
 export function draftValuesFromAction(
   action: Extract<KubiAction, { type: "CREATE_BUILD_DRAFT" }>,
 ): ReturnType<typeof buildFormValuesSchema.parse> {
+  assertSafeGeneratedValue(action.values);
+  assertSafeSourceParams(action.values.sourceParams ?? "{}");
   return buildFormValuesSchema.parse({
     datasetId: action.values.datasetId,
     title: action.values.title,
@@ -155,6 +185,7 @@ export function applyAddReportBlock(
   action: Extract<KubiAction, { type: "ADD_REPORT_BLOCK" }>,
   context: KubiContext,
 ): void {
+  assertSafeGeneratedValue({ note: action.note, reason: action.reason });
   queueKubiReportNote({
     note: action.note,
     reason: action.reason,

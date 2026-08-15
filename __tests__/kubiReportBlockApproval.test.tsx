@@ -29,7 +29,7 @@ function mockStream(stream: (messages: unknown, signal?: AbortSignal) => AsyncIt
   vi.mocked(createProvider).mockReturnValue({
     isConfigured: true,
     stream,
-  });
+  } as unknown as ReturnType<typeof createProvider>);
 }
 
 function configureKey() {

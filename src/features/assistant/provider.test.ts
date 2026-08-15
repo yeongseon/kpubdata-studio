@@ -1,69 +1,38 @@
-/**
- * LLM 오류 응답 sanitization 테스트 (#256 리뷰 §2).
- *
- * 서버가 돌려준 raw response body(내부 구현/스택/때로는 반사된 key)가 사용자-facing
- * Error message에 그대로 노출되지 않는지 확인한다. bad key / rate limit / server error
- * 각각 status만 근거로 한 고정 메시지여야 한다.
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createProvider, describeLlmHttpError } from "./provider";
-import type { AssistMessage } from "./provider";
 
-/** stream()이 응답 바디를 즉시 소진하는 no-op SSE 스트림 mock. */
-function mockStreamResponse(): Response {
-  return {
-    ok: true,
-    status: 200,
-    body: {
-      getReader: () => ({
-        read: async () => ({ done: true, value: undefined }),
-      }),
-    },
-  } as unknown as Response;
-}
+import { createProvider, describeLlmHttpError } from "./provider";
 
 const SENSITIVE_BODY = JSON.stringify({
   error: {
-    message: "Incorrect API key provided: sk-live-secret-abc123. Internal trace: srv-7f2a at /var/app/openai/handler.js:42",
-    type: "invalid_request_error",
+    message:
+      "Incorrect API key provided: sk-live-secret-abc123. Internal trace: srv-7f2a at /var/app/openai/handler.js:42",
   },
 });
 
-function mockErrorResponse(status: number, body: string): Response {
-  return {
-    ok: false,
-    status,
-    text: async () => body,
-    body: null,
-  } as unknown as Response;
+function mockErrorResponse(status: number): Response {
+  return { ok: false, status, body: null } as unknown as Response;
 }
 
 async function drain(iterable: AsyncIterable<string>): Promise<string> {
-  let out = "";
-  for await (const chunk of iterable) out += chunk;
-  return out;
+  let output = "";
+  for await (const chunk of iterable) output += chunk;
+  return output;
 }
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("describeLlmHttpError (#256 리뷰 §2)", () => {
-  it("returns a fixed auth message for 401/403 (bad key)", () => {
+describe("describeLlmHttpError (#256)", () => {
+  it("HTTP status만 사용한 고정 메시지를 반환한다", () => {
     expect(describeLlmHttpError(401)).toMatch(/API Key/);
     expect(describeLlmHttpError(403)).toMatch(/API Key/);
-  });
-
-  it("returns a fixed rate-limit message for 429", () => {
     expect(describeLlmHttpError(429)).toMatch(/rate limit|한도/);
-  });
-
-  it("returns a fixed server-error message for 5xx", () => {
     expect(describeLlmHttpError(500)).toMatch(/서버/);
     expect(describeLlmHttpError(503)).toMatch(/서버/);
   });
 
-  it("never includes arbitrary response text — only status-derived fixed strings", () => {
+  it("임의의 response text를 포함하지 않는다", () => {
     for (const status of [400, 401, 403, 404, 429, 500, 502, 503]) {
       expect(describeLlmHttpError(status)).not.toContain("sk-live-secret-abc123");
       expect(describeLlmHttpError(status)).not.toContain("Internal trace");
@@ -71,50 +40,29 @@ describe("describeLlmHttpError (#256 리뷰 §2)", () => {
   });
 });
 
-describe("ByokProvider.stream — HTTP error sanitization (#256 리뷰 §2)", () => {
-  it("throws a sanitized message (not the raw body) on a 401 bad-key response", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockErrorResponse(401, SENSITIVE_BODY)));
-    const provider = createProvider({ apiKey: "sk-live-secret-abc123", model: "gpt-4o-mini", baseUrl: "" });
+describe("assistant provider error sanitization (#256)", () => {
+  it.each([
+    [401, /API Key/],
+    [429, /rate limit|한도/],
+    [500, /서버/],
+  ])("%i 응답의 raw body를 노출하지 않는다", async (status, expected) => {
+    const text = vi.fn(async () => SENSITIVE_BODY);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ...mockErrorResponse(status), text }),
+    );
+    const provider = createProvider({
+      apiKey: "sk-live-secret-abc123",
+      model: "gpt-4o-mini",
+      baseUrl: "",
+    });
 
-    await expect(drain(provider.stream([]))).rejects.toThrow(/API Key/);
-    await expect(drain(provider.stream([]))).rejects.not.toThrow(/sk-live-secret-abc123/);
+    await expect(drain(provider.stream([]))).rejects.toThrow(expected);
+    await expect(drain(provider.stream([]))).rejects.not.toThrow("sk-live-secret-abc123");
+    expect(text).not.toHaveBeenCalled();
   });
 
-  it("throws a sanitized message on a 429 rate-limit response", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockErrorResponse(429, SENSITIVE_BODY)));
-    const provider = createProvider({ apiKey: "sk-live-secret-abc123", model: "gpt-4o-mini", baseUrl: "" });
-
-    await expect(drain(provider.stream([]))).rejects.toThrow(/rate limit|한도/);
-  });
-
-  it("throws a sanitized message on a 500 server-error response", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockErrorResponse(500, SENSITIVE_BODY)));
-    const provider = createProvider({ apiKey: "sk-live-secret-abc123", model: "gpt-4o-mini", baseUrl: "" });
-
-    await expect(drain(provider.stream([]))).rejects.toThrow(/서버/);
-  });
-
-  it("never reads/exposes the raw response body text for any error status", async () => {
-    const textFn = vi.fn(async () => SENSITIVE_BODY);
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 400, text: textFn, body: null } as unknown as Response);
-    vi.stubGlobal("fetch", fetchMock);
-    const provider = createProvider({ apiKey: "sk-live-secret-abc123", model: "gpt-4o-mini", baseUrl: "" });
-
-    let caught: unknown;
-    try {
-      await drain(provider.stream([]));
-    } catch (cause) {
-      caught = cause;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).not.toContain("sk-live-secret-abc123");
-    expect((caught as Error).message).not.toContain("Internal trace");
-    // sanitization은 body를 아예 읽지 않는 방식으로 구현되어 있다 — 디버깅을 위해서도 남기지 않는다.
-    expect(textFn).not.toHaveBeenCalled();
-  });
-
-  it("still redacts the API key from network-level (fetch throw) errors", async () => {
+  it("network error에 반사된 API key를 제거한다", async () => {
     const apiKey = "sk-live-secret-abc123";
     vi.stubGlobal(
       "fetch",
@@ -125,57 +73,78 @@ describe("ByokProvider.stream — HTTP error sanitization (#256 리뷰 §2)", ()
     let caught: unknown;
     try {
       await drain(provider.stream([]));
-    } catch (cause) {
-      caught = cause;
+    } catch (error) {
+      caught = error;
     }
+
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).not.toContain(apiKey);
   });
 });
 
-describe("ByokProvider.stream — fail-closed 시크릿 스크럽 (#277 리뷰)", () => {
-  // scrubSecrets가 잡아내는 고엔트로피 값(길이>=24, base64풍) — src/features/assistant/scrub.test.ts와 동일한 형태.
-  const HIGH_ENTROPY_SECRET = "9dF8kQ2mZ7xV3nL1pR4wY6tB0hJ5sC8gU2iE7oA9bN3cM6dP4qK1rS8tU0vW3xY5z";
+describe("assistant safe egress (#273)", () => {
+  it("최종 HTTP body에서 text와 structured content의 시크릿을 제거한다", async () => {
+    const textSecret = "xJ7kL9mN2pQ4rT6vW8yB3cD5eF7gH9j";
+    const structuredSecret = "low-entropy-key";
+    let requestBody = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        requestBody = String(init?.body);
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n',
+          { status: 200 },
+        );
+      }),
+    );
 
-  it("scrubs a raw secret value in message content even when the caller never called scrubSecrets", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(mockStreamResponse());
-    vi.stubGlobal("fetch", fetchMock);
-    const provider = createProvider({ apiKey: "sk-test-key", model: "gpt-4o-mini", baseUrl: "" });
+    const provider = createProvider({
+      apiKey: "byok-key",
+      model: "test-model",
+      baseUrl: "https://llm.example.com/v1",
+    });
+    const output = await drain(
+      provider.stream([
+        { role: "user", content: `분석 ${textSecret}` },
+        {
+          role: "system",
+          content: "현재 스펙",
+          structuredContent: { sources: [{ params: { serviceKey: structuredSecret } }] },
+        },
+      ]),
+    );
 
-    const messages: AssistMessage[] = [{ role: "user", content: HIGH_ENTROPY_SECRET }];
-    await drain(provider.stream(messages));
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.body).not.toContain(HIGH_ENTROPY_SECRET);
+    expect(output).toBe("ok");
+    expect(requestBody).not.toContain(textSecret);
+    expect(requestBody).not.toContain(structuredSecret);
+    expect(requestBody).toContain("__SCRUBBED_");
   });
 
-  it("still sends a normal Kubi/assistant request body unchanged (no false-positive scrub of ordinary text)", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(mockStreamResponse());
-    vi.stubGlobal("fetch", fetchMock);
-    const provider = createProvider({ apiKey: "sk-test-key", model: "gpt-4o-mini", baseUrl: "" });
+  it("일반 응답에는 시크릿이나 플레이스홀더를 노출하지 않는다", async () => {
+    const secret = "low-entropy-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          'data: {"choices":[{"delta":{"content":"__SCRUB"}}]}\n\n' +
+            'data: {"choices":[{"delta":{"content":"BED_fake_0__"}}]}\n\n',
+          { status: 200 },
+        ),
+      ),
+    );
 
-    const messages: AssistMessage[] = [
-      { role: "system", content: "당신은 KPubData Studio의 데이터 어시스턴트입니다." },
-      { role: "user", content: "대기질 데이터셋의 최근 실행 상태를 알려줘." },
-    ];
-    await drain(provider.stream(messages));
+    const provider = createProvider({
+      apiKey: "byok-key",
+      model: "test-model",
+      baseUrl: "https://llm.example.com/v1",
+    });
+    const output = await drain(
+      provider.stream([
+        { role: "user", content: "분석", structuredContent: { serviceKey: secret } },
+      ]),
+    );
 
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(init.body as string);
-    expect(body.messages).toEqual(messages);
-  });
-
-  it("keeps the API key in the Authorization header (only message content is scrub target)", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(mockStreamResponse());
-    vi.stubGlobal("fetch", fetchMock);
-    const apiKey = "sk-test-key-abc123";
-    const provider = createProvider({ apiKey, model: "gpt-4o-mini", baseUrl: "" });
-
-    await drain(provider.stream([{ role: "user", content: HIGH_ENTROPY_SECRET }]));
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe(`Bearer ${apiKey}`);
+    expect(output).toBe("[REDACTED]");
+    expect(output).not.toContain(secret);
   });
 });

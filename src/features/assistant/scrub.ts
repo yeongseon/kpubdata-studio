@@ -48,21 +48,39 @@ export function looksLikeSecret(value: string): boolean {
 }
 
 const SCRUBBED_PREFIX = "__SCRUBBED_";
+const SCRUBBED_PATTERN = /__SCRUBBED_[A-Za-z0-9-]+_\d+__/g;
+const SCRUBBED_TEST_PATTERN = /__SCRUBBED_[A-Za-z0-9-]+_\d+__/;
 
 export interface ScrubResult {
   scrubbed: unknown;
   placeholders: Map<string, string>;
 }
 
-export function scrubSecrets(data: unknown): ScrubResult {
+export interface SecretScrubber {
+  scrub(data: unknown): unknown;
+  scrubText(text: string): string;
+  restore(data: unknown): unknown;
+  restoreText(text: string): string;
+  readonly placeholders: ReadonlyMap<string, string>;
+}
+
+function requestId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+}
+
+export function createSecretScrubber(id = requestId()): SecretScrubber {
   const placeholders = new Map<string, string>();
   let counter = 0;
 
+  function replace(value: string): string {
+    const placeholder = `${SCRUBBED_PREFIX}${id}_${counter++}__`;
+    placeholders.set(placeholder, value);
+    return placeholder;
+  }
+
   function scrubValue(key: string, value: unknown): unknown {
     if (typeof value === "string" && (isSecretKey(key) || looksLikeSecret(value))) {
-      const placeholder = `${SCRUBBED_PREFIX}${counter++}__`;
-      placeholders.set(placeholder, value);
-      return placeholder;
+      return replace(value);
     }
     // 배열도 순회한다 (#226 결함 a). BuildSpec.sources 가 배열이라
     // !Array.isArray(value) 분기가 재귀를 끊어 sources[].params.serviceKey 에
@@ -81,30 +99,56 @@ export function scrubSecrets(data: unknown): ScrubResult {
     return value;
   }
 
-  const scrubbed = scrubValue("root", data);
-  return { scrubbed, placeholders };
+  function scrubText(text: string): string {
+    const assignmentPattern = /\b([\w-]*(?:servicekey|api[_-]?key|token|secret))([ \t]*[:=][ \t]*)([^\s,}\]]+)/gi;
+    const assigned = text.replace(assignmentPattern, (_match, key: string, separator: string, value: string) => {
+      const quote = value.startsWith("\"") || value.startsWith("'") ? value[0] : "";
+      const raw = quote ? value.slice(1, value.endsWith(quote) ? -1 : undefined) : value;
+      return `${key}${separator}${quote}${replace(raw)}${quote}`;
+    });
+
+    return assigned.replace(/\S{24,}/g, (token) => {
+      if (token.startsWith(SCRUBBED_PREFIX) || !looksLikeSecret(token)) return token;
+      return replace(token);
+    });
+  }
+
+  function restore(data: unknown): unknown {
+    if (typeof data === "string" && data.startsWith(SCRUBBED_PREFIX)) {
+      const value = placeholders.get(data);
+      if (value === undefined) throw new Error("알 수 없는 시크릿 플레이스홀더가 포함되어 있습니다.");
+      return value;
+    }
+    if (Array.isArray(data)) return data.map(restore);
+    if (data && typeof data === "object") {
+      return Object.fromEntries(
+        Object.entries(data as Record<string, unknown>).map(([key, value]) => [key, restore(value)]),
+      );
+    }
+    return data;
+  }
+
+  function restoreText(text: string): string {
+    return text.replace(SCRUBBED_PATTERN, (placeholder) => {
+      const value = placeholders.get(placeholder);
+      if (value === undefined) throw new Error("알 수 없는 시크릿 플레이스홀더가 포함되어 있습니다.");
+      return value;
+    });
+  }
+
+  return { scrub: (data) => scrubValue("root", data), scrubText, restore, restoreText, placeholders };
 }
 
-/**
- * 자유 텍스트(LLM에 보낼 message.content 등) 안에서 공백으로 구분된 토큰 단위로
- * 고엔트로피 시크릿처럼 보이는 토큰만 마스킹한다(#277 리뷰, outbound 공통 전송 계층의
- * fail-closed 방어).
- *
- * `scrubSecrets`는 key-value 구조를 가진 객체(evidence 등)를 대상으로, 값 하나가
- * 통째로 시크릿인지를 그 값 전체의 Shannon 엔트로피로 판단한다. 자유 텍스트 문장
- * 전체에 같은 방식을 적용하면 한국어 등 자연어 문장도 흔히 4.0bit/char를 넘어
- * `looksLikeSecret`가 정상 문장을 오탐한다(예: 시스템 프롬프트, 사용자 질문). 반면
- * 실제 서비스 키/토큰은 공백 없는 하나의 토큰으로 등장하는 게 보통이므로, 문장이
- * 아니라 토큰 단위로 같은 엔트로피 판정을 적용하면 정상 문장은 건드리지 않으면서
- * 원문 그대로 박힌 시크릿 토큰만 마스킹할 수 있다.
- */
-export function scrubSecretsInText(text: string): string {
-  return text.replace(/\S+/g, (token) => (looksLikeSecret(token) ? "[REDACTED]" : token));
+export function scrubSecrets(data: unknown): ScrubResult {
+  const scrubber = createSecretScrubber();
+  return { scrubbed: scrubber.scrub(data), placeholders: new Map(scrubber.placeholders) };
 }
 
 export function restoreSecrets(data: unknown, placeholders: Map<string, string>): unknown {
   if (typeof data === "string" && data.startsWith(SCRUBBED_PREFIX)) {
-    return placeholders.get(data) ?? data;
+    const value = placeholders.get(data);
+    if (value === undefined) throw new Error("알 수 없는 시크릿 플레이스홀더가 포함되어 있습니다.");
+    return value;
   }
   // 배열 왕복 복원 (#226 결함 c). scrub 가 배열을 순회하므로 restore 도 같이.
   if (Array.isArray(data)) {
@@ -119,4 +163,31 @@ export function restoreSecrets(data: unknown, placeholders: Map<string, string>)
     return result;
   }
   return data;
+}
+
+export function hasSecretPlaceholder(data: unknown): boolean {
+  if (typeof data === "string") return SCRUBBED_TEST_PATTERN.test(data);
+  if (Array.isArray(data)) return data.some(hasSecretPlaceholder);
+  if (data && typeof data === "object") {
+    return Object.values(data as Record<string, unknown>).some(hasSecretPlaceholder);
+  }
+  return false;
+}
+
+export function redactSecrets(data: unknown): unknown {
+  const scrubber = createSecretScrubber();
+  const scrubbed = scrubber.scrub(data);
+
+  function redact(value: unknown): unknown {
+    if (typeof value === "string" && hasSecretPlaceholder(value)) return "[REDACTED]";
+    if (Array.isArray(value)) return value.map(redact);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, redact(item)]),
+      );
+    }
+    return value;
+  }
+
+  return redact(scrubbed);
 }

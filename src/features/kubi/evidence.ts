@@ -3,7 +3,7 @@
  *
  * 현재 `KubiContext`에 대해 Builder의 실제 API(`/catalog`, `/datasets/*`, `/builds/*`)만으로
  * safe evidence 번들을 구성한다. 원본 credential/service key가 evidence에 들어올 경우를
- * 대비해 `scrubSecrets`(#206, 기존 assistant 모듈 재사용)를 마지막 방어선으로 한 번 더 통과시킨다.
+ * 대비해 `redactSecrets`(#206, 기존 assistant 모듈 재사용)를 마지막 방어선으로 통과시킨다.
  *
  * 일부 evidence 조회가 실패해도 전체를 실패시키지 않는다 — `partial`/`unavailable`로 어떤
  * 부분을 확인하지 못했는지 그대로 드러내고, Kubi가 "모든 걸 확인한 것처럼" 답하지 않게 한다.
@@ -16,7 +16,7 @@ import {
   listDatasetRuns,
 } from "@/features/datasets/api";
 import { loadBuildSpec } from "@/features/build-spec/specStore";
-import { scrubSecrets } from "@/features/assistant/scrub";
+import { redactSecrets } from "@/features/assistant/scrub";
 import { builderApi } from "@/shared/lib/builderApi";
 import type { KubiContext, KubiEvidence, KubiEvidenceSource, KubiKnownRefs } from "./types";
 import { qualityResultRefId } from "./types";
@@ -196,6 +196,6 @@ export async function loadKubiEvidence(
   evidence.partial = unavailable.length > 0;
 
   // 방어적 마지막 관문: Builder 응답에 예상치 못한 credential성 필드가 섞여 있어도 여기서 걸러낸다.
-  const scrubbed = scrubSecrets(evidence).scrubbed as KubiEvidence;
-  return { evidence: scrubbed, knownRefs };
+  const redacted = redactSecrets(evidence) as KubiEvidence;
+  return { evidence: redacted, knownRefs };
 }

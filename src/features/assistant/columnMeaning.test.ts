@@ -21,11 +21,11 @@ describe("buildColumnMeaningPrompt — 스크러빙 (#228, SEC-2 선행)", () =>
       { OPNSFTEAM_CODE: "3000001", serviceKey: SECRET_KEY },
     ];
 
-    const { messages, scrubbed } = buildColumnMeaningPrompt(columns, rows);
+    const { messages } = buildColumnMeaningPrompt(columns, rows);
 
-    expect(scrubbed).toBe(true);
     const promptText = messages.map((m) => m.content).join("\n");
     expect(promptText).not.toContain(SECRET_KEY);
+    expect(messages.find((message) => message.structuredContent)).toBeDefined();
   });
 
   it("컬럼 목록이 프롬프트에 포함된다", () => {
@@ -40,10 +40,10 @@ describe("buildColumnMeaningPrompt — 스크러빙 (#228, SEC-2 선행)", () =>
     expect(userMsg?.content).toContain("BUDGET_CRNTAM");
   });
 
-  it("시크릿이 없으면 scrubbed=false", () => {
+  it("샘플 행은 공통 egress가 처리할 structured content로 유지한다", () => {
     const columns = [{ name: "region", dtype: "String" }];
     const rows = [{ region: "서울" }];
-    const { scrubbed } = buildColumnMeaningPrompt(columns, rows);
-    expect(scrubbed).toBe(false);
+    const { messages } = buildColumnMeaningPrompt(columns, rows);
+    expect(messages.find((message) => message.structuredContent)?.structuredContent).toEqual(rows);
   });
 });

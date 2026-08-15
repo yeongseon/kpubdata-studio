@@ -13,31 +13,67 @@ vi.mock("@/shared/lib/builderApi", () => ({
 }));
 
 import { generateBuildSpec } from "@/features/assistant/generate";
+import type { GenerationOptions } from "@/features/assistant/generate";
 import type { AssistProvider, AssistMessage } from "@/features/assistant/provider";
 import { scrubSecrets, restoreSecrets, isSecretKey, looksLikeSecret } from "@/features/assistant/scrub";
 
+const catalog = {
+  providers: [
+    {
+      name: "datago",
+      datasets: [
+        { name: "village_fcst", title: "단기예보", requires_service_key: true },
+      ],
+    },
+  ],
+};
+
+const validYaml = `dataset_id: test
+title: Test
+description: desc
+sources:
+  - key: s
+    provider: datago
+    dataset: village_fcst
+exports:
+  - kind: markdown
+    output_path: out.md
+`;
+
 function mockProvider(responses: string[]): AssistProvider {
   let idx = 0;
-  return {
+  const provider = {
     isConfigured: true,
+    exchange(messages: AssistMessage[]) {
+      return {
+        output: provider.stream(messages),
+        displayOutput: provider.stream(messages),
+        hadSecrets: false,
+        restoreText: (text: string) => text,
+      };
+    },
     async *stream(_messages: AssistMessage[]): AsyncIterable<string> {
       const resp = responses[idx++] ?? responses[responses.length - 1];
       for (const char of resp) {
         yield char;
       }
     },
-  };
+  } as unknown as AssistProvider;
+  return provider;
 }
 
 describe("generateBuildSpec (ST-A7, #210)", () => {
   it("returns valid spec when validate passes on first try", async () => {
-    const yaml = "dataset_id: test\ntitle: Test\ndescription: desc\nsources:\n  - key: s\n    provider: datago\n    dataset: village_fcst\nexports:\n  - kind: markdown\n    output_path: out.md\n";
-    const provider = mockProvider([yaml]);
-    const validateFn = vi.fn().mockResolvedValue({ valid: true });
+    const provider = mockProvider([validYaml]);
+    const validateFn = vi.fn().mockResolvedValue({
+      status: "valid",
+      dataset_id: "test",
+      api_version: "1.7.0",
+    });
 
     const result = await generateBuildSpec(provider, "weather data", {
       validateFn,
-      catalogContext: "datago: village_fcst",
+      catalog,
     });
 
     expect(result.status).toBe("ok");
@@ -47,27 +83,29 @@ describe("generateBuildSpec (ST-A7, #210)", () => {
   });
 
   it("retries when validate fails, succeeds on second attempt", async () => {
-    const badYaml = "invalid";
-    const goodYaml = "dataset_id: test\ntitle: Test\ndescription: desc\n";
-    const provider = mockProvider([badYaml, goodYaml]);
+    const provider = mockProvider([validYaml, validYaml]);
     const validateFn = vi
       .fn()
-      .mockResolvedValueOnce({ valid: false, problems: ["dataset_id is empty"] })
-      .mockResolvedValueOnce({ valid: true });
+      .mockResolvedValueOnce({ status: "invalid", problems: ["dataset_id is empty"] })
+      .mockResolvedValueOnce({
+        status: "valid",
+        dataset_id: "test",
+        api_version: "1.7.0",
+      });
 
-    const result = await generateBuildSpec(provider, "test", { validateFn });
+    const result = await generateBuildSpec(provider, "test", { catalog, validateFn });
 
     expect(result.status).toBe("ok");
     expect(result.attempts).toBe(2);
   });
 
   it("returns partial after max retries exhausted", async () => {
-    const provider = mockProvider(["bad1", "bad2", "bad3"]);
+    const provider = mockProvider([validYaml, validYaml, validYaml]);
     const validateFn = vi
       .fn()
-      .mockResolvedValue({ valid: false, problems: ["always fails"] });
+      .mockResolvedValue({ status: "invalid", problems: ["always fails"] });
 
-    const result = await generateBuildSpec(provider, "test", { validateFn });
+    const result = await generateBuildSpec(provider, "test", { catalog, validateFn });
 
     expect(result.status).toBe("partial");
     expect(result.attempts).toBe(3);
@@ -78,13 +116,178 @@ describe("generateBuildSpec (ST-A7, #210)", () => {
     mockState.realBuilderEnabled = false;
     const provider = mockProvider(["should not be called"]);
     const result = await generateBuildSpec(provider, "test", {
-      validateFn: vi.fn().mockResolvedValue({ valid: true }),
+      catalog,
+      validateFn: vi.fn().mockResolvedValue({
+        status: "valid",
+        dataset_id: "test",
+        api_version: "1.7.0",
+      }),
     });
     mockState.realBuilderEnabled = true;
 
     expect(result.status).toBe("error");
     expect(result.spec).toBeNull();
     expect(result.remaining_problems[0]).toContain("mock");
+  });
+
+  it("검증을 통과한 구조화 출력의 요청별 시크릿을 복원한다", async () => {
+    const placeholder = "__SCRUBBED_request-a_0__";
+    const provider = {
+      isConfigured: true,
+      exchange: () => ({
+        output: (async function* () {
+          yield validYaml.replace(
+            "    dataset: village_fcst",
+            `    dataset: village_fcst\n    params:\n      serviceKey: ${placeholder}`,
+          );
+        })(),
+        displayOutput: (async function* () {})(),
+        hadSecrets: true,
+        restoreText: (text: string) => text.replace(placeholder, "original-service-key"),
+      }),
+      stream: async function* () {},
+    } as unknown as AssistProvider;
+
+    const result = await generateBuildSpec(provider, "기존 스펙을 수정해줘", {
+      catalog,
+      validateFn: vi.fn().mockResolvedValue({
+        status: "valid",
+        dataset_id: "test",
+        api_version: "1.7.0",
+      }),
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.spec).toContain("serviceKey: original-service-key");
+    expect(result.spec).not.toContain("__SCRUBBED_");
+  });
+
+  it("알 수 없는 플레이스홀더가 남은 출력은 error로 처리한다", async () => {
+    const provider = {
+      isConfigured: true,
+      exchange: () => ({
+        output: (async function* () {
+          yield validYaml.replace(
+            "    dataset: village_fcst",
+            "    dataset: village_fcst\n    params:\n      serviceKey: __SCRUBBED_another-request_0__",
+          );
+        })(),
+        displayOutput: (async function* () {})(),
+        hadSecrets: true,
+        restoreText: () => {
+          throw new Error("알 수 없는 시크릿 플레이스홀더가 포함되어 있습니다.");
+        },
+      }),
+      stream: async function* () {},
+    } as unknown as AssistProvider;
+
+    const result = await generateBuildSpec(provider, "기존 스펙을 수정해줘", {
+      catalog,
+      validateFn: vi.fn().mockResolvedValue({
+        status: "valid",
+        dataset_id: "test",
+        api_version: "1.7.0",
+      }),
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.spec).toBeNull();
+    expect(result.remaining_problems[0]).toContain("알 수 없는 시크릿");
+  });
+
+  it("카탈로그에 없는 provider는 repair 후 partial 처리한다", async () => {
+    const unknownProvider = validYaml.replace("provider: datago", "provider: invented");
+    const provider = mockProvider([unknownProvider, unknownProvider, unknownProvider]);
+    const validateFn = vi.fn();
+
+    const result = await generateBuildSpec(provider, "test", { catalog, validateFn });
+
+    expect(result.status).toBe("partial");
+    expect(result.remaining_problems[0]).toContain("카탈로그에 없는 provider");
+    expect(validateFn).not.toHaveBeenCalled();
+  });
+
+  it("provider에 속하지 않은 dataset은 Builder 검증 전에 차단한다", async () => {
+    const unknownDataset = validYaml.replace("dataset: village_fcst", "dataset: invented");
+    const provider = mockProvider([unknownDataset, unknownDataset, unknownDataset]);
+    const validateFn = vi.fn();
+
+    const result = await generateBuildSpec(provider, "test", { catalog, validateFn });
+
+    expect(result.status).toBe("partial");
+    expect(result.remaining_problems[0]).toContain("provider 'datago'에 없는 dataset");
+    expect(validateFn).not.toHaveBeenCalled();
+  });
+
+  it("빈 카탈로그에서는 LLM을 호출하지 않고 fail-closed한다", async () => {
+    const provider = mockProvider([validYaml]);
+    const validateFn = vi.fn();
+
+    const result = await generateBuildSpec(provider, "test", {
+      catalog: { providers: [] },
+      validateFn,
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.attempts).toBe(0);
+    expect(result.remaining_problems[0]).toContain("카탈로그를 조회할 수 없어");
+    expect(validateFn).not.toHaveBeenCalled();
+  });
+
+  it("Builder error는 repair problem으로 바꾸지 않고 즉시 error 처리한다", async () => {
+    const provider = mockProvider([validYaml]);
+    const result = await generateBuildSpec(provider, "test", {
+      catalog,
+      validateFn: vi.fn().mockResolvedValue({ status: "error", error: "service unavailable" }),
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.attempts).toBe(1);
+    expect(result.remaining_problems).toEqual(["service unavailable"]);
+  });
+
+  it("validation transport 실패는 repair하지 않고 즉시 error 처리한다", async () => {
+    const provider = mockProvider([validYaml, validYaml]);
+    const result = await generateBuildSpec(provider, "test", {
+      catalog,
+      validateFn: vi.fn().mockRejectedValue(new Error("Builder API에 연결하지 못했습니다.")),
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.attempts).toBe(1);
+    expect(result.remaining_problems[0]).toContain("연결하지 못했습니다");
+  });
+
+  it("런타임에서 validator가 누락되어도 ok를 반환하지 않는다", async () => {
+    const callWithoutValidator = generateBuildSpec as unknown as (
+      provider: AssistProvider,
+      prompt: string,
+      options: Partial<GenerationOptions>,
+    ) => ReturnType<typeof generateBuildSpec>;
+
+    const result = await callWithoutValidator(mockProvider([validYaml]), "test", { catalog });
+
+    expect(result.status).toBe("error");
+    expect(result.attempts).toBe(0);
+    expect(result.remaining_problems[0]).toContain("/validate 연결이 없어");
+  });
+
+  it("validation에 AbortSignal을 전달한다", async () => {
+    const provider = mockProvider([validYaml]);
+    const controller = new AbortController();
+    const validateFn = vi.fn().mockResolvedValue({
+      status: "valid",
+      dataset_id: "test",
+      api_version: "1.7.0",
+    });
+
+    await generateBuildSpec(provider, "test", {
+      catalog,
+      validateFn,
+      signal: controller.signal,
+    });
+
+    expect(validateFn).toHaveBeenCalledWith(validYaml.trim(), controller.signal);
   });
 });
 
