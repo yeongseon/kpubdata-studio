@@ -17,6 +17,7 @@ import { persist } from "zustand/middleware";
 import { useAssistConfig } from "@/features/assistant/config";
 import { createProvider } from "@/features/assistant/provider";
 import { contextsMatch, resolveKubiContext } from "./context";
+import { buildKubiDemoResponse, isKubiDemoAvailable, runKubiDemoQuery } from "./demo";
 import { loadKubiEvidence } from "./evidence";
 import { buildKubiMessages } from "./prompt";
 import { parseKubiResponse } from "./parseResponse";
@@ -84,7 +85,11 @@ export interface UseKubiSessionResult {
   onboarded: boolean;
   turns: KubiTurn[];
   isConfigured: boolean;
+  /** mock Builder 모드에서만 true — BYOK 없이 `askDemo`를 쓸 수 있는지 UI가 판단하는 데 쓴다. */
+  isDemoAvailable: boolean;
   ask: (question: string) => Promise<void>;
+  /** BYOK/LLM 없이 mock evidence만으로 결정적 데모 답변을 만든다(`features/kubi/demo.ts`). */
+  askDemo: (question: string) => Promise<void>;
   cancel: (turnId: string) => void;
   isStale: (turn: KubiTurn) => boolean;
   executeQuery: (turnId: string) => Promise<void>;
@@ -225,6 +230,50 @@ export function useKubiSession(): UseKubiSessionResult {
     [liveContext, isConfigured, baseUrlSafe, baseUrlError, apiKey, model, baseUrl, addTurn, updateTurn, setOnboarded],
   );
 
+  const askDemo = useCallback(
+    async (question: string) => {
+      if (!isKubiDemoAvailable()) return;
+      const trimmed = question.trim();
+      if (!trimmed) return;
+      setOnboarded();
+
+      const turnId = newTurnId();
+      const context = liveContext;
+      const turn: KubiTurn = {
+        id: turnId,
+        question: trimmed,
+        context,
+        createdAt: new Date().toISOString(),
+        status: "loading",
+        query: { status: "idle" },
+        actionStates: {},
+        isDemo: true,
+      };
+      addTurn(turn);
+
+      const controller = new AbortController();
+      controllersRef.current.set(turnId, controller);
+      try {
+        const { evidence } = await loadKubiEvidence(context, controller.signal);
+        const response = buildKubiDemoResponse(evidence);
+        updateTurn(turnId, (t) => ({ ...t, status: "ok", evidence, response }));
+      } catch (cause) {
+        if (controller.signal.aborted) {
+          updateTurn(turnId, (t) => ({ ...t, status: "error", error: { kind: "cancelled" } }));
+          return;
+        }
+        updateTurn(turnId, (t) => ({
+          ...t,
+          status: "error",
+          error: { kind: "llm_error", message: cause instanceof Error ? cause.message : "데모 evidence 조회에 실패했습니다." },
+        }));
+      } finally {
+        controllersRef.current.delete(turnId);
+      }
+    },
+    [liveContext, addTurn, updateTurn, setOnboarded],
+  );
+
   const cancel = useCallback((turnId: string) => {
     controllersRef.current.get(turnId)?.abort();
   }, []);
@@ -242,6 +291,14 @@ export function useKubiSession(): UseKubiSessionResult {
         return;
       }
       updateTurn(turnId, (t) => ({ ...t, query: { status: "running" } }));
+
+      // 데모 turn은 Builder `/query`를 호출하지 않는다 — 고정된 mock 결과만 보여준다(#256 데모).
+      if (turn.isDemo) {
+        const result = await runKubiDemoQuery();
+        updateTurn(turnId, (t) => ({ ...t, query: result }));
+        return;
+      }
+
       const controller = new AbortController();
       controllersRef.current.set(`${turnId}:query`, controller);
       const result = await runKubiQuery(turn.context, sql, controller.signal);
@@ -385,7 +442,9 @@ export function useKubiSession(): UseKubiSessionResult {
     onboarded,
     turns,
     isConfigured,
+    isDemoAvailable: isKubiDemoAvailable(),
     ask,
+    askDemo,
     cancel,
     isStale,
     executeQuery,

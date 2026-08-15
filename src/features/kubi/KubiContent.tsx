@@ -5,15 +5,20 @@
  * Kubi 시스템을 만들지 않는다. `compact`는 drawer(좁은 폭)와 페이지(넓은 폭) 레이아웃만
  * 다르게 하고, 상태 로직은 전부 `useKubiSession`에 있다.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { SpecDiff } from "@/features/build-spec/components/SpecDiff";
 import { useAssistConfig } from "@/features/assistant/config";
 import { Button, Card } from "@/shared/ui";
 import { describeAction } from "./actions";
+import { relatedCatalogDatasets } from "./relatedDatasets";
 import type { KubiAction } from "./schema";
+import { summarizeKubiQuality } from "./types";
 import type { KubiActionRunState, KubiContext, KubiErrorState, KubiQueryState, KubiTurn } from "./types";
 import { useKubiSession } from "./useKubiSession";
+
+/** 데모 CTA와 onboarding 예시 질문이 함께 쓰는 기본 질문(mock evidence만으로도 답이 나온다). */
+const DEMO_QUESTION = "이 데이터셋 품질 어때?";
 
 const SUGGESTED_QUESTIONS = [
   "현재 화면 문맥을 요약해줘.",
@@ -22,23 +27,31 @@ const SUGGESTED_QUESTIONS = [
   "이 데이터로 어떤 걸 SQL로 확인할 수 있을지 제안해줘.",
 ];
 
-function ContextBar({ context, pageLabel }: { context: KubiContext; pageLabel: string }) {
+/**
+ * 프로토타입 구조(DATASET/BUILD(RUN)/STAGE/QUALITY 4칸)를 따르는 context bar (#256 review).
+ * PAGE는 프로토타입에서도 별도 grid cell이 아니라 drawer 헤더의 보조 캡션이었으므로, 여기서도
+ * 작은 캡션 한 줄로만 표시한다 — 4칸을 차지하지 않는다.
+ */
+function ContextBar({ context, pageLabel, qualityLabel }: { context: KubiContext; pageLabel: string; qualityLabel: string }) {
   const cells: { label: string; value: string }[] = [
-    { label: "PAGE", value: pageLabel },
     { label: "DATASET", value: context.datasetId ?? "—" },
     { label: "RUN", value: context.runId ?? "—" },
     { label: "STAGE", value: context.stage ?? "—" },
+    { label: "QUALITY", value: qualityLabel },
   ];
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      {cells.map((cell) => (
-        <div key={cell.label} className="rounded-lg border border-border bg-muted/40 px-2.5 py-2">
-          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{cell.label}</p>
-          <p className="mt-0.5 truncate text-xs font-medium text-foreground" title={cell.value}>
-            {cell.value}
-          </p>
-        </div>
-      ))}
+    <div>
+      <p className="mb-1.5 text-[10px] text-muted-foreground">현재 화면 · {pageLabel}</p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {cells.map((cell) => (
+          <div key={cell.label} className="rounded-lg border border-border bg-muted/40 px-2.5 py-2">
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{cell.label}</p>
+            <p className="mt-0.5 truncate text-xs font-medium text-foreground" title={cell.value}>
+              {cell.value}
+            </p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -317,6 +330,11 @@ function TurnCard({ turn, session }: { turn: KubiTurn; session: ReturnType<typeo
       </div>
 
       <div className="max-w-[92%] rounded-lg border border-border bg-card px-3 py-2 text-xs">
+        {turn.isDemo ? (
+          <p className="mb-1.5 mr-1.5 inline-block rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
+            DEMO · mock 데이터(실제 분석 아님)
+          </p>
+        ) : null}
         {stale ? (
           <p className="mb-1.5 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
             이전 화면 기준
@@ -409,17 +427,60 @@ export function KubiContent({ compact = false }: KubiContentProps) {
   const { isConfigured } = useAssistConfig();
   const [input, setInput] = useState("");
 
+  // BYOK가 없어도 mock 모드에서는 데모로 질문을 보낼 수 있다(#256 데모, real mode는 항상 BYOK 필요).
+  const canSubmit = isConfigured || session.isDemoAvailable;
+
+  // context bar의 QUALITY 칸: 현재 문맥과 일치하는(=stale 아닌) 가장 최근 turn의 evidence에서만 채운다.
+  // route만으로는 quality를 알 수 없으므로, evidence가 아직 없으면 꾸며내지 않고 "—"로 둔다.
+  const qualityLabel = useMemo(() => {
+    for (let i = session.turns.length - 1; i >= 0; i -= 1) {
+      const turn = session.turns[i];
+      if (turn.evidence && !session.isStale(turn)) return summarizeKubiQuality(turn.evidence.quality);
+    }
+    return "—";
+  }, [session.turns, session.isStale]);
+
+  // "관련 데이터셋" 후보: LLM이 아니라 가장 최근 non-stale turn의 실제 catalog evidence만 근거로
+  // 계산한다(#256 이슈 체크리스트, relatedDatasets.ts). turn이 아직 없으면(=evidence 미조회)
+  // 빈 배열로 두고, 아래에서 그 이유를 그대로 안내한다 — 추측해서 채우지 않는다.
+  const relatedDatasets = useMemo(() => {
+    for (let i = session.turns.length - 1; i >= 0; i -= 1) {
+      const turn = session.turns[i];
+      if (turn.evidence && !session.isStale(turn)) return relatedCatalogDatasets(turn.evidence);
+    }
+    return [];
+  }, [session.turns, session.isStale]);
+
   function submit(question: string) {
     setInput("");
+    if (!isConfigured && session.isDemoAvailable) {
+      void session.askDemo(question);
+      return;
+    }
     void session.ask(question);
   }
 
   return (
     <div className={compact ? "flex flex-col gap-4" : "grid gap-4 lg:grid-cols-[1fr_280px]"}>
       <div className="flex min-w-0 flex-col gap-4">
-        <ContextBar context={session.liveContext} pageLabel={session.pageLabel} />
+        <ContextBar context={session.liveContext} pageLabel={session.pageLabel} qualityLabel={qualityLabel} />
 
-        {!isConfigured ? <ApiKeySetup /> : null}
+        {!isConfigured ? (
+          <div className="space-y-3">
+            <ApiKeySetup />
+            {session.isDemoAvailable ? (
+              <Card variant="dashed" className="space-y-2 p-4">
+                <p className="text-sm font-semibold">API Key 없이 먼저 데모로 보기</p>
+                <p className="text-xs text-muted-foreground">
+                  mock 데이터 기반 예시 응답입니다 — 실제 분석 결과가 아닙니다. dev/mock 모드에서만 제공됩니다.
+                </p>
+                <Button size="sm" variant="secondary" onClick={() => submit(DEMO_QUESTION)}>
+                  데모 질문 보내보기
+                </Button>
+              </Card>
+            ) : null}
+          </div>
+        ) : null}
 
         {session.turns.length === 0 && !session.onboarded ? (
           <Card className="space-y-2 border-dashed p-4">
@@ -432,7 +493,7 @@ export function KubiContent({ compact = false }: KubiContentProps) {
                   type="button"
                   className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-accent hover:text-foreground"
                   onClick={() => submit(question)}
-                  disabled={!isConfigured}
+                  disabled={!canSubmit}
                 >
                   {question}
                 </button>
@@ -457,12 +518,12 @@ export function KubiContent({ compact = false }: KubiContentProps) {
           <input
             aria-label="Kubi에게 질문하기"
             className="h-9 flex-1 rounded-lg border border-input bg-card px-3 text-sm text-foreground"
-            disabled={!isConfigured}
+            disabled={!canSubmit}
             onChange={(event) => setInput(event.target.value)}
-            placeholder={isConfigured ? "질문을 입력하세요…" : "먼저 API Key를 설정하세요"}
+            placeholder={isConfigured ? "질문을 입력하세요…" : canSubmit ? "질문을 입력하세요… (데모 · mock 데이터)" : "먼저 API Key를 설정하세요"}
             value={input}
           />
-          <Button type="submit" disabled={!isConfigured || !input.trim()}>
+          <Button type="submit" disabled={!canSubmit || !input.trim()}>
             전송
           </Button>
         </form>
@@ -479,7 +540,7 @@ export function KubiContent({ compact = false }: KubiContentProps) {
                   type="button"
                   className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-accent hover:text-foreground"
                   onClick={() => submit(question)}
-                  disabled={!isConfigured}
+                  disabled={!canSubmit}
                 >
                   {question}
                 </button>
@@ -497,6 +558,31 @@ export function KubiContent({ compact = false }: KubiContentProps) {
               </Link>
             </div>
           ) : null}
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">관련 데이터셋</p>
+            {relatedDatasets.length > 0 ? (
+              <ul className="mt-2 space-y-1.5">
+                {relatedDatasets.map((candidate) => (
+                  <li
+                    key={`${candidate.provider}::${candidate.dataset}`}
+                    className="flex items-center justify-between gap-2 border-b border-border/60 pb-1.5 text-xs last:border-0 last:pb-0"
+                  >
+                    <span className="truncate text-muted-foreground" title={candidate.dataset}>
+                      {candidate.dataset}
+                    </span>
+                    <span className="shrink-0 font-medium text-foreground">{candidate.provider}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {session.liveContext.datasetId
+                  ? "질문을 보내 evidence를 불러오면 같은 provider의 다른 데이터셋 후보를 확인할 수 있습니다."
+                  : "Dataset을 선택하면 실제 catalog와 대조한 관련 데이터셋 후보를 확인할 수 있습니다."}
+              </p>
+            )}
+          </div>
         </Card>
       ) : null}
     </div>

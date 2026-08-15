@@ -60,6 +60,8 @@ export interface KubiEvidence {
     datasetId: string;
     title: string;
     providers: string[];
+    /** provider+source dataset명 쌍. 관련 데이터셋 후보 계산 시 "자기 자신"을 제외하는 데 쓴다. */
+    sources: { provider: string; dataset: string }[];
     latestRunId: string;
     status: string;
     updatedAt: string | null;
@@ -188,4 +190,24 @@ export interface KubiTurn {
   rawOutput?: string;
   query: KubiQueryState;
   actionStates: Record<number, KubiActionRunState>;
+  /**
+   * true면 이 turn은 실제 LLM/Builder `/query`를 호출하지 않은 mock 데모다(`features/kubi/demo.ts`).
+   * mock Builder 모드에서 BYOK 없이 evidence→응답→Generated SQL 흐름을 보여주기 위한 것으로,
+   * "실제 결과"와 혼동되지 않도록 UI가 이 값을 보고 항상 데모 표시를 해야 한다.
+   */
+  isDemo?: boolean;
+}
+
+/**
+ * evidence의 quality 결과를 context bar/데모 응답에 쓸 짧은 요약으로 바꾼다.
+ * 평가된 rule이 없거나 조회하지 못했으면 "—"(N/A) — PASS/0%로 꾸며내지 않는다.
+ */
+export function summarizeKubiQuality(quality: KubiEvidence["quality"]): string {
+  if (!quality || quality.availability === "unavailable") return "—";
+  const failCount = quality.results.filter((result) => result.status === "fail").length;
+  if (failCount > 0) return `${failCount} FAIL`;
+  const warnCount = quality.results.filter((result) => result.status === "warn").length;
+  if (warnCount > 0) return `${warnCount} WARN`;
+  if (quality.evaluatedChecks > 0) return "PASS";
+  return "—";
 }

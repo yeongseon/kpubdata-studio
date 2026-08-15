@@ -363,6 +363,61 @@ describe("useKubiSession — Generated SQL execution via Builder /query (#256, b
   });
 });
 
+describe("useKubiSession — askDemo (#256 review, mock mode Kubi 데모)", () => {
+  it("works without any API key configured and never calls the LLM provider", async () => {
+    vi.mocked(createProvider).mockClear();
+    const { result } = renderHook(() => useKubiSession(), {
+      wrapper: makeWrapper("/datasets/air-quality?run=air-2026-08-14&stage=silver"),
+    });
+    expect(result.current.isConfigured).toBe(false);
+    expect(result.current.isDemoAvailable).toBe(true);
+
+    await act(async () => {
+      await result.current.askDemo("이 데이터셋 품질 어때?");
+    });
+
+    expect(createProvider).not.toHaveBeenCalled();
+    expect(result.current.turns[0]).toMatchObject({ status: "ok", isDemo: true });
+    expect(result.current.turns[0].response?.answer).toContain("[DEMO]");
+    // 실제 mock evidence(features/datasets/api)를 그대로 근거로 쓴다 — 별도로 지어내지 않는다.
+    expect(result.current.turns[0].evidence?.dataset?.datasetId).toBe("air-quality");
+  });
+
+  it("is unavailable in real mode — askDemo becomes a no-op so real mode always requires BYOK", async () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    const { result } = renderHook(() => useKubiSession(), { wrapper: makeWrapper("/datasets/air-quality") });
+    expect(result.current.isDemoAvailable).toBe(false);
+
+    await act(async () => {
+      await result.current.askDemo("이 데이터셋 품질 어때?");
+    });
+
+    expect(result.current.turns).toHaveLength(0);
+  });
+
+  it("executing a demo turn's Generated SQL returns a fixed mock result without calling Builder /query", async () => {
+    // evidence 조회(catalog 등)는 그대로 mock 경로를 타지만, 데모는 절대 실제 /query를 호출하지 않는다.
+    const fetchMock = vi.fn(async (_input: unknown) => new Response(null, { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useKubiSession(), {
+      wrapper: makeWrapper("/datasets/air-quality?run=air-2026-08-14&stage=silver"),
+    });
+    await act(async () => {
+      await result.current.askDemo("지역별 분포 보여줘");
+    });
+    expect(result.current.turns[0].response?.generatedSql).not.toBeNull();
+
+    await act(async () => {
+      await result.current.executeQuery(result.current.turns[0].id);
+    });
+
+    expect(result.current.turns[0].query).toMatchObject({ status: "success" });
+    const queryCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes("/query"));
+    expect(queryCalls).toHaveLength(0);
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("useKubiSession — Suggested Actions require approval (#256)", () => {
   it("does not navigate until approveAction is called (approval required)", async () => {
     configureKey();

@@ -83,6 +83,7 @@ export async function loadKubiEvidence(
         datasetId: dataset.dataset_id,
         title: dataset.title,
         providers: dataset.sources.map((s) => s.provider),
+        sources: dataset.sources.map((s) => ({ provider: s.provider, dataset: s.dataset })),
         latestRunId: dataset.latest_run_id,
         status: dataset.status,
         updatedAt: dataset.updated_at,

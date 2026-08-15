@@ -34,8 +34,11 @@ describe("global Kubi drawer (#247)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Kubi 열기" }));
 
     const dialog = screen.getByRole("dialog", { name: "Kubi AI Assistant" });
-    expect(within(dialog).getByText("PAGE")).toBeInTheDocument();
-    expect(within(dialog).getByText("Quality")).toBeInTheDocument();
+    // PAGE는 프로토타입처럼 grid cell이 아니라 보조 캡션으로만 표시된다(#256 review).
+    expect(within(dialog).getByText("현재 화면 · Quality")).toBeInTheDocument();
+    // context bar는 프로토타입 구조(DATASET/RUN/STAGE/QUALITY)를 따른다.
+    expect(within(dialog).getByText("DATASET")).toBeInTheDocument();
+    expect(within(dialog).getByText("QUALITY")).toBeInTheDocument();
   });
 
   it("closes on Escape", () => {
