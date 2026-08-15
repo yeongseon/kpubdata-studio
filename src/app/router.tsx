@@ -24,6 +24,7 @@ import { NewBuildPage } from "@/pages/NewBuildPage";
 import { PreviewPage } from "@/pages/PreviewPage";
 import { ProviderPage } from "@/pages/ProviderPage";
 import { QualityPage } from "@/pages/QualityPage";
+import { ReportEditorPage } from "@/pages/ReportEditorPage";
 import { ReportsPage } from "@/pages/ReportsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { ValidatePage } from "@/pages/ValidatePage";
@@ -125,6 +126,10 @@ export const router = createBrowserRouter([
       {
         path: "reports",
         element: withFeatureBoundary("Reports", <ReportsPage />),
+      },
+      {
+        path: "reports/:reportId",
+        element: withFeatureBoundary("Report 편집", <ReportEditorPage />),
       },
       // 새 IA의 SYSTEM 그룹(#259/#264에서 실제 기능 구현).
       {

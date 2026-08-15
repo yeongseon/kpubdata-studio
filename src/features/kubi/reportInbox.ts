@@ -60,3 +60,24 @@ export function queueKubiReportNote(note: KubiReportNote): void {
 export function listKubiReportNotes(): KubiReportNote[] {
   return readEnvelope().notes;
 }
+
+/**
+ * 큐에서 노트 하나를 제거한다 (#258 — Reports 편집기가 노트를 Report에 KUBI_INTERPRETATION
+ * 블록으로 승인·반영한 뒤 호출한다). index가 아니라 값 자체로 찾는다 — 승인 사이에 다른 탭이
+ * 큐에 새 노트를 추가해 index가 밀렸을 가능성을 피하기 위함이다. 이미 없어졌으면(다른 탭이
+ * 먼저 소비) 조용히 무시한다.
+ */
+export function removeKubiReportNote(note: KubiReportNote): void {
+  try {
+    const envelope = readEnvelope();
+    const index = envelope.notes.findIndex(
+      (candidate) =>
+        candidate.savedAt === note.savedAt && candidate.note === note.note && candidate.reason === note.reason,
+    );
+    if (index === -1) return;
+    envelope.notes.splice(index, 1);
+    localStorage.setItem(INBOX_KEY, JSON.stringify(envelope));
+  } catch {
+    // localStorage 사용 불가 시 무시.
+  }
+}
