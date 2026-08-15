@@ -15,7 +15,13 @@ function renderLayoutAt(path: string) {
 describe("Layout header CTA (#49)", () => {
   beforeEach(() => {
     // jsdom에 matchMedia가 없으므로 system 분기를 피하도록 light로 고정한다.
-    act(() => useUIStore.setState({ theme: "light", isSidebarOpen: false }));
+    act(() =>
+      useUIStore.setState({
+        theme: "light",
+        isMobileSidebarOpen: false,
+        isKubiDrawerOpen: false,
+      }),
+    );
   });
 
   it("links to New Build from the dashboard", () => {

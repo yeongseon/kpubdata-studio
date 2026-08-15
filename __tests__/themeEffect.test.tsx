@@ -12,7 +12,7 @@ import { useUIStore } from "@/shared/hooks/useUIStore";
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
-  useUIStore.setState({ theme: "system", isSidebarOpen: false });
+  useUIStore.setState({ theme: "system", isMobileSidebarOpen: false });
   // jsdom에는 matchMedia가 없으므로 system 모드 구독용으로 스텁한다.
   vi.stubGlobal(
     "matchMedia",

@@ -8,6 +8,7 @@ export { LinkButton, type LinkButtonProps } from "./LinkButton";
 export { buttonClassName } from "./buttonStyles";
 export { Card, type CardProps, type CardVariant } from "./Card";
 export { PageHeader, type PageHeaderProps } from "./PageHeader";
+export { PlaceholderPage, type PlaceholderPageProps } from "./PlaceholderPage";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { StatusBadge, type StatusBadgeProps, type StatusValue } from "./StatusBadge";
 export { Stepper, type StepperProps, type StepItem, type StepState } from "./Stepper";
