@@ -8,7 +8,14 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { looksLikeSecret, restoreSecrets, scrubSecrets, scrubSecretsInText } from "./scrub";
+import {
+  createSecretScrubber,
+  hasSecretPlaceholder,
+  looksLikeSecret,
+  redactSecrets,
+  restoreSecrets,
+  scrubSecrets,
+} from "./scrub";
 
 const SAMPLE_SERVICE_KEY =
   "9dF8kQ2mZ7xV3nL1pR4wY6tB0hJ5sC8gU2iE7oA9bN3cM6dP4qK1rS8tU0vW3xY5z";
@@ -68,6 +75,31 @@ describe("restoreSecrets — 배열 왕복 회귀 (#226 결함 c)", () => {
     const restored = restoreSecrets(scrubbed, placeholders);
     expect(restored).toEqual(original);
   });
+
+  it("다른 요청이 만든 플레이스홀더를 복원하지 않는다", () => {
+    const requestA = createSecretScrubber("request-a");
+    const requestB = createSecretScrubber("request-b");
+    const scrubbed = requestA.scrub({ serviceKey: "test-key" }) as {
+      serviceKey: string;
+    };
+
+    expect(() => requestB.restore(scrubbed)).toThrow("알 수 없는 시크릿");
+  });
+
+  it("문자열 응답의 알려진 플레이스홀더만 복원한다", () => {
+    const scrubber = createSecretScrubber("request-a");
+    const scrubbed = scrubber.scrub({ serviceKey: "test-key" }) as {
+      serviceKey: string;
+    };
+
+    expect(scrubber.restoreText(`serviceKey: ${scrubbed.serviceKey}`)).toBe(
+      "serviceKey: test-key",
+    );
+    expect(() => scrubber.restoreText("__SCRUBBED_request-b_0__")).toThrow(
+      "알 수 없는 시크릿",
+    );
+    expect(hasSecretPlaceholder(scrubbed)).toBe(true);
+  });
 });
 
 describe("looksLikeSecret — Shannon 엔트로피 (#226 결함 d)", () => {
@@ -90,26 +122,15 @@ describe("looksLikeSecret — Shannon 엔트로피 (#226 결함 d)", () => {
   });
 });
 
-describe("scrubSecretsInText — 자유 텍스트 토큰 단위 스크럽 (#277 리뷰)", () => {
-  it("공백 없는 고엔트로피 토큰만 마스킹하고 나머지 문장은 그대로 둔다", () => {
-    const text = `내 서비스 키는 ${SAMPLE_SERVICE_KEY} 입니다.`;
-    const scrubbed = scrubSecretsInText(text);
-    expect(scrubbed).not.toContain(SAMPLE_SERVICE_KEY);
-    expect(scrubbed).toContain("내 서비스 키는");
-    expect(scrubbed).toContain("입니다.");
-  });
+describe("redactSecrets — 화면용 비가역 마스킹 (#277)", () => {
+  it("structured evidence의 시크릿을 placeholder 대신 REDACTED로 바꾼다", () => {
+    const redacted = redactSecrets({
+      sources: [{ params: { serviceKey: SAMPLE_SERVICE_KEY }, title: "대기질" }],
+    });
 
-  it("공백 없이 통짜로 붙은 시크릿 값도 마스킹한다", () => {
-    expect(scrubSecretsInText(SAMPLE_SERVICE_KEY)).not.toContain(SAMPLE_SERVICE_KEY);
-  });
-
-  it("정상 한국어 문장은 오탐하지 않는다(Kubi/AssistantChat 회귀)", () => {
-    const text = "대기질 데이터셋의 최근 실행 상태를 알려줘. 지난주 대비 결측치가 늘었는지도 궁금해.";
-    expect(scrubSecretsInText(text)).toBe(text);
-  });
-
-  it("정상 영어 문장도 오탐하지 않는다", () => {
-    const text = "Please summarize the latest build failure and suggest the next action.";
-    expect(scrubSecretsInText(text)).toBe(text);
+    expect(redacted).toEqual({
+      sources: [{ params: { serviceKey: "[REDACTED]" }, title: "대기질" }],
+    });
+    expect(JSON.stringify(redacted)).not.toContain("__SCRUBBED_");
   });
 });

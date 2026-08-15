@@ -38,8 +38,9 @@ describe("buildKubiMessages (#256 프롬프트)", () => {
     });
     const messages = buildKubiMessages("서울 데이터 보여줘", evidence);
     expect(messages).toHaveLength(3);
-    expect(messages[1].content).toContain("EVIDENCE START");
-    expect(messages[1].content).toContain("datago__air");
+    expect(messages[1].content).toContain("structured content");
+    expect(messages[1].structuredContent).toEqual(evidence);
+    expect(messages[1].content).not.toContain("datago__air");
     expect(messages[2].content).toContain("USER QUESTION START");
     expect(messages[2].content).toContain("서울 데이터 보여줘");
   });

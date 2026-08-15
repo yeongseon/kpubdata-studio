@@ -84,8 +84,7 @@ describe("loadKubiEvidence (#256)", () => {
   it("scrubs any residual secret-shaped values as a defense-in-depth pass", async () => {
     const context: KubiContext = { page: "dataset-detail", datasetId: "air-quality", runId: "air-2026-08-14" };
     const { evidence } = await loadKubiEvidence(context);
-    // scrubSecrets가 적용됐다면 이 필드는 항상 원본 문자열이거나(시크릿처럼 보이지 않으면) 마스킹된 placeholder다.
-    expect(JSON.stringify(evidence)).not.toMatch(/__SCRUBBED_UNDEFINED__/);
+    expect(JSON.stringify(evidence)).not.toContain("__SCRUBBED_");
   });
 
   it("omits stage/buildSpecSummary/quality when the context has no runId at all", async () => {

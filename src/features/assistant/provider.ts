@@ -6,16 +6,28 @@
  *
  * **공용 키를 VITE_*로 주입하는 것은 절대 금지** — 번들에 평문으로 박힌다.
  */
+import { createSecretScrubber, type SecretScrubber } from "./scrub";
 
 import { checkLlmBaseUrl, redactApiKey, DEFAULT_LLM_BASE_URL } from "./baseUrl";
-import { scrubSecretsInText } from "./scrub";
 
 export interface AssistMessage {
   role: "system" | "user" | "assistant";
   content: string;
+  structuredContent?: unknown;
 }
 
+export interface AssistExchange {
+  readonly output: AsyncIterable<string>;
+  readonly displayOutput: AsyncIterable<string>;
+  readonly hadSecrets: boolean;
+  restoreText(text: string): string;
+}
+
+const SAFE_PROVIDER: unique symbol = Symbol("safe-assist-provider");
+
 export interface AssistProvider {
+  readonly [SAFE_PROVIDER]: true;
+  exchange(messages: AssistMessage[], signal?: AbortSignal): AssistExchange;
   stream(messages: AssistMessage[], signal?: AbortSignal): AsyncIterable<string>;
   readonly isConfigured: boolean;
 }
@@ -49,7 +61,12 @@ export function describeLlmHttpError(status: number): string {
   return `LLM API 호출에 실패했습니다. (status ${status})`;
 }
 
-export class ByokProvider implements AssistProvider {
+interface AssistTransport {
+  stream(messages: AssistMessage[], signal?: AbortSignal): AsyncIterable<string>;
+  readonly isConfigured: boolean;
+}
+
+class ByokTransport implements AssistTransport {
   constructor(private config: AssistConfig) {}
 
   get isConfigured(): boolean {
@@ -64,18 +81,6 @@ export class ByokProvider implements AssistProvider {
       throw new Error(`LLM base URL이 안전하지 않습니다: ${check.reason}`);
     }
 
-    // Fail-closed 시크릿 스크럽(#277 리뷰): Kubi evidence(loadKubiEvidence)나 AssistantChat의
-    // contextSpec 처리 등 caller가 이미 구조화 scrub을 거쳐 messages를 만드는 게 정상 경로지만,
-    // 이 공통 전송 계층은 그 호출을 신뢰하지 않는다 — caller가 scrub을 빼먹어도 여기서 최종
-    // message.content를 한 번 더 훑어야 원문 secret이 실제로 fetch body에 실리는 걸 막을 수
-    // 있다. 문장 전체가 아니라 토큰 단위로 훑는다(`scrubSecretsInText`) — 자유 텍스트/한국어
-    // 문장 전체에 엔트로피 판정을 적용하면 정상 대화까지 오탐되기 때문이다. API Key 자체는
-    // Authorization 헤더로만 쓰이므로 이 스크럽 대상이 아니다.
-    const safeMessages: AssistMessage[] = messages.map((m) => ({
-      ...m,
-      content: scrubSecretsInText(m.content),
-    }));
-
     let response: Response;
     try {
       response = await fetch(`${check.resolvedUrl}/chat/completions`, {
@@ -86,7 +91,7 @@ export class ByokProvider implements AssistProvider {
         },
         body: JSON.stringify({
           model: this.config.model,
-          messages: safeMessages,
+          messages,
           stream: true,
         }),
         signal,
@@ -134,10 +139,82 @@ export class ByokProvider implements AssistProvider {
   }
 }
 
-export function createProvider(config: AssistConfig): AssistProvider {
-  return new ByokProvider({
-    ...config,
-    model: config.model || DEFAULT_MODEL,
-    baseUrl: config.baseUrl || DEFAULT_BASE_URL,
+function prepareMessages(messages: AssistMessage[], scrubber: SecretScrubber): AssistMessage[] {
+  return messages.map(({ role, content, structuredContent }) => {
+    const safeText = scrubber.scrubText(content);
+    if (structuredContent === undefined) return { role, content: safeText };
+    const safeStructured = scrubber.scrub(structuredContent);
+    return { role, content: `${safeText}\n${JSON.stringify(safeStructured, null, 2)}` };
   });
+}
+
+const PLACEHOLDER_PREFIX = "__SCRUBBED_";
+const COMPLETE_PLACEHOLDER = /^__SCRUBBED_[A-Za-z0-9-]+_\d+__/;
+
+async function* redactDisplayOutput(output: AsyncIterable<string>): AsyncIterable<string> {
+  let pending = "";
+  for await (const chunk of output) {
+    pending += chunk;
+    while (pending) {
+      const marker = pending.indexOf(PLACEHOLDER_PREFIX);
+      if (marker < 0) {
+        const safeLength = Math.max(0, pending.length - (PLACEHOLDER_PREFIX.length - 1));
+        if (safeLength > 0) {
+          yield pending.slice(0, safeLength);
+          pending = pending.slice(safeLength);
+        }
+        break;
+      }
+      if (marker > 0) {
+        yield pending.slice(0, marker);
+        pending = pending.slice(marker);
+      }
+      const placeholder = pending.match(COMPLETE_PLACEHOLDER)?.[0];
+      if (!placeholder) break;
+      yield "[REDACTED]";
+      pending = pending.slice(placeholder.length);
+    }
+  }
+
+  if (pending.startsWith(PLACEHOLDER_PREFIX)) {
+    yield pending.replace(/^__SCRUBBED_\S*/, "[REDACTED]");
+  } else if (pending) {
+    yield pending;
+  }
+}
+
+class SafeAssistProvider implements AssistProvider {
+  readonly [SAFE_PROVIDER] = true;
+
+  constructor(private transport: AssistTransport) {}
+
+  get isConfigured(): boolean {
+    return this.transport.isConfigured;
+  }
+
+  exchange(messages: AssistMessage[], signal?: AbortSignal): AssistExchange {
+    const scrubber = createSecretScrubber();
+    const safeMessages = prepareMessages(messages, scrubber);
+    const output = this.transport.stream(safeMessages, signal);
+    return {
+      output,
+      displayOutput: redactDisplayOutput(output),
+      hadSecrets: scrubber.placeholders.size > 0,
+      restoreText: (text) => scrubber.restoreText(text),
+    };
+  }
+
+  async *stream(messages: AssistMessage[], signal?: AbortSignal): AsyncIterable<string> {
+    yield* this.exchange(messages, signal).displayOutput;
+  }
+}
+
+export function createProvider(config: AssistConfig): AssistProvider {
+  return new SafeAssistProvider(
+    new ByokTransport({
+      ...config,
+      model: config.model || DEFAULT_MODEL,
+      baseUrl: config.baseUrl || DEFAULT_BASE_URL,
+    }),
+  );
 }

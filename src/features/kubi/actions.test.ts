@@ -141,6 +141,20 @@ describe("previewBuildSpecPatch / applyBuildSpecPatch (#256 §10)", () => {
     const result = await applyBuildSpecPatch("run-1", preview.after);
     expect(result.valid).toBe(true); // mock 모드에서는 항상 valid
   });
+
+  it("does not save an invalid approved patch", async () => {
+    saveBuildSpec("run-1", BASE_SPEC);
+    const invalid = { ...BASE_SPEC, title: "" };
+
+    const result = await applyBuildSpecPatch(
+      "run-1",
+      invalid,
+      async () => ({ valid: false, errors: ["title is required"] }),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(loadBuildSpec("run-1")).toEqual(BASE_SPEC);
+  });
 });
 
 describe("draftValuesFromAction / applyCreateBuildDraft (#256)", () => {
@@ -167,6 +181,33 @@ describe("draftValuesFromAction / applyCreateBuildDraft (#256)", () => {
     const stored = loadDraft(buildFormValuesSchema);
     expect(stored?.datasetId).toBe("d1");
   });
+
+  it("rejects credential and unresolved placeholder values", () => {
+    const base: Extract<KubiAction, { type: "CREATE_BUILD_DRAFT" }> = {
+      type: "CREATE_BUILD_DRAFT",
+      values: {
+        datasetId: "d1",
+        title: "t",
+        description: "d",
+        provider: "datago",
+        sourceDataset: "air_quality",
+      },
+      reason: "test",
+    };
+
+    expect(() =>
+      draftValuesFromAction({
+        ...base,
+        values: { ...base.values, sourceParams: '{"serviceKey":"secret"}' },
+      }),
+    ).toThrow(/credential/);
+    expect(() =>
+      draftValuesFromAction({
+        ...base,
+        values: { ...base.values, sourceParams: "__SCRUBBED_foreign_0__" },
+      }),
+    ).toThrow(/플레이스홀더/);
+  });
 });
 
 describe("applyAddReportBlock (#256, #258 handoff only)", () => {
@@ -180,6 +221,19 @@ describe("applyAddReportBlock (#256, #258 handoff only)", () => {
     const notes = listKubiReportNotes();
     expect(notes.at(-1)?.note).toBe(action.note);
     expect(notes.at(-1)?.context).toEqual({ datasetId: "d1", runId: "r1", stage: "gold" });
+  });
+
+  it("rejects unresolved placeholders in report notes", () => {
+    expect(() =>
+      applyAddReportBlock(
+        {
+          type: "ADD_REPORT_BLOCK",
+          note: "__SCRUBBED_foreign_0__",
+          reason: "test",
+        },
+        { page: "quality" },
+      ),
+    ).toThrow(/플레이스홀더/);
   });
 });
 
