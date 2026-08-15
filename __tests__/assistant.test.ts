@@ -18,15 +18,24 @@ import { scrubSecrets, restoreSecrets, isSecretKey, looksLikeSecret } from "@/fe
 
 function mockProvider(responses: string[]): AssistProvider {
   let idx = 0;
-  return {
+  const provider = {
     isConfigured: true,
+    exchange(messages: AssistMessage[]) {
+      return {
+        output: provider.stream(messages),
+        displayOutput: provider.stream(messages),
+        hadSecrets: false,
+        restoreText: (text: string) => text,
+      };
+    },
     async *stream(_messages: AssistMessage[]): AsyncIterable<string> {
       const resp = responses[idx++] ?? responses[responses.length - 1];
       for (const char of resp) {
         yield char;
       }
     },
-  };
+  } as unknown as AssistProvider;
+  return provider;
 }
 
 describe("generateBuildSpec (ST-A7, #210)", () => {
@@ -85,6 +94,55 @@ describe("generateBuildSpec (ST-A7, #210)", () => {
     expect(result.status).toBe("error");
     expect(result.spec).toBeNull();
     expect(result.remaining_problems[0]).toContain("mock");
+  });
+
+  it("검증을 통과한 구조화 출력의 요청별 시크릿을 복원한다", async () => {
+    const placeholder = "__SCRUBBED_request-a_0__";
+    const provider = {
+      isConfigured: true,
+      exchange: () => ({
+        output: (async function* () {
+          yield `sources:\n  - params:\n      serviceKey: ${placeholder}`;
+        })(),
+        displayOutput: (async function* () {})(),
+        hadSecrets: true,
+        restoreText: (text: string) => text.replace(placeholder, "original-service-key"),
+      }),
+      stream: async function* () {},
+    } as unknown as AssistProvider;
+
+    const result = await generateBuildSpec(provider, "기존 스펙을 수정해줘", {
+      validateFn: vi.fn().mockResolvedValue({ valid: true }),
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.spec).toContain("serviceKey: original-service-key");
+    expect(result.spec).not.toContain("__SCRUBBED_");
+  });
+
+  it("알 수 없는 플레이스홀더가 남은 출력은 error로 처리한다", async () => {
+    const provider = {
+      isConfigured: true,
+      exchange: () => ({
+        output: (async function* () {
+          yield "serviceKey: __SCRUBBED_another-request_0__";
+        })(),
+        displayOutput: (async function* () {})(),
+        hadSecrets: true,
+        restoreText: () => {
+          throw new Error("알 수 없는 시크릿 플레이스홀더가 포함되어 있습니다.");
+        },
+      }),
+      stream: async function* () {},
+    } as unknown as AssistProvider;
+
+    const result = await generateBuildSpec(provider, "기존 스펙을 수정해줘", {
+      validateFn: vi.fn().mockResolvedValue({ valid: true }),
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.spec).toBeNull();
+    expect(result.remaining_problems[0]).toContain("알 수 없는 시크릿");
   });
 });
 

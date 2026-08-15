@@ -48,21 +48,39 @@ export function looksLikeSecret(value: string): boolean {
 }
 
 const SCRUBBED_PREFIX = "__SCRUBBED_";
+const SCRUBBED_PATTERN = /__SCRUBBED_[A-Za-z0-9-]+_\d+__/g;
+const SCRUBBED_TEST_PATTERN = /__SCRUBBED_[A-Za-z0-9-]+_\d+__/;
 
 export interface ScrubResult {
   scrubbed: unknown;
   placeholders: Map<string, string>;
 }
 
-export function scrubSecrets(data: unknown): ScrubResult {
+export interface SecretScrubber {
+  scrub(data: unknown): unknown;
+  scrubText(text: string): string;
+  restore(data: unknown): unknown;
+  restoreText(text: string): string;
+  readonly placeholders: ReadonlyMap<string, string>;
+}
+
+function requestId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+}
+
+export function createSecretScrubber(id = requestId()): SecretScrubber {
   const placeholders = new Map<string, string>();
   let counter = 0;
 
+  function replace(value: string): string {
+    const placeholder = `${SCRUBBED_PREFIX}${id}_${counter++}__`;
+    placeholders.set(placeholder, value);
+    return placeholder;
+  }
+
   function scrubValue(key: string, value: unknown): unknown {
     if (typeof value === "string" && (isSecretKey(key) || looksLikeSecret(value))) {
-      const placeholder = `${SCRUBBED_PREFIX}${counter++}__`;
-      placeholders.set(placeholder, value);
-      return placeholder;
+      return replace(value);
     }
     // 배열도 순회한다 (#226 결함 a). BuildSpec.sources 가 배열이라
     // !Array.isArray(value) 분기가 재귀를 끊어 sources[].params.serviceKey 에
@@ -81,13 +99,56 @@ export function scrubSecrets(data: unknown): ScrubResult {
     return value;
   }
 
-  const scrubbed = scrubValue("root", data);
-  return { scrubbed, placeholders };
+  function scrubText(text: string): string {
+    const assignmentPattern = /\b([\w-]*(?:servicekey|api[_-]?key|token|secret))([ \t]*[:=][ \t]*)([^\s,}\]]+)/gi;
+    const assigned = text.replace(assignmentPattern, (_match, key: string, separator: string, value: string) => {
+      const quote = value.startsWith("\"") || value.startsWith("'") ? value[0] : "";
+      const raw = quote ? value.slice(1, value.endsWith(quote) ? -1 : undefined) : value;
+      return `${key}${separator}${quote}${replace(raw)}${quote}`;
+    });
+
+    return assigned.replace(/\S{24,}/g, (token) => {
+      if (token.startsWith(SCRUBBED_PREFIX) || !looksLikeSecret(token)) return token;
+      return replace(token);
+    });
+  }
+
+  function restore(data: unknown): unknown {
+    if (typeof data === "string" && data.startsWith(SCRUBBED_PREFIX)) {
+      const value = placeholders.get(data);
+      if (value === undefined) throw new Error("알 수 없는 시크릿 플레이스홀더가 포함되어 있습니다.");
+      return value;
+    }
+    if (Array.isArray(data)) return data.map(restore);
+    if (data && typeof data === "object") {
+      return Object.fromEntries(
+        Object.entries(data as Record<string, unknown>).map(([key, value]) => [key, restore(value)]),
+      );
+    }
+    return data;
+  }
+
+  function restoreText(text: string): string {
+    return text.replace(SCRUBBED_PATTERN, (placeholder) => {
+      const value = placeholders.get(placeholder);
+      if (value === undefined) throw new Error("알 수 없는 시크릿 플레이스홀더가 포함되어 있습니다.");
+      return value;
+    });
+  }
+
+  return { scrub: (data) => scrubValue("root", data), scrubText, restore, restoreText, placeholders };
+}
+
+export function scrubSecrets(data: unknown): ScrubResult {
+  const scrubber = createSecretScrubber();
+  return { scrubbed: scrubber.scrub(data), placeholders: new Map(scrubber.placeholders) };
 }
 
 export function restoreSecrets(data: unknown, placeholders: Map<string, string>): unknown {
   if (typeof data === "string" && data.startsWith(SCRUBBED_PREFIX)) {
-    return placeholders.get(data) ?? data;
+    const value = placeholders.get(data);
+    if (value === undefined) throw new Error("알 수 없는 시크릿 플레이스홀더가 포함되어 있습니다.");
+    return value;
   }
   // 배열 왕복 복원 (#226 결함 c). scrub 가 배열을 순회하므로 restore 도 같이.
   if (Array.isArray(data)) {
@@ -102,4 +163,13 @@ export function restoreSecrets(data: unknown, placeholders: Map<string, string>)
     return result;
   }
   return data;
+}
+
+export function hasSecretPlaceholder(data: unknown): boolean {
+  if (typeof data === "string") return SCRUBBED_TEST_PATTERN.test(data);
+  if (Array.isArray(data)) return data.some(hasSecretPlaceholder);
+  if (data && typeof data === "object") {
+    return Object.values(data as Record<string, unknown>).some(hasSecretPlaceholder);
+  }
+  return false;
 }

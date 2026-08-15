@@ -8,7 +8,13 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { looksLikeSecret, restoreSecrets, scrubSecrets } from "./scrub";
+import {
+  createSecretScrubber,
+  hasSecretPlaceholder,
+  looksLikeSecret,
+  restoreSecrets,
+  scrubSecrets,
+} from "./scrub";
 
 const SAMPLE_SERVICE_KEY =
   "9dF8kQ2mZ7xV3nL1pR4wY6tB0hJ5sC8gU2iE7oA9bN3cM6dP4qK1rS8tU0vW3xY5z";
@@ -67,6 +73,31 @@ describe("restoreSecrets — 배열 왕복 회귀 (#226 결함 c)", () => {
     const { scrubbed, placeholders } = scrubSecrets(original);
     const restored = restoreSecrets(scrubbed, placeholders);
     expect(restored).toEqual(original);
+  });
+
+  it("다른 요청이 만든 플레이스홀더를 복원하지 않는다", () => {
+    const requestA = createSecretScrubber("request-a");
+    const requestB = createSecretScrubber("request-b");
+    const scrubbed = requestA.scrub({ serviceKey: "test-key" }) as {
+      serviceKey: string;
+    };
+
+    expect(() => requestB.restore(scrubbed)).toThrow("알 수 없는 시크릿");
+  });
+
+  it("문자열 응답의 알려진 플레이스홀더만 복원한다", () => {
+    const scrubber = createSecretScrubber("request-a");
+    const scrubbed = scrubber.scrub({ serviceKey: "test-key" }) as {
+      serviceKey: string;
+    };
+
+    expect(scrubber.restoreText(`serviceKey: ${scrubbed.serviceKey}`)).toBe(
+      "serviceKey: test-key",
+    );
+    expect(() => scrubber.restoreText("__SCRUBBED_request-b_0__")).toThrow(
+      "알 수 없는 시크릿",
+    );
+    expect(hasSecretPlaceholder(scrubbed)).toBe(true);
   });
 });
 

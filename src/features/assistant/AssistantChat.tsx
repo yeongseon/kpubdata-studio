@@ -8,14 +8,13 @@ import { useCallback, useRef, useState } from "react";
 import { Button, Card, Textarea } from "@/shared/ui";
 import { useAssistConfig } from "./config";
 import { createProvider, type AssistMessage } from "./provider";
-import { scrubSecrets } from "./scrub";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
 
-export function AssistantChat({ contextSpec }: { contextSpec?: string }) {
+export function AssistantChat({ contextSpec }: { contextSpec?: unknown }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -33,17 +32,13 @@ export function AssistantChat({ contextSpec }: { contextSpec?: string }) {
     setInput("");
     setIsStreaming(true);
 
-    // 시크릿 스크러빙 (#206)
-    const scrubbed = contextSpec ? scrubSecrets(contextSpec) : null;
-    const safeSpec = scrubbed ? JSON.stringify(scrubbed.scrubbed) : contextSpec;
-
     const systemPrompt = `당신은 한국 공공데이터 빌드 스펙(BuildSpec) 전문가입니다.
 사용자의 질문에 한국어로 답변하세요.
-${safeSpec ? `현재 스펙:\n${safeSpec}\n` : ""}
+${contextSpec ? "현재 스펙은 첨부된 구조화 컨텍스트를 참고하세요.\n" : ""}
 오류가 있으면 수정 제안을 하세요.`;
 
     const apiMessages: AssistMessage[] = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: systemPrompt, structuredContent: contextSpec },
       ...[...messages, userMsg].map((m) => ({ role: m.role, content: m.content }) as AssistMessage),
     ];
 

@@ -6,13 +6,26 @@
  *
  * **공용 키를 VITE_*로 주입하는 것은 절대 금지** — 번들에 평문으로 박힌다.
  */
+import { createSecretScrubber, type SecretScrubber } from "./scrub";
 
 export interface AssistMessage {
   role: "system" | "user" | "assistant";
   content: string;
+  structuredContent?: unknown;
 }
 
+export interface AssistExchange {
+  readonly output: AsyncIterable<string>;
+  readonly displayOutput: AsyncIterable<string>;
+  readonly hadSecrets: boolean;
+  restoreText(text: string): string;
+}
+
+const SAFE_PROVIDER: unique symbol = Symbol("safe-assist-provider");
+
 export interface AssistProvider {
+  readonly [SAFE_PROVIDER]: true;
+  exchange(messages: AssistMessage[], signal?: AbortSignal): AssistExchange;
   stream(messages: AssistMessage[], signal?: AbortSignal): AsyncIterable<string>;
   readonly isConfigured: boolean;
 }
@@ -26,7 +39,12 @@ export interface AssistConfig {
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
-export class ByokProvider implements AssistProvider {
+interface AssistTransport {
+  stream(messages: AssistMessage[], signal?: AbortSignal): AsyncIterable<string>;
+  readonly isConfigured: boolean;
+}
+
+class ByokTransport implements AssistTransport {
   constructor(private config: AssistConfig) {}
 
   get isConfigured(): boolean {
@@ -82,10 +100,82 @@ export class ByokProvider implements AssistProvider {
   }
 }
 
-export function createProvider(config: AssistConfig): AssistProvider {
-  return new ByokProvider({
-    ...config,
-    model: config.model || DEFAULT_MODEL,
-    baseUrl: config.baseUrl || DEFAULT_BASE_URL,
+function prepareMessages(messages: AssistMessage[], scrubber: SecretScrubber): AssistMessage[] {
+  return messages.map(({ role, content, structuredContent }) => {
+    const safeText = scrubber.scrubText(content);
+    if (structuredContent === undefined) return { role, content: safeText };
+    const safeStructured = scrubber.scrub(structuredContent);
+    return { role, content: `${safeText}\n${JSON.stringify(safeStructured, null, 2)}` };
   });
+}
+
+const PLACEHOLDER_PREFIX = "__SCRUBBED_";
+const COMPLETE_PLACEHOLDER = /^__SCRUBBED_[A-Za-z0-9-]+_\d+__/;
+
+async function* redactDisplayOutput(output: AsyncIterable<string>): AsyncIterable<string> {
+  let pending = "";
+  for await (const chunk of output) {
+    pending += chunk;
+    while (pending) {
+      const marker = pending.indexOf(PLACEHOLDER_PREFIX);
+      if (marker < 0) {
+        const safeLength = Math.max(0, pending.length - (PLACEHOLDER_PREFIX.length - 1));
+        if (safeLength > 0) {
+          yield pending.slice(0, safeLength);
+          pending = pending.slice(safeLength);
+        }
+        break;
+      }
+      if (marker > 0) {
+        yield pending.slice(0, marker);
+        pending = pending.slice(marker);
+      }
+      const placeholder = pending.match(COMPLETE_PLACEHOLDER)?.[0];
+      if (!placeholder) break;
+      yield "[REDACTED]";
+      pending = pending.slice(placeholder.length);
+    }
+  }
+
+  if (pending.startsWith(PLACEHOLDER_PREFIX)) {
+    yield pending.replace(/^__SCRUBBED_\S*/, "[REDACTED]");
+  } else if (pending) {
+    yield pending;
+  }
+}
+
+class SafeAssistProvider implements AssistProvider {
+  readonly [SAFE_PROVIDER] = true;
+
+  constructor(private transport: AssistTransport) {}
+
+  get isConfigured(): boolean {
+    return this.transport.isConfigured;
+  }
+
+  exchange(messages: AssistMessage[], signal?: AbortSignal): AssistExchange {
+    const scrubber = createSecretScrubber();
+    const safeMessages = prepareMessages(messages, scrubber);
+    const output = this.transport.stream(safeMessages, signal);
+    return {
+      output,
+      displayOutput: redactDisplayOutput(output),
+      hadSecrets: scrubber.placeholders.size > 0,
+      restoreText: (text) => scrubber.restoreText(text),
+    };
+  }
+
+  async *stream(messages: AssistMessage[], signal?: AbortSignal): AsyncIterable<string> {
+    yield* this.exchange(messages, signal).displayOutput;
+  }
+}
+
+export function createProvider(config: AssistConfig): AssistProvider {
+  return new SafeAssistProvider(
+    new ByokTransport({
+      ...config,
+      model: config.model || DEFAULT_MODEL,
+      baseUrl: config.baseUrl || DEFAULT_BASE_URL,
+    }),
+  );
 }
