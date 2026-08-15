@@ -71,10 +71,14 @@ export function KubiDrawer() {
 
   return (
     <>
+      {/* 클릭 전용 overlay — 탭 순서/접근성 트리에서 제외(ESC·닫기 버튼이 AT 대안).
+          aria-hidden이므로 라벨을 넣지 않는다. */}
       <button
-        aria-label="Kubi 닫기"
+        aria-hidden="true"
         className="fixed inset-0 z-40 bg-zinc-950/45"
+        data-testid="kubi-drawer-overlay"
         onClick={closeKubiDrawer}
+        tabIndex={-1}
         type="button"
       />
       <aside
