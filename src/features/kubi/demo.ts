@@ -71,7 +71,9 @@ export function buildKubiDemoResponse(evidence: KubiEvidence): KubiStructuredRes
   let generatedSql: KubiStructuredResponse["generatedSql"] = null;
   if (evidence.stage && (evidence.context.stage === "silver" || evidence.context.stage === "gold")) {
     generatedSql = {
-      sql: `SELECT region, COUNT(*) AS count FROM ${evidence.stage.sourceKey} GROUP BY region`,
+      // Builder #504 contract: SQL은 logical relation "dataset"만 조회한다 — 실제 source_key는
+      // FROM 테이블명이 아니라 아래 source 필드로 별도 전달한다(query.ts가 /query 요청에 얹는다).
+      sql: `SELECT region, COUNT(*) AS count FROM dataset GROUP BY region`,
       stage: evidence.context.stage,
       source: evidence.stage.sourceKey,
     };
