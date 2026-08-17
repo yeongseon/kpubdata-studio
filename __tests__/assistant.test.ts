@@ -22,7 +22,17 @@ const catalog = {
     {
       name: "datago",
       datasets: [
-        { name: "village_fcst", title: "단기예보", requires_service_key: true },
+        {
+          name: "village_fcst",
+          title: "단기예보",
+          description: null,
+          tags: [],
+          source_url: null,
+          representation: "api_json" as const,
+          operations: [],
+          query_support: null,
+          requires_service_key: true,
+        },
       ],
     },
   ],

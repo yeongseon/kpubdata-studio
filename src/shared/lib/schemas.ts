@@ -40,14 +40,63 @@ export const schemaContractSchema = z.object({
   casts: z.record(z.string(), z.string()),
 });
 
-/** 단일 원본 데이터 참조가 가져야 할 필드를 검증하는 스키마 */
-export const sourceRefSchema = z.object({
-  provider: z.string().min(1, "Provider is required."),
-  dataset: z.string().min(1, "Dataset is required."),
-  params: jsonRecordSchema,
-  alias: z.string().min(1, "Alias cannot be empty.").optional(),
-  schema: schemaContractSchema.optional(),
-});
+/** kind="public_api"(기본)/file/url 구분(#498). */
+export const sourceKindSchema = z.enum(["public_api", "file", "url"]);
+
+/** kind="file"/"url" source가 실제로 지원하는 포맷(Builder #498 계약 기준). */
+export const sourceFormatSchema = z.enum(["csv", "json", "jsonl", "parquet"]);
+
+/** `POST /uploads`가 발급하는 upload_id 형식(Builder #498: `upl_` + hex 32자). */
+export const uploadIdSchema = z.string().regex(/^upl_[a-f0-9]{32}$/, "올바른 upload_id 형식이 아닙니다.");
+
+/**
+ * 단일 원본 데이터 참조가 가져야 할 필드를 검증하는 스키마 (#250, #498).
+ *
+ * kind별 필수 필드는 discriminated union 대신 `superRefine`으로 강제한다 — Builder
+ * 계약(SourceRef) 자체가 OpenAPI object schema로 조건부 필수를 표현하지 않고
+ * `additionalProperties: true` 위에서 loader/validator가 강제하는 것과 같은 패턴이다.
+ */
+export const sourceRefSchema = z
+  .object({
+    kind: sourceKindSchema.optional(),
+    provider: z.string().optional(),
+    dataset: z.string().optional(),
+    params: jsonRecordSchema,
+    alias: z.string().min(1, "Alias cannot be empty.").optional(),
+    schema: schemaContractSchema.optional(),
+    uploadId: uploadIdSchema.optional(),
+    format: sourceFormatSchema.optional(),
+    encoding: z.string().optional(),
+    endpoint: z.string().optional(),
+    method: z.literal("GET").optional(),
+  })
+  .superRefine((source, ctx) => {
+    const kind = source.kind ?? "public_api";
+    if (kind === "public_api") {
+      if (!source.provider) {
+        ctx.addIssue({ code: "custom", path: ["provider"], message: "Provider is required." });
+      }
+      if (!source.dataset) {
+        ctx.addIssue({ code: "custom", path: ["dataset"], message: "Dataset is required." });
+      }
+    } else if (kind === "file") {
+      if (!source.uploadId) {
+        ctx.addIssue({ code: "custom", path: ["uploadId"], message: "업로드한 파일이 필요합니다." });
+      }
+      if (!source.format) {
+        ctx.addIssue({ code: "custom", path: ["format"], message: "파일 포맷을 선택해주세요." });
+      }
+    } else if (kind === "url") {
+      if (!source.endpoint) {
+        ctx.addIssue({ code: "custom", path: ["endpoint"], message: "Endpoint를 입력해주세요." });
+      } else if (!/^https:\/\//i.test(source.endpoint)) {
+        ctx.addIssue({ code: "custom", path: ["endpoint"], message: "https:// 로 시작하는 URL만 허용됩니다." });
+      }
+      if (source.format && !["csv", "json", "jsonl"].includes(source.format)) {
+        ctx.addIssue({ code: "custom", path: ["format"], message: "URL 소스는 csv/json/jsonl 포맷만 지원합니다." });
+      }
+    }
+  });
 
 /** 결과물 export 대상 정의를 검증하는 스키마 */
 export const exportTargetSchema = z.object({
@@ -63,6 +112,9 @@ export const buildSpecSchema = z.object({
   sources: z.array(sourceRefSchema).min(1, "At least one source is required."),
   exports: z.array(exportTargetSchema).min(1, "Select at least one export format."),
   metadata: recordSchema,
+  // Studio가 편집 UI를 제공하지 않는 canonical 최상위 필드(publish/splits/pii/...)를
+  // round-trip 중 유실하지 않도록 보존하는 bucket (#250). specMapping.ts 참고.
+  extra: jsonRecordSchema.optional(),
 });
 
 /**

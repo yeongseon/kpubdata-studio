@@ -132,25 +132,9 @@ export const previewColumnSchema = z.object({
   unique_count: z.number(),
 });
 
-/**
- * Preview 소스별 미리보기 항목
- */
-export const previewSourceSchema = z.object({
-  source_key: z.string(),
-  status: z.string(),
-  error: z.string().nullable(),
-  schema: z.array(previewColumnSchema),
-  sample: z.array(z.record(z.string(), z.unknown())),
-  total_rows: z.number(),
-});
-
-/**
- * POST /preview 응답 스키마
- */
-export const previewResponseSchema = z.object({
-  dataset_id: z.string(),
-  previews: z.array(previewSourceSchema),
-});
+// previewSourceSchema/previewResponseSchema는 tableStatisticsSchema·qualityCheckResultSchema에
+// 의존하므로(#497), 그 두 스키마가 실제로 선언된 뒤(Quality 섹션 이후)에 정의한다 — const는
+// TDZ가 있어 선언 전 참조가 런타임 오류가 된다.
 
 /**
  * ============================================
@@ -223,6 +207,8 @@ export type BuildFailed = z.infer<typeof buildFailedSchema>;
 export type BuildResponse = z.infer<typeof buildResponseSchema>;
 export type ArtifactsResponse = z.infer<typeof artifactsResponseSchema>;
 export type PreviewColumn = z.infer<typeof previewColumnSchema>;
+export type PreviewDiffItem = z.infer<typeof previewDiffItemSchema>;
+export type PreviewTransformSummary = z.infer<typeof previewTransformSummarySchema>;
 export type PreviewSource = z.infer<typeof previewSourceSchema>;
 export type PreviewResponse = z.infer<typeof previewResponseSchema>;
 
@@ -233,11 +219,28 @@ export type NotFound = z.infer<typeof notFoundSchema>;
 export type BuildPartialFailure = z.infer<typeof buildPartialFailureSchema>;
 
 /**
- * GET /catalog 응답 스키마 (#416, BL2)
+ * GET /catalog 탐색 metadata의 목록 질의 capability (#490).
+ */
+export const catalogQuerySupportSchema = z.object({
+  pagination: z.enum(["offset", "index", "cursor", "none"]),
+  filterable_fields: z.array(z.string()),
+  sortable_fields: z.array(z.string()),
+  time_range: z.boolean(),
+  max_page_size: z.number().int().positive().nullable(),
+});
+
+/**
+ * GET /catalog 응답 스키마 (#416, BL2; #490으로 탐색용 metadata 확장)
  */
 export const catalogDatasetSchema = z.object({
   name: z.string(),
   title: z.string(),
+  description: z.string().nullable(),
+  tags: z.array(z.string()),
+  source_url: z.string().nullable(),
+  representation: z.enum(["api_json", "api_xml", "file_csv", "file_excel", "sheet", "other"]),
+  operations: z.array(z.enum(["list", "get", "schema", "raw", "download"])),
+  query_support: catalogQuerySupportSchema.nullable(),
   requires_service_key: z.boolean(),
 });
 
@@ -250,9 +253,46 @@ export const catalogResponseSchema = z.object({
   providers: z.array(catalogProviderSchema),
 });
 
+export type CatalogQuerySupport = z.infer<typeof catalogQuerySupportSchema>;
 export type CatalogDataset = z.infer<typeof catalogDatasetSchema>;
 export type CatalogProvider = z.infer<typeof catalogProviderSchema>;
 export type CatalogResponse = z.infer<typeof catalogResponseSchema>;
+
+/**
+ * ============================================
+ * Provider connection test / Uploads (#492, #498)
+ * ============================================
+ */
+
+/** POST /providers/{provider}/test, GET /providers/{provider}/status 공통 응답. */
+export const providerTestResponseSchema = z.object({
+  provider: z.string(),
+  status: z.enum(["connected", "failed", "not_configured"]),
+  configured: z.boolean(),
+  latency_ms: z.number().int().nonnegative(),
+  checked_at: z.string(),
+  error_category: z.enum(["auth", "network", "timeout", "provider", "unknown"]).optional(),
+  response_code: z.number().int().min(100).max(599).optional(),
+});
+
+/** kind="file" source 업로드 메타데이터(secret-free, content는 포함하지 않음). */
+export const uploadMetadataSchema = z.object({
+  upload_id: z.string().regex(/^upl_[a-f0-9]{32}$/),
+  format: z.enum(["csv", "json", "jsonl", "parquet"]),
+  encoding: z.string(),
+  size_bytes: z.number().int().nonnegative(),
+  original_filename: z.string().nullable(),
+  created_at: z.string(),
+});
+
+export const uploadDeleteResponseSchema = z.object({
+  upload_id: z.string(),
+  deleted: z.boolean(),
+});
+
+export type ProviderTestResponse = z.infer<typeof providerTestResponseSchema>;
+export type UploadMetadata = z.infer<typeof uploadMetadataSchema>;
+export type UploadDeleteResponse = z.infer<typeof uploadDeleteResponseSchema>;
 
 /**
  * ============================================
@@ -409,6 +449,54 @@ export const qualityCheckResultSchema = z.object({
   evaluated_rows: z.number().int().nullable(),
   detail: z.string().nullable(),
 }).strict();
+
+/**
+ * Preview↔Silver 셀 단위 변경 하나 (#497). diff_available=true인 source의 diffs에만 등장한다.
+ */
+export const previewDiffItemSchema = z.object({
+  row: z.number().int().nonnegative(),
+  column: z.string(),
+  before: z.unknown(),
+  after: z.unknown(),
+  transform: z.string().nullable(),
+});
+
+/**
+ * 비교 가능한 sample 범위에서 계산한 변경 요약 (#497).
+ */
+export const previewTransformSummarySchema = z.object({
+  changed_cells: z.number().int().nonnegative(),
+  changed_rows: z.number().int().nonnegative(),
+});
+
+/**
+ * Preview 소스별 미리보기 항목 (#497로 statistics/quality_results/diff 필드 확장).
+ */
+export const previewSourceSchema = z.object({
+  source_key: z.string(),
+  status: z.string(),
+  error: z.string().nullable(),
+  schema: z.array(previewColumnSchema),
+  sample: z.array(z.record(z.string(), z.unknown())),
+  total_rows: z.number(),
+  statistics: tableStatisticsSchema,
+  quality_results: z.array(qualityCheckResultSchema),
+  /** 변환 전 Bronze 원본 sample. diff_available=false여도 최선 노력으로 채워질 수 있다. */
+  source_sample: z.array(z.record(z.string(), z.unknown())),
+  sample_mode: z.enum(["first", "random"]),
+  diff_available: z.boolean(),
+  diffs: z.array(previewDiffItemSchema),
+  transform_summary: previewTransformSummarySchema.nullable(),
+  diff_truncated: z.boolean(),
+});
+
+/**
+ * POST /preview 응답 스키마
+ */
+export const previewResponseSchema = z.object({
+  dataset_id: z.string(),
+  previews: z.array(previewSourceSchema),
+});
 
 export const schemaDriftFindingSchema = z.object({
   kind: z.enum(["column_added", "column_removed", "dtype_changed", "row_count_jump"]),
