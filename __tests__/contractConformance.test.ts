@@ -20,6 +20,8 @@ const EXPECTED_OPERATIONS = [
   "validate",
   "preview",
   "build",
+  "submitBuild",
+  "getBuildJob",
   "artifacts",
   "listBuilds",
   "catalog",
@@ -34,8 +36,8 @@ const EXPECTED_OPERATIONS = [
 ] as const;
 
 describe("Builder API contract conformance (#36)", () => {
-  it("pins the last-reviewed contract version Studio targets (builder #209, #504; drift beyond this — e.g. 1.8.0 provider credentials — is Studio #259/#521 scope, not auto-synced)", () => {
-    expect(API_CONTRACT_VERSION).toBe("1.7.0");
+  it("pins the last-reviewed contract version Studio targets (builder #209, #504, #480 async jobs; drift beyond this — e.g. provider credentials, monitoring — is Studio #259/#264 scope, not auto-synced)", () => {
+    expect(API_CONTRACT_VERSION).toBe("1.16.0");
   });
 
   it("exposes exactly the expected client operations", () => {

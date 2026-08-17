@@ -37,7 +37,20 @@ export function generateRunId(datasetId: string): string {
  * @param signal - 취소용 AbortSignal(선택).
  * @returns 생성된 빌드 실행 정보.
  */
-export async function executeBuild(spec: BuildSpec, signal?: AbortSignal): Promise<BuildRun> {
+/** Builder 잡 상태를 Studio 실행 상태로 매핑한다 (builder 1.16.0 #480). */
+export type BuilderJobStatus =
+  | "queued"
+  | "running"
+  | "cancelling"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export async function executeBuild(
+  spec: BuildSpec,
+  signal?: AbortSignal,
+  onJobStatus?: (status: BuilderJobStatus) => void,
+): Promise<BuildRun> {
   if (!isRealBuilderEnabled()) {
     const mockRun: BuildRun = {
       id: "mock-run",
@@ -54,20 +67,88 @@ export async function executeBuild(spec: BuildSpec, signal?: AbortSignal): Promi
   // 실연동 모드에서는 실제 실행 시각을 기록한다(이력/상세 화면에서 잘못된 1970 값 방지).
   const runId = generateRunId(spec.datasetId);
   const startedAt = new Date().toISOString();
-  const result = await builderApi.build(serializeSpec(spec), runId, signal);
+  const result = await runAsyncBuild(spec, runId, startedAt, signal, onJobStatus);
 
   // Builder는 spec을 영속화하지 않으므로(#120), 이후 편집 화면이 기존 스펙을 복원할 수
   // 있도록 Studio가 실행 시점의 스펙을 run_id에 묶어 보관한다. 저장 실패는 무시되며
   // 빌드 결과에는 영향을 주지 않는다.
-  saveBuildSpec(result.run_id, spec);
+  saveBuildSpec(result.id, spec);
 
-  return {
-    id: result.run_id,
-    spec,
-    status: result.status === "ok" ? "succeeded" : "failed",
-    startedAt,
-    finishedAt: new Date().toISOString(),
-  };
+  return result;
+}
+
+const POLL_INTERVAL_MS = 800;
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException("aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+}
+
+async function runAsyncBuild(
+  spec: BuildSpec,
+  runId: string,
+  startedAt: string,
+  signal: AbortSignal | undefined,
+  onJobStatus: ((status: BuilderJobStatus) => void) | undefined,
+): Promise<BuildRun> {
+  const submitted = await builderApi.submitBuild(serializeSpec(spec), runId, signal);
+  onJobStatus?.(submitted.status);
+
+  // 제출 직후 이미 terminal인 경우(동일 run_id 재제출 등) 폴링 없이 바로 판정한다.
+  let job = submitted;
+  while (job.status !== "succeeded" && job.status !== "failed" && job.status !== "cancelled") {
+    await sleep(POLL_INTERVAL_MS, signal);
+    job = await builderApi.getBuildJob(runId, signal);
+    onJobStatus?.(job.status);
+  }
+
+  const finishedAt = job.updated_at;
+  // run_id는 서버 응답이 정본이다(제출값과 동일이지만 응답 기준으로 통일).
+  const finalRunId = job.run_id;
+  if (job.status === "cancelled") {
+    return { id: finalRunId, spec, status: "cancelled", startedAt, finishedAt };
+  }
+  if (job.status === "failed") {
+    return {
+      id: finalRunId,
+      spec,
+      status: "failed",
+      startedAt,
+      finishedAt,
+      error: job.error ?? "빌드 잡이 실패했습니다.",
+    };
+  }
+  const response = job.response;
+  // 성공 잡의 최종 build 응답이 부분 실패(status: "failed", 502와 동일한 wire)일 수
+  // 있다 — terminal failure와 partial-result를 구분하고, 사유 우선순위는 동기 /build
+  // 502와 동일하게 최상위 error → outcomes[].error → 기본 문구(#75)를 따른다.
+  if (response && response.status !== "ok") {
+    const outcomeReason = response.outcomes.find((outcome) => outcome.error)?.error;
+    const reason =
+      response.error || outcomeReason || "일부 소스 빌드가 실패했습니다.";
+    return {
+      id: finalRunId,
+      spec,
+      status: "failed",
+      startedAt,
+      finishedAt,
+      error: reason,
+    };
+  }
+  return { id: finalRunId, spec, status: "succeeded", startedAt, finishedAt };
 }
 
 /** 데모 카탈로그 항목을 목록/이력 UI용 BuildSpec으로 변환한다. */
