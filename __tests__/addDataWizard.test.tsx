@@ -397,6 +397,9 @@ describe("Add Data Workbench — mixed/partial preview (#250 §3)", () => {
     fireEvent.click(screen.getByRole("button", { name: /Public API/ }));
     next();
     await screen.findByText("제공자 연결");
+    // "제공자 연결" 텍스트 렌더는 catalog loaded를 보장하지 않는다 — catalog option이
+    // 실제 DOM에 나타날 때까지 기다린 뒤에 provider를 선택한다(test race 수정).
+    await screen.findByRole("option", { name: "datago" });
     fireEvent.change(screen.getByLabelText(/제공자 \(Provider\)/), { target: { value: "datago" } });
     await waitFor(() => expect(screen.getByLabelText(/데이터셋 \(Dataset\)/)).not.toBeDisabled());
     fireEvent.change(screen.getByLabelText(/데이터셋 \(Dataset\)/), { target: { value: "air_quality" } });
