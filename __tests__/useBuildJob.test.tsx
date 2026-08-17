@@ -35,19 +35,44 @@ describe("executeBuild (#39)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("calls Builder /build in real mode and maps ok→succeeded", async () => {
+  it("submits an async job and polls it to a succeeded run in real mode (#245)", async () => {
     vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    let pollCount = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        mockResponse(200, {
-          status: "ok",
+      vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/builds")) {
+          return mockResponse(202, {
+            run_id: "run42",
+            status: "queued",
+            created_at: "2026-08-16T09:00:00+00:00",
+            updated_at: "2026-08-16T09:00:00+00:00",
+          });
+        }
+        pollCount += 1;
+        if (pollCount === 1) {
+          return mockResponse(200, {
+            run_id: "run42",
+            status: "running",
+            created_at: "2026-08-16T09:00:00+00:00",
+            updated_at: "2026-08-16T09:00:01+00:00",
+          });
+        }
+        return mockResponse(200, {
           run_id: "run42",
-          outcomes: [],
-          manifest: "m",
-          api_version: "1.0.0",
-        }),
-      ),
+          status: "succeeded",
+          created_at: "2026-08-16T09:00:00+00:00",
+          updated_at: "2026-08-16T09:00:07+00:00",
+          response: {
+            status: "ok",
+            run_id: "run42",
+            outcomes: [],
+            manifest: "m",
+            api_version: "1.16.0",
+          },
+        });
+      }),
     );
     const run = await executeBuild(spec);
     expect(run.id).toBe("run42");
@@ -70,22 +95,39 @@ describe("useBuildJob (#39)", () => {
     expect(result.current.run?.id).toBe("mock-run");
   });
 
-  it("surfaces the per-source reason from outcomes[].error on a real 502 (#75)", async () => {
+  it("surfaces the derived failure summary on a partial build (#75, #245)", async () => {
     vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
-    // 실제 builder /build 502 와이어 형태: 최상위 error 없음, outcomes[].error에 사유.
+    // 성공한 잡의 최종 build 응답이 부분 실패인 wire — Builder는 첫 실패 outcome에서
+    // 파생한 최상위 error 요약을 항상 실는다(contract BuildFailureResponse).
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        mockResponse(502, {
-          status: "failed",
+      vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/builds")) {
+          return mockResponse(202, {
+            run_id: "run-fail",
+            status: "queued",
+            created_at: "2026-08-16T09:00:00+00:00",
+            updated_at: "2026-08-16T09:00:00+00:00",
+          });
+        }
+        return mockResponse(200, {
           run_id: "run-fail",
-          manifest: "",
-          api_version: "1.0.0",
-          outcomes: [
-            { source_key: "datago:air", status: "failed", error: "upstream source failed" },
-          ],
-        }),
-      ),
+          status: "succeeded",
+          created_at: "2026-08-16T09:00:00+00:00",
+          updated_at: "2026-08-16T09:00:07+00:00",
+          response: {
+            status: "failed",
+            run_id: "run-fail",
+            manifest: "",
+            api_version: "1.16.0",
+            error: "upstream source failed",
+            outcomes: [
+              { source_key: "datago:air", status: "failed", error: "upstream source failed" },
+            ],
+          },
+        });
+      }),
     );
 
     const { result } = renderHook(() => useBuildJob());
@@ -95,28 +137,6 @@ describe("useBuildJob (#39)", () => {
 
     expect(result.current.status).toBe("failed");
     expect(result.current.error).toBe("upstream source failed");
-  });
-
-  it("prefers a top-level error over outcomes when present (backward compat, #75)", async () => {
-    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        mockResponse(502, {
-          status: "failed",
-          error: "top-level build error",
-          outcomes: [{ source_key: "datago:air", status: "failed", error: "ignored reason" }],
-        }),
-      ),
-    );
-
-    const { result } = renderHook(() => useBuildJob());
-    await act(async () => {
-      await result.current.start(spec);
-    });
-
-    expect(result.current.status).toBe("failed");
-    expect(result.current.error).toBe("top-level build error");
   });
 
   it("aborts an in-flight build on unmount (#73)", async () => {

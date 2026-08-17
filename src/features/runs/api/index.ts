@@ -131,15 +131,19 @@ async function runAsyncBuild(
   }
   const response = job.response;
   // 성공 잡의 최종 build 응답이 부분 실패(status: "failed", 502와 동일한 wire)일 수
-  // 있다 — terminal failure와 partial-result를 구분해 그대로 노출한다.
+  // 있다 — terminal failure와 partial-result를 구분하고, 사유 우선순위는 동기 /build
+  // 502와 동일하게 최상위 error → outcomes[].error → 기본 문구(#75)를 따른다.
   if (response && response.status !== "ok") {
+    const outcomeReason = response.outcomes.find((outcome) => outcome.error)?.error;
+    const reason =
+      response.error || outcomeReason || "일부 소스 빌드가 실패했습니다.";
     return {
       id: runId,
       spec,
       status: "failed",
       startedAt,
       finishedAt,
-      error: "일부 소스 빌드가 실패했습니다.",
+      error: reason,
     };
   }
   return { id: runId, spec, status: "succeeded", startedAt, finishedAt };

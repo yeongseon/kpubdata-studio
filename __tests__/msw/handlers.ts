@@ -102,7 +102,11 @@ export const handlers = [
       typeof body === "object" && body && "run_id" in body
         ? String((body as { run_id?: string }).run_id)
         : `run_async_${Date.now()}`;
-    asyncJobStates.set(runId, { pollCount: 0, failed: spec.includes("dataset_id: fail_source") });
+    // spec은 원시 YAML(e2e) 또는 JSON 직렬화(executeBuild→serializeSpec) 둘 다 올 수
+    // 있으므로 두 형태 모두 판별한다.
+    const failed =
+      spec.includes("dataset_id: fail_source") || spec.includes('"dataset_id":"fail_source"');
+    asyncJobStates.set(runId, { pollCount: 0, failed });
     return HttpResponse.json(
       {
         run_id: runId,
