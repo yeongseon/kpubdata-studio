@@ -96,6 +96,25 @@ export const buildResponseSchema = z.discriminatedUnion("status", [
 ]);
 
 /**
+ * 비동기 build job 스냅샷 — GET /builds/{run_id} / POST /builds 응답 (#245, builder 1.16.0 #480).
+ *
+ * `cancelling`/`cancelled`는 builder #481 cooperative cancellation 착지 전 예약
+ * vocabulary다(현재 전이를 일으키는 endpoint는 없음). `response`는 성공한 잡의
+ * 최종 build 응답 본문이다.
+ */
+export const buildJobSchema = z.object({
+  run_id: z.string(),
+  status: z.enum(["queued", "running", "cancelling", "succeeded", "failed", "cancelled"]),
+  created_at: z.string(),
+  updated_at: z.string(),
+  created_by: z.string().nullable().optional(),
+  response: buildResponseSchema.nullable().optional(),
+  error: z.string().nullable().optional(),
+});
+
+export type BuildJob = z.infer<typeof buildJobSchema>;
+
+/**
  * GET /artifacts/{run_id} 응답 스키마
  */
 export const artifactsResponseSchema = z.object({

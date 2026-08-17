@@ -26,13 +26,14 @@ import { z } from "zod";
  * 동일"이 아니다). 1.6.0 -> 1.7.0: Silver/Gold read-only `/query` 추가(#504, additive —
  * 기존 엔드포인트는 변경 없음).
  *
- * Builder는 additive 변경마다 이 값을 계속 올린다(예: 1.8.0 — per-user provider
- * credentials). Studio는 그 operation을 아직 구현하지 않았으므로(Provider API 연동은
- * Studio #259 범위) 여기서 숫자만 따라 올리지 않는다 — 그러면 아직 없는 기능을
- * 지원한다고 오인시킨다. exact-equality pin 정책 자체(버전마다 무조건 맞출지,
- * capability 기준으로 협상할지)는 builder #521에서 논의 중이며 여기서 선결하지 않는다.
+ * Builder는 additive 변경마다 이 값을 계속 올린다. Studio는 자신이 실제로 검토·
+ * 연동한 버전만 고정한다 — 현재는 async build job 표면(POST /builds, GET
+ * /builds/{run_id}, builder #480/#482)까지 검토·연동했다. 미연동 operation(예:
+ * provider credentials 1.8.0, monitoring 1.11.0)은 여기 숫자에 반영해도 실제
+ * 호출이 없으므로 따로 올리지 않는다. pin 정책 자체는 builder ADR 0013(#521)의
+ * 기능별 최소 SemVer 판정으로 전환 중이다.
  */
-export const API_CONTRACT_VERSION = "1.7.0";
+export const API_CONTRACT_VERSION = "1.16.0";
 
 /** 실제 Builder 호출 활성화 여부(미설정 시 mock 사용). */
 export function isRealBuilderEnabled(): boolean {
@@ -411,6 +412,27 @@ export const builderApi = {
         retries: 0,
       },
       schemas.buildResponseSchema,
+    ),
+
+  /** POST /builds — 비동기 build job 제출 (#245, builder #482/#480). 재시도하지 않는다. */
+  submitBuild: (specYaml: string, runId?: string, signal?: AbortSignal) =>
+    apiFetch(
+      "/builds",
+      {
+        method: "POST",
+        body: runId ? { spec: specYaml, run_id: runId } : { spec: specYaml },
+        signal,
+        retries: 0,
+      },
+      schemas.buildJobSchema,
+    ),
+
+  /** GET /builds/{run_id} — 비동기 build job 상태 polling (#245, builder #482/#480). */
+  getBuildJob: (runId: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/builds/${encodeURIComponent(runId)}`,
+      { signal, retries: 1 },
+      schemas.buildJobSchema,
     ),
 
   /** GET /artifacts/{runId} — 실행 산출물 파일 목록. */

@@ -10,6 +10,18 @@
 import { http, HttpResponse } from "msw";
 import { API_BASE } from "@/shared/config/env";
 
+/**
+ * 비동기 build job 모의 상태 시퀀스 (#245, builder #480/#482).
+ *
+ * POST /builds 제출 직후 queued로 시작해 GET /builds/{run_id} 폴링마다
+ * queued → running → terminal(succeeded/failed)로 진행한다. 실패 시나리오는
+ * spec에 `dataset_id: fail_source`가 포함된 경우로 판별한다(동기 /build 모의와
+ * 동일한 규칙).
+ */
+const asyncJobStates = new Map<string, { pollCount: number; failed: boolean }>();
+
+const ASYNC_JOB_TIMELINE = ["queued", "running"] as const;
+
 export const handlers = [
   /**
    * GET /version — Builder API 계약 버전 확인
@@ -77,6 +89,70 @@ export const handlers = [
       status: "valid" as const,
       dataset_id: "test_dataset",
       api_version: "1.0.0",
+    });
+  }),
+
+  /**
+   * POST /builds — 비동기 build job 제출 (#245, builder #480/#482)
+   */
+  http.post(`${API_BASE}/builds`, async ({ request }) => {
+    const body = await request.json();
+    const spec = typeof body === "object" && body && "spec" in body ? (body as { spec: string }).spec : "";
+    const runId =
+      typeof body === "object" && body && "run_id" in body
+        ? String((body as { run_id?: string }).run_id)
+        : `run_async_${Date.now()}`;
+    asyncJobStates.set(runId, { pollCount: 0, failed: spec.includes("dataset_id: fail_source") });
+    return HttpResponse.json(
+      {
+        run_id: runId,
+        status: "queued",
+        created_at: "2026-08-16T09:00:00+00:00",
+        updated_at: "2026-08-16T09:00:00+00:00",
+      },
+      { status: 202 },
+    );
+  }),
+
+  /**
+   * GET /builds/{run_id} — 비동기 build job 상태 polling (#245)
+   */
+  http.get<{ run_id: string }>(`${API_BASE}/builds/:run_id`, ({ params }) => {
+    const runId = params.run_id as string;
+    const state = asyncJobStates.get(runId);
+    if (!state) {
+      return HttpResponse.json({ error: `build job not found: ${runId}` }, { status: 404 });
+    }
+    state.pollCount += 1;
+    const timelineIndex = Math.min(state.pollCount - 1, ASYNC_JOB_TIMELINE.length - 1);
+    const failed = state.failed;
+    // 마지막 timeline 상태(running)보다 더 폴링되면 terminal로 종결한다.
+    if (state.pollCount > ASYNC_JOB_TIMELINE.length) {
+      const base = {
+        run_id: runId,
+        status: failed ? "failed" : "succeeded",
+        created_at: "2026-08-16T09:00:00+00:00",
+        updated_at: "2026-08-16T09:00:07+00:00",
+      };
+      if (failed) {
+        return HttpResponse.json({ ...base, error: "upstream API timeout" });
+      }
+      return HttpResponse.json({
+        ...base,
+        response: {
+          status: "ok",
+          run_id: runId,
+          outcomes: [],
+          manifest: `output/${runId}/manifest.json`,
+          api_version: "1.16.0",
+        },
+      });
+    }
+    return HttpResponse.json({
+      run_id: runId,
+      status: ASYNC_JOB_TIMELINE[timelineIndex],
+      created_at: "2026-08-16T09:00:00+00:00",
+      updated_at: "2026-08-16T09:00:01+00:00",
     });
   }),
 

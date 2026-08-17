@@ -2,11 +2,12 @@
  * 빌드 실행을 비동기 job으로 관리하는 훅 (#39).
  *
  * idle → running → succeeded/failed/cancelled 상태 머신과 취소(AbortController)를
- * 제공한다. Builder의 /build가 동기식인 현재는 단일 호출을 감싸지만, Builder에 job
- * 제출/폴링 엔드포인트가 생기면 이 훅 내부만 폴링으로 확장하면 된다(호출부 변경 없음).
+ * 제공한다. 실연동 모드에서는 Builder 비동기 job 표면(POST /builds + GET
+ * /builds/{run_id} 폴링, builder #480/#482)을 사용하고, 폴링 중인 잡의 wire
+ * 상태(queued/running/...)를 builderStatus로 노출한다(#245).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { executeBuild } from "@/features/runs/api";
+import { executeBuild, type BuilderJobStatus } from "@/features/runs/api";
 import { ApiError, extractErrorMessage } from "@/shared/lib/builderApi";
 import type { BuildRun, BuildSpec } from "@/shared/lib/types";
 
@@ -15,6 +16,8 @@ export type BuildJobStatus = "idle" | "running" | "succeeded" | "failed" | "canc
 export interface BuildJob {
   /** 현재 job 상태 */
   status: BuildJobStatus;
+  /** Builder 잡의 최신 wire 상태(queued/running/cancelling — 실연동 폴링 중) */
+  builderStatus?: BuilderJobStatus;
   /** 완료된 실행 결과(성공/실패 시) */
   run?: BuildRun;
   /** 실패 시 오류 메시지 */
@@ -32,6 +35,7 @@ export interface BuildJob {
  */
 export function useBuildJob(): BuildJob {
   const [status, setStatus] = useState<BuildJobStatus>("idle");
+  const [builderStatus, setBuilderStatus] = useState<BuilderJobStatus>();
   const [run, setRun] = useState<BuildRun>();
   const [error, setError] = useState<string>();
   const controllerRef = useRef<AbortController | null>(null);
@@ -40,14 +44,17 @@ export function useBuildJob(): BuildJob {
     const controller = new AbortController();
     controllerRef.current = controller;
     setStatus("running");
+    setBuilderStatus(undefined);
     setError(undefined);
     setRun(undefined);
     try {
-      const result = await executeBuild(spec, controller.signal);
+      const result = await executeBuild(spec, controller.signal, (jobStatus) => {
+        if (!controller.signal.aborted) setBuilderStatus(jobStatus);
+      });
       if (controller.signal.aborted) return;
       setRun(result);
       setStatus(result.status === "succeeded" ? "succeeded" : "failed");
-      if (result.status !== "succeeded") setError("일부 소스 빌드가 실패했습니다.");
+      if (result.status !== "succeeded") setError(result.error ?? "일부 소스 빌드가 실패했습니다.");
     } catch (cause) {
       if (controller.signal.aborted) {
         setStatus("cancelled");
@@ -75,5 +82,5 @@ export function useBuildJob(): BuildJob {
   // 언마운트 시 진행 중인 실행을 중단해 unmount 이후 setState를 방지한다(#73).
   useEffect(() => () => controllerRef.current?.abort(), []);
 
-  return { status, run, error, start, cancel };
+  return { status, builderStatus, run, error, start, cancel };
 }

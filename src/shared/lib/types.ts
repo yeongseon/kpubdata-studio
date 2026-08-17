@@ -173,6 +173,8 @@ export interface BuildRun {
   startedAt: string;
   /** 실행 종료 시각 ISO 문자열 */
   finishedAt?: string;
+  /** 실패/취소 사유 (실패·부분 실패 잡의 terminal 상태에서만) */
+  error?: string;
 }
 
 /**
