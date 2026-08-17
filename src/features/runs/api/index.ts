@@ -116,12 +116,14 @@ async function runAsyncBuild(
   }
 
   const finishedAt = job.updated_at;
+  // run_id는 서버 응답이 정본이다(제출값과 동일이지만 응답 기준으로 통일).
+  const finalRunId = job.run_id;
   if (job.status === "cancelled") {
-    return { id: runId, spec, status: "cancelled", startedAt, finishedAt };
+    return { id: finalRunId, spec, status: "cancelled", startedAt, finishedAt };
   }
   if (job.status === "failed") {
     return {
-      id: runId,
+      id: finalRunId,
       spec,
       status: "failed",
       startedAt,
@@ -138,7 +140,7 @@ async function runAsyncBuild(
     const reason =
       response.error || outcomeReason || "일부 소스 빌드가 실패했습니다.";
     return {
-      id: runId,
+      id: finalRunId,
       spec,
       status: "failed",
       startedAt,
@@ -146,7 +148,7 @@ async function runAsyncBuild(
       error: reason,
     };
   }
-  return { id: runId, spec, status: "succeeded", startedAt, finishedAt };
+  return { id: finalRunId, spec, status: "succeeded", startedAt, finishedAt };
 }
 
 /** 데모 카탈로그 항목을 목록/이력 UI용 BuildSpec으로 변환한다. */

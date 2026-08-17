@@ -123,7 +123,12 @@ describe("useBuildJob (#39)", () => {
             api_version: "1.16.0",
             error: "upstream source failed",
             outcomes: [
-              { source_key: "datago:air", status: "failed", error: "upstream source failed" },
+              {
+                source_key: "datago:air",
+                status: "failed",
+                stages_completed: [],
+                error: "upstream source failed",
+              },
             ],
           },
         });
