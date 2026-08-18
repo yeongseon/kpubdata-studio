@@ -1,0 +1,116 @@
+/**
+ * Builds/Runs "이 Run 분석" inline 결과 카드 (#255 §3).
+ *
+ * 전역 Kubi drawer를 자동으로 열지 않는다 — Selected Run의 Pipeline/Quality/Events를 같이
+ * 보면서 확인해야 하는 문맥이라, 같은 화면 안에서 답을 보여준다. 새 Kubi 엔진/store/context를
+ * 만들지 않고 기존 `useKubiSession`(#256)을 그대로 재사용한다: 이 카드가 mount되는 시점에
+ * BuildsPage가 이미 세팅해 둔 `seedQuestion`을 `useKubiSession`의 기존 pending-seed 소비
+ * effect가 그대로 집어가 `ask()`를 실행한다.
+ *
+ * 표시할 turn은 "가장 최근이면서 현재 route context와 일치하는(=stale 아닌) turn" 하나뿐이다
+ * (#256 stale-context guard). Run을 바꾸면 BuildsPage가 이 카드 자체를 닫으므로, 이전 Run의
+ * 결과가 새 Run의 context에서 유효한 것처럼 보이는 일은 없다.
+ */
+import { useMemo } from "react";
+import { useAssistConfig } from "@/features/assistant/config";
+import { ErrorNotice } from "@/features/kubi/KubiContent";
+import { useKubiSession } from "@/features/kubi/useKubiSession";
+import { Button, Card } from "@/shared/ui";
+
+export interface KubiRunAnalysisProps {
+  onClose: () => void;
+  /** "더 질문하기" — 이 경우에만 기존 전역 Kubi drawer를 연다. */
+  onAskMore: () => void;
+}
+
+/** Selected Run summary 바로 아래, Pipeline/Stage Progress 위에 표시되는 inline Kubi 분석 카드. */
+export function KubiRunAnalysis({ onClose, onAskMore }: KubiRunAnalysisProps) {
+  const session = useKubiSession();
+  const { isConfigured } = useAssistConfig();
+  const canAsk = isConfigured || session.isDemoAvailable;
+
+  // 현재 route context(=이 Run)와 일치하는 가장 최근 turn만 보여준다 — 다른 화면/이전 run에서
+  // 만든 turn과 섞지 않는다(#256 stale-context guard, KubiContent의 ContextBar와 동일 원칙).
+  const turn = useMemo(() => {
+    for (let i = session.turns.length - 1; i >= 0; i -= 1) {
+      const candidate = session.turns[i];
+      if (!session.isStale(candidate)) return candidate;
+    }
+    return null;
+  }, [session.turns, session.isStale]);
+
+  return (
+    <Card className="border-accent/50">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Kubi Run 분석</h3>
+        <button type="button" onClick={onClose} className="text-xs font-medium text-muted-foreground underline">
+          닫기
+        </button>
+      </div>
+
+      {!canAsk ? (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs text-muted-foreground">Kubi를 사용하려면 API Key 설정이 필요합니다.</p>
+          <Button size="sm" variant="secondary" onClick={onAskMore}>
+            Kubi 설정 열기
+          </Button>
+        </div>
+      ) : !turn ? (
+        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          분석 준비 중…
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2.5 text-sm">
+          {turn.status === "loading" ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              생각 중…
+              <Button size="sm" variant="ghost" onClick={() => session.cancel(turn.id)}>
+                취소
+              </Button>
+            </div>
+          ) : null}
+
+          {turn.status === "error" && turn.error ? <ErrorNotice error={turn.error} /> : null}
+
+          {turn.response ? (
+            <>
+              <p className="whitespace-pre-wrap leading-6 text-foreground">{turn.response.answer}</p>
+
+              {turn.evidence?.partial ? (
+                <p className="text-xs text-muted-foreground">
+                  일부 evidence를 확인하지 못했습니다: {turn.evidence.unavailable.join(", ")}
+                </p>
+              ) : null}
+
+              {turn.response.evidenceRefs.length > 0 ? (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Evidence
+                  </p>
+                  <ul className="mt-1 flex flex-wrap gap-1.5">
+                    {turn.response.evidenceRefs.map((ref) => (
+                      <li
+                        key={`${ref.kind}:${ref.id}`}
+                        className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px]"
+                      >
+                        {ref.label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      )}
+
+      <div className="mt-3">
+        <Button size="sm" variant="secondary" onClick={onAskMore}>
+          더 질문하기
+        </Button>
+      </div>
+    </Card>
+  );
+}

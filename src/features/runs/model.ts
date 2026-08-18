@@ -7,7 +7,7 @@
  */
 import { ApiError } from "@/shared/lib/builderApi";
 import type { BuildListItem, BuildRunStatus } from "@/shared/lib/types";
-import type { BuildQualityResponse, QualityCheckResult, RunStageEntry } from "@/shared/lib/builderApi";
+import type { BuildEvent, BuildQualityResponse, QualityCheckResult, RunStageEntry } from "@/shared/lib/builderApi";
 
 /**
  * 상단 KPI 카드용 집계.
@@ -141,4 +141,63 @@ export function classifyRunApiError(cause: unknown): RunApiErrorKind {
 export function failQualityResults(quality: BuildQualityResponse | null | undefined): QualityCheckResult[] {
   if (!quality) return [];
   return Object.values(quality.quality_results).flat().filter((result) => result.status === "fail");
+}
+
+/**
+ * P1 Structured Run Events(#496 evidence, #255 §1) 순수 헬퍼.
+ *
+ * `GET /builds/{run_id}/events`는 항상 chronological ascending으로 응답한다(builder 계약).
+ * 이 파일은 그 evidence를 그대로 요약할 뿐, Stage(#488)/Quality(#486)의 정본을 대체하는 새
+ * 판정을 만들지 않는다.
+ */
+
+/** source_key가 없는(run 전체 범위) event를 묶어 두는 key. 실제 source_key와 절대 충돌하지 않도록 예약된 값이다. */
+export const GLOBAL_RUN_EVENT_SOURCE_KEY = "__run__";
+
+/** status가 "fail"로 기록된 event만 골라낸다(원본 순서 유지). */
+export function failedRunEvents(events: BuildEvent[]): BuildEvent[] {
+  return events.filter((event) => event.status === "fail");
+}
+
+/** chronological ascending 응답 기준, 마지막으로 status가 "ok"였던 event. 없으면 null(추측하지 않음). */
+export function lastOkRunEvent(events: BuildEvent[]): BuildEvent | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index].status === "ok") return events[index];
+  }
+  return null;
+}
+
+/**
+ * source_key별로 event를 묶는다. multi-source run의 event를 첫 source로 뭉개지 않기 위한
+ * 헬퍼다(#255 §1) — source_key가 없는 event(run 전체 범위)는 {@link GLOBAL_RUN_EVENT_SOURCE_KEY}로
+ * 묶고, 실제 source의 event와 절대 합치지 않는다. 각 그룹 내부의 상대 순서는 원본(ascending)을 유지한다.
+ */
+export function groupRunEventsBySource(events: BuildEvent[]): Map<string, BuildEvent[]> {
+  const grouped = new Map<string, BuildEvent[]>();
+  for (const event of events) {
+    const key = event.source_key ?? GLOBAL_RUN_EVENT_SOURCE_KEY;
+    const bucket = grouped.get(key);
+    if (bucket) bucket.push(event);
+    else grouped.set(key, [event]);
+  }
+  return grouped;
+}
+
+/** metrics record의 값 하나를 사람이 읽을 수 있는 짧은 문자열로 만든다. */
+function formatEventMetricValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+/**
+ * event.metrics를 한 줄 compact summary로 만든다. metrics가 없으면 null(빈 문자열로 꾸미지 않음).
+ * 너무 긴 값은 잘라서 표시하되, 원본 event.metrics는 그대로 evidence에 남아 있다.
+ */
+export function summarizeEventMetrics(metrics: BuildEvent["metrics"]): string | null {
+  if (!metrics) return null;
+  const entries = Object.entries(metrics);
+  if (entries.length === 0) return null;
+  const summary = entries.map(([key, value]) => `${key}=${formatEventMetricValue(value)}`).join(", ");
+  return summary.length > 160 ? `${summary.slice(0, 157)}...` : summary;
 }

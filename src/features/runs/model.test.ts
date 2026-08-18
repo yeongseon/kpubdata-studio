@@ -7,19 +7,39 @@
  */
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/shared/lib/builderApi";
-import type { BuildQualityResponse, RunStageEntry } from "@/shared/lib/builderApi";
+import type { BuildEvent, BuildQualityResponse, RunStageEntry } from "@/shared/lib/builderApi";
 import type { BuildListItem } from "@/shared/lib/types";
 import {
+  GLOBAL_RUN_EVENT_SOURCE_KEY,
   classifyRunApiError,
   collectFailureEvidence,
   computeBuildKpi,
   failQualityResults,
+  failedRunEvents,
   firstFailedStage,
+  groupRunEventsBySource,
   lastCompletedStage,
+  lastOkRunEvent,
   matchesSearch,
   matchesStatusFilter,
+  summarizeEventMetrics,
   summarizeMultiSourceOutcome,
 } from "./model";
+
+function runEvent(overrides: Partial<BuildEvent> = {}): BuildEvent {
+  return {
+    seq: 1,
+    timestamp: "2026-08-01T00:00:00Z",
+    run_id: "run-1",
+    event: "stage_started",
+    status: "ok",
+    source_key: "air",
+    stage: "bronze",
+    message: null,
+    metrics: null,
+    ...overrides,
+  };
+}
 
 function stageEntry(overrides: Partial<RunStageEntry> = {}): RunStageEntry {
   return {
@@ -184,5 +204,62 @@ describe("failQualityResults", () => {
   it("returns an empty array (not PASS) for null/undefined quality", () => {
     expect(failQualityResults(null)).toEqual([]);
     expect(failQualityResults(undefined)).toEqual([]);
+  });
+});
+
+describe("structured run event helpers (#496 evidence, #255 P1)", () => {
+  it("failedRunEvents keeps only status=fail events, in original order", () => {
+    const events = [
+      runEvent({ seq: 1, status: "ok" }),
+      runEvent({ seq: 2, status: "fail", event: "stage_failed" }),
+      runEvent({ seq: 3, status: "ok" }),
+      runEvent({ seq: 4, status: "fail", event: "source_fetch_failed" }),
+    ];
+    expect(failedRunEvents(events).map((e) => e.seq)).toEqual([2, 4]);
+  });
+
+  it("lastOkRunEvent returns the last ok event in a chronological-ascending list, not the last event overall", () => {
+    const events = [
+      runEvent({ seq: 1, status: "ok" }),
+      runEvent({ seq: 2, status: "ok" }),
+      runEvent({ seq: 3, status: "fail" }),
+    ];
+    expect(lastOkRunEvent(events)?.seq).toBe(2);
+  });
+
+  it("lastOkRunEvent returns null (not a guess) when no event is ok", () => {
+    expect(lastOkRunEvent([runEvent({ status: "fail" }), runEvent({ status: "warn" })])).toBeNull();
+    expect(lastOkRunEvent([])).toBeNull();
+  });
+
+  it("groupRunEventsBySource keeps multi-source events separate instead of collapsing into the first source", () => {
+    const events = [
+      runEvent({ seq: 1, source_key: "air" }),
+      runEvent({ seq: 2, source_key: "population" }),
+      runEvent({ seq: 3, source_key: "air" }),
+      runEvent({ seq: 4, source_key: null, event: "run_started" }),
+    ];
+    const grouped = groupRunEventsBySource(events);
+    expect(Array.from(grouped.keys()).sort()).toEqual(["air", "population", GLOBAL_RUN_EVENT_SOURCE_KEY].sort());
+    expect(grouped.get("air")?.map((e) => e.seq)).toEqual([1, 3]);
+    expect(grouped.get("population")?.map((e) => e.seq)).toEqual([2]);
+    expect(grouped.get(GLOBAL_RUN_EVENT_SOURCE_KEY)?.map((e) => e.seq)).toEqual([4]);
+  });
+
+  it("summarizeEventMetrics returns null (not an empty string) when metrics is null/empty", () => {
+    expect(summarizeEventMetrics(null)).toBeNull();
+    expect(summarizeEventMetrics({})).toBeNull();
+  });
+
+  it("summarizeEventMetrics renders a compact key=value summary from real fields only", () => {
+    expect(summarizeEventMetrics({ row_count: 120, null_ratio: 0.02 })).toBe("row_count=120, null_ratio=0.02");
+  });
+
+  it("summarizeEventMetrics truncates very long summaries instead of overflowing the timeline row", () => {
+    const metrics = { note: "x".repeat(200) };
+    const summary = summarizeEventMetrics(metrics);
+    expect(summary).not.toBeNull();
+    expect(summary!.length).toBeLessThanOrEqual(160);
+    expect(summary!.endsWith("...")).toBe(true);
   });
 });

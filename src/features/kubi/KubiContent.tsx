@@ -135,7 +135,7 @@ export function ApiKeySetup() {
   );
 }
 
-function ErrorNotice({ error, onRetry }: { error: KubiErrorState; onRetry?: () => void }) {
+export function ErrorNotice({ error, onRetry }: { error: KubiErrorState; onRetry?: () => void }) {
   const message: Record<KubiErrorState["kind"], string> = {
     no_key: "API Key가 설정되어 있지 않습니다. 위에서 먼저 설정하세요.",
     bad_base_url: (error as Extract<KubiErrorState, { kind: "bad_base_url" }>).message,

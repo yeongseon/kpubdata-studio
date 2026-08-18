@@ -21,22 +21,29 @@ import {
   collectFailureEvidence,
   computeBuildKpi,
   failQualityResults,
+  failedRunEvents,
   matchesSearch,
   matchesStatusFilter,
   summarizeMultiSourceOutcome,
   type RunStatusFilter,
 } from "@/features/runs/model";
-import { listBuilds } from "@/features/runs/api";
+import { isTerminalBuilderStatus, listBuilds } from "@/features/runs/api";
 import { getBuildSpecSnapshot } from "@/features/runs/api/runDetail";
 import { useSelectedRunPolling } from "@/features/runs/useSelectedRunPolling";
+import { useRunEvents, type RunEventsState } from "@/features/runs/useRunEvents";
+import { EventTimeline } from "@/features/runs/components/EventTimeline";
+import { KubiRunAnalysis } from "@/features/runs/components/KubiRunAnalysis";
+import { useKubiStore } from "@/features/kubi/useKubiSession";
+import { useUIStore } from "@/shared/hooks/useUIStore";
 import { isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type { BuildQualityResponse, BuildSpecSnapshotResponse, RunStagesResponse } from "@/shared/lib/builderApi";
 import type { BuildListItem, BuildRunStatus } from "@/shared/lib/types";
 import {
+  Button,
   Card,
+  Disclosure,
   EmptyState,
   ErrorState,
-  LinkButton,
   PageHeader,
   Select,
   SkeletonTable,
@@ -135,6 +142,10 @@ export function BuildsPage() {
   const clearSelection = useCallback(() => {
     const next = new URLSearchParams(searchParams);
     next.delete("run");
+    // dataset/stage는 selected Run에서 파생된 Kubi context 값이다(#255 §2) — run 선택을
+    // 지우면 함께 지워 다음 화면에 이전 run의 문맥이 남지 않게 한다.
+    next.delete("dataset");
+    next.delete("stage");
     setSearchParams(next);
   }, [searchParams, setSearchParams]);
 
@@ -171,6 +182,47 @@ export function BuildsPage() {
 
   const live = useSelectedRunPolling(selectedRunId);
 
+  // event polling도 selected Run polling과 같은 "non-terminal이면 계속, terminal이면 멈춤"
+  // 정책을 따른다(#255 §3). listItem의 historical 상태는 표시에는 쓰되(RunDetailPanel의
+  // runStatus), interval polling을 켜는 판단에는 쓰지 않는다 — 확인된 live job이 실제로
+  // non-terminal일 때만 polling을 시작한다(useSelectedRunPolling과 동일한 원칙).
+  const eventsPollingEnabled = live.kind === "job" && !isTerminalBuilderStatus(live.job.status);
+  const eventsState = useRunEvents(selectedRunId, eventsPollingEnabled);
+
+  // Kubi Run context(#256)는 새 context store 없이, 기존 route resolver(features/kubi/context.ts)가
+  // 읽는 `?run=&dataset=&stage=` 쿼리 관례를 그대로 재사용한다(Quality/Dataset Detail과 동일).
+  // 이 화면에서 실제로 확인된 값만 반영한다 — failure message를 파싱해 stage를 추측하지 않고,
+  // 정확히 하나의 source만 실패했을 때만 그 failedStage를 안전한 문맥으로 취급한다(#255 §2).
+  useEffect(() => {
+    if (!selectedRunId) return;
+    const datasetId = specState.status === "loaded" ? extractDatasetId(specState.data.spec) : null;
+    const failureEvidence =
+      stagesState.status === "loaded" ? collectFailureEvidence(stagesState.data.sources) : [];
+    const stage = failureEvidence.length === 1 ? failureEvidence[0].failedStage : null;
+
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+    if (datasetId) {
+      if (next.get("dataset") !== datasetId) {
+        next.set("dataset", datasetId);
+        changed = true;
+      }
+    } else if (next.has("dataset")) {
+      next.delete("dataset");
+      changed = true;
+    }
+    if (stage) {
+      if (next.get("stage") !== stage) {
+        next.set("stage", stage);
+        changed = true;
+      }
+    } else if (next.has("stage")) {
+      next.delete("stage");
+      changed = true;
+    }
+    if (changed) setSearchParams(next, { replace: true });
+  }, [selectedRunId, specState, stagesState, searchParams, setSearchParams]);
+
   // Run 자체가 존재하지 않는다고 판정하는 기준: 목록 scope 밖이고, stage 조회도 404다.
   // (stage endpoint는 목록 limit과 무관하게 임의 run_id를 바로 조회할 수 있어 더 신뢰할 수 있는 신호)
   const runNotFound =
@@ -192,11 +244,12 @@ export function BuildsPage() {
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
+      {/* App Shell topbar에 이미 전역 "새 빌드 만들기" CTA가 있다(#255 §1) — 여기서는 중복 action을
+          추가하지 않는다. */}
       <PageHeader
         eyebrow="Builds / Runs"
         title="빌드 실행 이력"
         description="Run 상태, Stage Progress, Quality, Failure evidence를 한 화면에서 확인합니다."
-        actions={<LinkButton to="/builds/new">새 빌드 만들기</LinkButton>}
       />
 
       <KpiRow kpi={kpi} />
@@ -255,6 +308,7 @@ export function BuildsPage() {
               stagesState={stagesState}
               qualityState={qualityState}
               specState={specState}
+              eventsState={eventsState}
               live={live}
             />
           )
@@ -395,6 +449,7 @@ function RunDetailPanel({
   stagesState,
   qualityState,
   specState,
+  eventsState,
   live,
 }: {
   runId: string;
@@ -403,8 +458,20 @@ function RunDetailPanel({
   stagesState: AsyncState<RunStagesResponse>;
   qualityState: AsyncState<BuildQualityResponse>;
   specState: AsyncState<BuildSpecSnapshotResponse>;
+  eventsState: RunEventsState;
   live: ReturnType<typeof useSelectedRunPolling>;
 }) {
+  const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
+  const seedKubiQuestion = useKubiStore((state) => state.seedQuestion);
+
+  // "이 Run 분석"은 더 이상 전역 Kubi drawer를 자동으로 열지 않는다(#255 §2) — 대신 이 Run summary
+  // 바로 아래에 inline card를 펼친다. Run을 바꾸면 카드를 닫아, 이전 Run의 분석 결과가 새 Run의
+  // context에서 유효한 것처럼 보이지 않게 한다(#256 stale-context guard와 같은 원칙).
+  const [showKubiAnalysis, setShowKubiAnalysis] = useState(false);
+  useEffect(() => {
+    setShowKubiAnalysis(false);
+  }, [runId]);
+
   const sources = stagesState.status === "loaded" ? stagesState.data.sources : [];
   const outcome = stagesState.status === "loaded" ? summarizeMultiSourceOutcome(sources) : "unavailable";
   const failureEvidence = stagesState.status === "loaded" ? collectFailureEvidence(sources) : [];
@@ -415,6 +482,8 @@ function RunDetailPanel({
         ? "UNAVAILABLE"
         : undefined;
   const qualityFails = qualityState.status === "loaded" ? failQualityResults(qualityState.data) : [];
+  const events = eventsState.status === "loaded" ? eventsState.data.events : [];
+  const failedEvents = failedRunEvents(events);
 
   // Run 전체 status: registry에 살아있는 job(live)이 있으면 그 값이 가장 최신이다.
   // 없으면(historical) 목록 요약(listItem.status)을 신뢰한다 — 절대 stage 상태를 run status로
@@ -464,8 +533,22 @@ function RunDetailPanel({
           <Link className="text-xs font-medium text-accent-subtle-foreground underline" to={`/builds/${encodeURIComponent(runId)}/publish`}>
             게시
           </Link>
+          <Button
+            variant="secondary"
+            className="ml-auto"
+            onClick={() => {
+              seedKubiQuestion(`Run ${runId}의 상태와 실패 원인을 분석해줘.`);
+              setShowKubiAnalysis(true);
+            }}
+          >
+            이 Run 분석
+          </Button>
         </div>
       </Card>
+
+      {showKubiAnalysis ? (
+        <KubiRunAnalysis onClose={() => setShowKubiAnalysis(false)} onAskMore={openKubiDrawer} />
+      ) : null}
 
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -566,36 +649,71 @@ function RunDetailPanel({
       ) : null}
 
       <Card>
-        <h3 className="text-sm font-semibold">BuildSpec snapshot</h3>
-        {specState.status === "loading" || specState.status === "idle" ? (
-          <Skeleton className="mt-4 h-10 w-full" />
-        ) : null}
-        {specState.status === "error" ? (
-          <p className="mt-3 text-sm text-muted-foreground">
-            {specState.permissionDenied
-              ? "이 Run의 BuildSpec snapshot을 조회할 권한이 없습니다."
-              : specState.error}
+        <Disclosure
+          title={
+            <span className="flex flex-1 flex-wrap items-center gap-2">
+              Run Events{eventsState.status === "loaded" ? ` (${events.length})` : ""}
+              {failedEvents.length > 0 ? (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950/50 dark:text-red-300">
+                  {failedEvents.length}건 실패
+                </span>
+              ) : null}
+            </span>
+          }
+        >
+          <p className="text-xs text-muted-foreground">
+            Stage Progress(#488)/Quality(#486)의 판정을 대체하지 않는 append-only evidence입니다.
           </p>
-        ) : specState.status === "loaded" ? (
-          <div className="mt-3 text-sm">
-            <p className="text-xs text-muted-foreground">digest: {specState.data.spec_digest}</p>
-            {(() => {
-              const datasetId = extractDatasetId(specState.data.spec);
-              return datasetId ? (
-                <Link
-                  className="mt-2 inline-block text-xs font-medium text-accent-subtle-foreground underline"
-                  to={`/datasets/${encodeURIComponent(datasetId)}`}
-                >
-                  Dataset 상세 보기 ({datasetId})
-                </Link>
-              ) : null;
-            })()}
-            <p className="mt-2 text-xs text-muted-foreground">
-              편집/재실행 연동은 Add Data Workbench(#250)가 main에 merge된 뒤 제공됩니다 — 현재는 snapshot
-              조회만 지원합니다.
+          {eventsState.status === "loading" || eventsState.status === "idle" ? (
+            <Skeleton className="mt-4 h-24 w-full" />
+          ) : eventsState.status === "error" ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              {eventsState.mockUnsupported
+                ? eventsState.error
+                : eventsState.notFound
+                  ? "이 Run의 event timeline을 찾을 수 없습니다(404)."
+                  : eventsState.permissionDenied
+                    ? "이 Run의 event timeline을 조회할 권한이 없습니다."
+                    : `Event timeline을 불러오지 못했습니다: ${eventsState.error}`}
             </p>
-          </div>
-        ) : null}
+          ) : (
+            <EventTimeline events={events} />
+          )}
+        </Disclosure>
+      </Card>
+
+      <Card>
+        <Disclosure title="BuildSpec snapshot">
+          {specState.status === "loading" || specState.status === "idle" ? (
+            <Skeleton className="h-10 w-full" />
+          ) : null}
+          {specState.status === "error" ? (
+            <p className="text-sm text-muted-foreground">
+              {specState.permissionDenied
+                ? "이 Run의 BuildSpec snapshot을 조회할 권한이 없습니다."
+                : specState.error}
+            </p>
+          ) : specState.status === "loaded" ? (
+            <div className="text-sm">
+              <p className="text-xs text-muted-foreground">digest: {specState.data.spec_digest}</p>
+              {(() => {
+                const datasetId = extractDatasetId(specState.data.spec);
+                return datasetId ? (
+                  <Link
+                    className="mt-2 inline-block text-xs font-medium text-accent-subtle-foreground underline"
+                    to={`/datasets/${encodeURIComponent(datasetId)}`}
+                  >
+                    Dataset 상세 보기 ({datasetId})
+                  </Link>
+                ) : null;
+              })()}
+              <p className="mt-2 text-xs text-muted-foreground">
+                편집/재실행 연동은 Add Data Workbench(#250)가 main에 merge된 뒤 제공됩니다 — 현재는 snapshot
+                조회만 지원합니다.
+              </p>
+            </div>
+          ) : null}
+        </Disclosure>
       </Card>
     </div>
   );
