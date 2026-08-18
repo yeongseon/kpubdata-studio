@@ -78,6 +78,21 @@ export const MOCK_RUNS: Record<string, DatasetRunsResponse> = {
 };
 
 export const MOCK_STAGES: Record<string, RunStagesResponse> = {
+  // Builds/Runs 목록(mockBuilds → DEMO_DATASETS.buildId)이 실제로 쓰는 run id로도
+  // stage/quality fixture를 조회할 수 있도록 정합시킨다(#255 마감 보완). 새 mock
+  // 의미를 만들지 않고, 아래 air-2026-08-* fixture와 같은 모양을 그대로 재사용한다.
+  "air-quality-20260621": {
+    run_id: "air-quality-20260621",
+    sources: [
+      { source_key: "datago__air_quality", bronze: { status: "completed", available: true }, silver: { status: "completed", available: true }, gold: { status: "completed", available: true } },
+    ],
+  },
+  "dur-older-adult-caution-20260618": {
+    run_id: "dur-older-adult-caution-20260618",
+    sources: [
+      { source_key: "datago__dur_older_adult_caution", bronze: { status: "failed", available: false }, silver: { status: "not_run", available: false }, gold: { status: "not_run", available: false } },
+    ],
+  },
   "air-2026-08-14": {
     run_id: "air-2026-08-14",
     sources: [
@@ -103,6 +118,28 @@ export const MOCK_STAGES: Record<string, RunStagesResponse> = {
 };
 
 export const MOCK_QUALITY: Record<string, BuildQualityResponse> = {
+  // MOCK_STAGES와 같은 run id 정합 보완(#255) — mockBuilds()가 실제로 노출하는
+  // succeeded/failed run 각 하나에 실제 Quality 결과를 붙인다.
+  "air-quality-20260621": {
+    run_id: "air-quality-20260621",
+    availability: "available",
+    evaluated_checks: 1,
+    quality_results: {
+      datago__air_quality: [
+        { source_key: "datago__air_quality", category: "row_count", rule: "min_rows", column: null, status: "pass", actual: 12304, threshold: 100, affected_rows: null, evaluated_rows: 12304, detail: null },
+      ],
+    },
+    schema_drift: { datago__air_quality: [] },
+  },
+  // bronze 단계에서 실패한 run이라 quality가 계산되지 않았다(N/A ≠ PASS) —
+  // MOCK_STAGES의 bronze failed와 정합되는, 지어내지 않은 값.
+  "dur-older-adult-caution-20260618": {
+    run_id: "dur-older-adult-caution-20260618",
+    availability: "unavailable",
+    evaluated_checks: 0,
+    quality_results: {},
+    schema_drift: {},
+  },
   "air-2026-08-14": {
     run_id: "air-2026-08-14",
     availability: "partial",

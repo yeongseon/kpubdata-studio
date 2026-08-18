@@ -509,3 +509,60 @@ export type QualityAvailability = z.infer<typeof qualityAvailabilitySchema>;
 export type BuildQualityResponse = z.infer<typeof buildQualityResponseSchema>;
 export type DatasetQualityHistoryEntry = z.infer<typeof datasetQualityHistoryEntrySchema>;
 export type DatasetQualityHistoryResponse = z.infer<typeof datasetQualityHistoryResponseSchema>;
+
+/**
+ * ============================================
+ * BuildSpec snapshot (#487) / structured run events (#496)
+ * ============================================
+ */
+
+/** GET /builds/{run_id}/spec 응답. run이 실제 실행에 사용한 canonical(redaction된) YAML과 digest. */
+export const buildSpecSnapshotResponseSchema = z.object({
+  run_id: z.string(),
+  spec: z.string(),
+  spec_digest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+});
+
+export const buildEventNameSchema = z.enum([
+  "run_submitted",
+  "run_started",
+  "run_finished",
+  "run_failed",
+  "source_fetch_started",
+  "source_fetch_completed",
+  "source_fetch_failed",
+  "stage_started",
+  "stage_completed",
+  "stage_failed",
+  "quality_evaluated",
+]);
+
+export const buildEventStatusSchema = z.enum(["ok", "warn", "fail"]);
+
+/** medallion stage(bronze/silver/gold) + export 실행 단계. RunStagesResponse의 3-stage와는 별개 vocabulary다. */
+export const buildEventStageNameSchema = z.enum(["bronze", "silver", "gold", "export"]);
+
+/** 단일 structured run event(#496). raw log/stack trace/자유 object를 담지 않는 bounded 필드만 있다. */
+export const buildEventSchema = z.object({
+  seq: z.number().int(),
+  timestamp: z.string(),
+  run_id: z.string(),
+  event: buildEventNameSchema,
+  status: buildEventStatusSchema,
+  source_key: z.string().nullable(),
+  stage: buildEventStageNameSchema.nullable(),
+  message: z.string().nullable(),
+  metrics: z.record(z.string(), z.json()).nullable(),
+});
+
+export const buildEventsResponseSchema = z.object({
+  run_id: z.string(),
+  events: z.array(buildEventSchema),
+});
+
+export type BuildSpecSnapshotResponse = z.infer<typeof buildSpecSnapshotResponseSchema>;
+export type BuildEventName = z.infer<typeof buildEventNameSchema>;
+export type BuildEventStatus = z.infer<typeof buildEventStatusSchema>;
+export type BuildEventStageName = z.infer<typeof buildEventStageNameSchema>;
+export type BuildEvent = z.infer<typeof buildEventSchema>;
+export type BuildEventsResponse = z.infer<typeof buildEventsResponseSchema>;
