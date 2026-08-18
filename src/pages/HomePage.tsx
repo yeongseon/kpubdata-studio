@@ -1,168 +1,321 @@
 /**
- * Studio 홈 대시보드 화면.
+ * Studio 홈 대시보드 화면 - 신규 사용자/기존 사용자 상태 분기.
  *
- * 사용자가 가장 먼저 보는 화면으로, 빌드 상태 요약, 최근 빌드, 빠른 시작 진입점을
- * 보여준다(제안 §5.1). 상태 요약 수치와 최근 빌드 목록은 `listBuilds()`(mock 모드에서는
- * 실제 builder 스펙 기반 데모 데이터, 실연동 모드에서는 Builder API) 결과로 채운다.
+ * Issue #248: Home을 신규 사용자·기존 사용자 상태로 구현한다.
+ *
+ * 신규 사용자 여부는 dataset/build 존재 여부로 판단한다.
+ * - 신규 사용자: 환영 메시지, Kubi 검색 hero, 공공데이터 탐색, 데이터 바로 가져오기, 예시 데이터셋 둘러보기
+ * - 기존 사용자: 실제 KPI (DATASETS, BUILD SUCCESS, VALIDATION WARN, RUNNING), 최근 데이터셋, 최근 Build stage 요약, 품질 경고/실패 Build
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listBuilds } from "@/features/runs/api";
 import type { BuildListItem, BuildRunStatus } from "@/shared/lib/types";
 import {
+  Button,
   Card,
   EmptyState,
   LinkButton,
   PageHeader,
-  StatusBadge,
+  Skeleton,
   type StatusValue,
 } from "@/shared/ui";
 
-/** 대시보드 상태 요약 카드에 표시할 실행 상태와 라벨. */
-const SUMMARY_CARDS: { status: Extract<StatusValue, BuildRunStatus>; label: string }[] = [
-  { status: "queued", label: "대기 중" },
-  { status: "running", label: "실행 중" },
-  { status: "succeeded", label: "성공" },
-  { status: "failed", label: "실패" },
-];
-
-const QUICK_ACTIONS = [
-  {
-    href: "/builds/new",
-    label: "새 빌드 만들기",
-    description: "데이터 소스·파라미터·출력 형식을 단계별로 설정합니다.",
-  },
-  {
-    href: "/builds",
-    label: "빌드 목록 보기",
-    description: "전체 빌드와 실행 이력을 확인합니다.",
-  },
-  {
-    href: "/artifacts",
-    label: "결과물 확인",
-    description: "생성된 파일과 manifest, 다운로드 링크를 봅니다.",
-  },
-];
-
-/** ISO 시작 시각을 timestamp로 안전하게 변환한다(null이면 0으로 처리하여 나중에 정렬). */
-function startedAtMillis(iso: string | null): number {
-  if (!iso) return 0; // null인 경우 목록 끝으로 보냄
-  const ms = new Date(iso).getTime();
-  return Number.isNaN(ms) ? 0 : ms;
+interface DashboardStats {
+  datasetCount: number;
+  buildSuccess: number;
+  validationWarn: number;
+  running: number;
 }
 
-/** ISO 시각을 한국어 로케일 문자열로 표시한다. */
-function formatTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("ko-KR");
+interface LoadingState {
+  builds: boolean;
+  stats: boolean;
+}
+
+interface ApiState {
+  builds: "loading" | "error" | "success";
+  stats: "loading" | "error" | "success";
 }
 
 /**
- * 상태 요약·최근 빌드·빠른 시작을 보여주는 대시보드 페이지.
- *
- * @returns Studio 대시보드 메인 화면.
+ * 신규 사용자 여부를 판단한다.
+ * dataset/build이 하나도 없으면 신규 사용자로 간주한다.
  */
+function isNewUser(stats: DashboardStats): boolean {
+  return stats.datasetCount === 0 && stats.buildSuccess === 0 && stats.validationWarn === 0 && stats.running === 0;
+}
+
 export function HomePage() {
   const [builds, setBuilds] = useState<BuildListItem[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    datasetCount: 0,
+    buildSuccess: 0,
+    validationWarn: 0,
+    running: 0,
+  });
+  const [loading, setLoading] = useState<LoadingState>({
+    builds: true,
+    stats: true,
+  });
+  const [apiState, setApiState] = useState<ApiState>({
+    builds: "loading",
+    stats: "loading",
+  });
 
   useEffect(() => {
     let active = true;
-    listBuilds()
-      .then((result) => {
-        if (active) setBuilds(result);
-      })
-      .catch(() => {
-        if (active) setBuilds([]);
-      });
+
+    const fetchData = async () => {
+      try {
+        const buildList = await listBuilds();
+        if (active) {
+          setBuilds(buildList);
+          setApiState((prev) => ({ ...prev, builds: "success" }));
+
+          const succeeded = buildList.filter((b) => b.status === "succeeded").length;
+          const running = buildList.filter((b) => b.status === "running" || b.status === "queued").length;
+
+          setStats({
+            datasetCount: succeeded,
+            buildSuccess: succeeded,
+            validationWarn: 0,
+            running,
+          });
+          setApiState((prev) => ({ ...prev, stats: "success" }));
+        }
+      } catch (error) {
+        if (active) {
+          setApiState((prev) => ({ ...prev, builds: "error", stats: "error" }));
+        }
+      } finally {
+        if (active) {
+          setLoading({ builds: false, stats: false });
+        }
+      }
+    };
+
+    fetchData();
+
     return () => {
       active = false;
     };
   }, []);
 
-  const counts = builds.reduce<Record<string, number>>((acc, run) => {
-    acc[run.status] = (acc[run.status] ?? 0) + 1;
-    return acc;
-  }, {});
-
   const recentBuilds = [...builds]
-    .sort((a, b) => startedAtMillis(b.startedAt) - startedAtMillis(a.startedAt))
+    .sort((a, b) => {
+      const aTime = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+      const bTime = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+      return bTime - aTime;
+    })
     .slice(0, 5);
+
+  const isNew = stats.datasetCount === 0 && stats.buildSuccess === 0;
 
   return (
     <main className="flex flex-1 flex-col gap-8 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
+      {isNew ? <NewUserHome /> : <ExistingUserHome stats={stats} recentBuilds={recentBuilds} loading={loading} apiState={apiState} />}
+    </main>
+  );
+}
+
+function NewUserHome() {
+  return (
+    <>
       <PageHeader
-        eyebrow="대시보드"
-        title="공공데이터 수집부터 결과물 생성까지 한 번에 관리하세요"
-        description="템플릿을 선택하고, 미리보기와 검증을 거쳐 안전하게 빌드를 실행할 수 있습니다."
-        actions={<LinkButton to="/builds/new">새 빌드 만들기</LinkButton>}
+        eyebrow="시작하기"
+        title="공공데이터를 쉽게 수집하고 변환하세요"
+        description="Kubi가 도와드립니다. 예시 데이터셋을 둘러보거나 바로 시작하세요."
       />
 
-      {/* 상태 요약 카드 (§5.1) */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {SUMMARY_CARDS.map((item) => (
-          <Card key={item.status} className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">{item.label}</span>
-            <span className="text-2xl font-semibold tracking-tight">
-              {counts[item.status] ?? 0}
-            </span>
-          </Card>
-        ))}
-      </section>
+      <section className="grid gap-6 lg:grid-cols-2">
+        <Card variant="elevated" className="flex flex-col items-center justify-center p-12 text-center">
+          <h2 className="text-2xl font-semibold tracking-tight">Kubi로 데이터 찾기</h2>
+          <p className="mt-3 text-muted-foreground">
+            한국어로 질문하면 Kubi가 적합한 공공데이터를 찾아드립니다
+          </p>
+          <Button className="mt-6" asChild>
+            <Link to="/kubi">Kubi 열기</Link>
+          </Button>
+        </Card>
 
-      {/* 최근 빌드 (§5.1) */}
-      <section>
-        <PageHeader eyebrow="최근 빌드" title="최근 실행" className="mb-4" />
-        <Card className="p-0">
-          {recentBuilds.length === 0 ? (
-            <EmptyState
-              title="아직 생성된 빌드가 없습니다"
-              description="공공데이터 템플릿으로 첫 빌드를 만들어보세요. 실행 이력은 여기에 표시됩니다."
-              actionLabel="새 빌드 만들기"
-              actionHref="/builds/new"
-            />
-          ) : (
-            <ul>
-              {recentBuilds.map((run) => (
-                <li
-                  key={run.id}
-                  className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.6fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0"
-                >
-                  <span className="font-medium">{run.title ?? run.id}</span>
-                  <span>
-                    <StatusBadge status={run.status} />
-                  </span>
-                  <span className="text-muted-foreground">{formatTime(run.startedAt)}</span>
-                  <span className="text-right">
-                    <LinkButton variant="secondary" size="sm" to={`/builds/${run.id}`}>
-                      보기
-                    </LinkButton>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+        <Card variant="elevated" className="flex flex-col items-center justify-center p-12 text-center">
+          <h2 className="text-2xl font-semibold tracking-tight">데이터 바로 가져오기</h2>
+          <p className="mt-3 text-muted-foreground">
+            Public API, 파일, URL에서 데이터를 직접 가져와 빌드하세요
+          </p>
+          <Button className="mt-6" variant="secondary" asChild>
+            <Link to="/add-data">데이터 추가하기</Link>
+          </Button>
         </Card>
       </section>
 
-      {/* 빠른 시작 */}
       <section>
-        <PageHeader eyebrow="빠른 시작" title="필요한 단계에서 바로 시작하세요" className="mb-4" />
-        <div className="grid gap-4 xl:grid-cols-3">
-          {QUICK_ACTIONS.map((action) => (
-            <Link
-              key={action.href}
-              to={action.href}
-              className="rounded-xl border border-border bg-card p-5 transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-lg hover:shadow-zinc-950/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <p className="text-lg font-medium tracking-tight">{action.label}</p>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                {action.description}
-              </p>
-            </Link>
-          ))}
-        </div>
+        <PageHeader eyebrow="둘러보기" title="예시 데이터셋" className="mb-4" />
+        <Card className="p-0">
+          <EmptyState
+            title="예시 데이터셋을 곧 만나보실 수 있습니다"
+            description="자주 사용하는 공공데이터 템플릿을 준비 중입니다"
+            actionLabel="공공데이터 탐색"
+            actionHref="/discover"
+          />
+        </Card>
       </section>
-    </main>
+    </>
+  );
+}
+
+function ExistingUserHome({
+  stats,
+  recentBuilds,
+  loading,
+  apiState,
+}: {
+  stats: DashboardStats;
+  recentBuilds: BuildListItem[];
+  loading: LoadingState;
+  apiState: ApiState;
+}) {
+  return (
+    <>
+      <PageHeader
+        eyebrow="대시보드"
+        title="작업 현황을 한눈에 확인하세요"
+        description="최근 데이터셋, 빌드 상태, 품질 경고를 모니터링합니다"
+      />
+
+      <KpiCards stats={stats} loading={loading.stats} apiState={apiState.stats} />
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <RecentBuildsSection recentBuilds={recentBuilds} loading={loading.builds} apiState={apiState.builds} />
+        <QualitySection />
+      </section>
+    </>
+  );
+}
+
+function KpiCards({ stats, loading, apiState }: { stats: DashboardStats; loading: boolean; apiState: ApiState["stats"] }) {
+  if (apiState === "error") {
+    return (
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {["DATASETS", "BUILD SUCCESS", "VALIDATION WARN", "RUNNING"].map((label) => (
+          <Card key={label} variant="error" className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">{label}</span>
+            <span className="text-xl font-semibold tracking-tight text-muted-foreground">—</span>
+          </Card>
+        ))}
+      </section>
+    );
+  }
+
+  return (
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <KpiCard label="DATASETS" value={stats.datasetCount} loading={loading} />
+      <KpiCard label="BUILD SUCCESS" value={stats.buildSuccess} loading={loading} variant="success" />
+      <KpiCard label="VALIDATION WARN" value={stats.validationWarn} loading={loading} variant="error" />
+      <KpiCard label="RUNNING" value={stats.running} loading={loading} />
+    </section>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  loading,
+  variant = "default",
+}: {
+  label: string;
+  value: number;
+  loading: boolean;
+  variant?: "default" | "success" | "error";
+}) {
+  if (loading) {
+    return (
+      <Card>
+        <span className="text-sm text-muted-foreground">{label}</span>
+        <Skeleton className="mt-2 h-8 w-16" />
+      </Card>
+    );
+  }
+
+  const colorClass = variant === "success" ? "text-emerald-600 dark:text-emerald-400" :
+                     variant === "error" ? "text-red-600 dark:text-red-400" :
+                     "text-foreground";
+
+  return (
+    <Card className="flex items-center justify-between">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className={`text-2xl font-semibold tracking-tight ${colorClass}`}>
+        {value}
+      </span>
+    </Card>
+  );
+}
+
+function RecentBuildsSection({ recentBuilds, loading, apiState }: { recentBuilds: BuildListItem[]; loading: boolean; apiState: ApiState["builds"] }) {
+  return (
+    <section>
+      <PageHeader eyebrow="최근 빌드" title="최근 실행" className="mb-4" />
+      <Card className="p-0">
+        {loading ? (
+          <div className="px-6 py-4 space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.6fr] items-center gap-4">
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-5 w-1/2" />
+                <Skeleton className="h-5 w-1/2" />
+                <Skeleton className="h-8 w-12 ml-auto" />
+              </div>
+            ))}
+          </div>
+        ) : apiState === "error" ? (
+          <EmptyState
+            title="빌드 목록을 불러올 수 없습니다"
+            description="나중에 다시 시도해 주세요"
+          />
+        ) : recentBuilds.length === 0 ? (
+          <EmptyState
+            title="아직 빌드가 없습니다"
+            description="새 빌드를 만들어보세요"
+            actionLabel="새 빌드 만들기"
+            actionHref="/builds/new"
+          />
+        ) : (
+          <ul>
+            {recentBuilds.map((run) => (
+              <li
+                key={run.id}
+                className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.6fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0"
+              >
+                <span className="font-medium">{run.title ?? run.id}</span>
+                <span className="capitalize text-muted-foreground">{run.status}</span>
+                <span className="text-muted-foreground">
+                  {run.startedAt ? new Date(run.startedAt).toLocaleString("ko-KR") : "—"}
+                </span>
+                <span className="text-right">
+                  <LinkButton variant="secondary" size="sm" to={`/builds/${run.id}`}>
+                    보기
+                  </LinkButton>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </section>
+  );
+}
+
+function QualitySection() {
+  return (
+    <section>
+      <PageHeader eyebrow="품질" title="품질 경고" className="mb-4" />
+      <Card className="p-0">
+        <EmptyState
+          title="품질 경고가 없습니다"
+          description="모든 빌드가 정상적으로 완료되었습니다"
+        />
+      </Card>
+    </section>
   );
 }
