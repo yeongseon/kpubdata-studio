@@ -182,11 +182,54 @@ describe("useSelectedRunPolling", () => {
     await vi.waitFor(() => expect(result.current.kind).toBe("permission_denied"));
   });
 
-  it("does not turn a transient network error into a failed run status", async () => {
+  it("does not turn a transient network error into a failed run status (no job confirmed yet)", async () => {
     vi.spyOn(builderApi, "getBuildJob").mockRejectedValueOnce(new Error("network down"));
     const { result } = renderHook(() => useSelectedRunPolling("run-1"));
     await vi.waitFor(() => expect(result.current.kind).toBe("error"));
     expect(result.current).toMatchObject({ kind: "error" });
+  });
+
+  it("keeps the last known non-terminal job and a warning through a transient error, then keeps polling and clears the warning on recovery (#255 후속)", async () => {
+    const spy = vi
+      .spyOn(builderApi, "getBuildJob")
+      .mockResolvedValueOnce(job({ status: "running" }))
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(job({ status: "running" }))
+      .mockResolvedValueOnce(job({ status: "succeeded" }));
+
+    const { result } = renderHook(() => useSelectedRunPolling("run-1"));
+    await vi.waitFor(() => expect(result.current).toEqual({ kind: "job", job: job({ status: "running" }) }));
+
+    // 두 번째 조회가 일시적으로 실패한다 — 마지막으로 확인된 job(running)을 유지하고 warning만 얹는다.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    expect(result.current).toEqual({
+      kind: "job",
+      job: job({ status: "running" }),
+      warning: "network down",
+    });
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    // 여전히 non-terminal("job" kind)이라 다음 interval polling도 계속된다 — 멈추지 않는다.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    expect(spy).toHaveBeenCalledTimes(3);
+    // 회복되면 warning이 사라진다.
+    expect(result.current).toEqual({ kind: "job", job: job({ status: "running" }) });
+
+    // terminal에 도달하면 정상적으로 polling이 멈춘다.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    expect(spy).toHaveBeenCalledTimes(4);
+    expect(result.current).toEqual({ kind: "job", job: job({ status: "succeeded" }) });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(spy).toHaveBeenCalledTimes(4);
   });
 
   it("aborts the in-flight request when the run selection changes, so a stale response cannot overwrite the new selection", async () => {

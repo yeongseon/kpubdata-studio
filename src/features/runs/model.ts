@@ -28,7 +28,14 @@ export interface BuildKpi {
   succeeded: number;
   failed: number;
   cancelled: number;
+  /** running + queued + cancelling 합계(기존 Running KPI 값, 하위 호환 유지). */
   running: number;
+  /** status가 정확히 "running"인 건수. */
+  runningOnly: number;
+  /** status가 정확히 "queued"인 건수. */
+  queuedOnly: number;
+  /** status가 정확히 "cancelling"인 건수. */
+  cancellingOnly: number;
   /** false면 이 scope에서 running 값을 신뢰할 수 없다(계약상 완료 이력만 옴). */
   runningAvailable: boolean;
 }
@@ -41,14 +48,33 @@ export function computeBuildKpi(
   let succeeded = 0;
   let failed = 0;
   let cancelled = 0;
-  let running = 0;
+  let runningOnly = 0;
+  let queuedOnly = 0;
+  let cancellingOnly = 0;
   for (const item of items) {
     if (item.status === "succeeded") succeeded += 1;
     else if (item.status === "failed") failed += 1;
     else if (item.status === "cancelled") cancelled += 1;
-    else if (item.status === "queued" || item.status === "running") running += 1;
+    else if (item.status === "running") runningOnly += 1;
+    else if (item.status === "queued") queuedOnly += 1;
+    else if (item.status === "cancelling") cancellingOnly += 1;
   }
-  return { scopeCount: items.length, scopeLimit, succeeded, failed, cancelled, running, runningAvailable };
+  // Running KPI는 여전히 running+queued+cancelling 합계를 값으로 쓴다(기존 정책 유지) — 다만
+  // 호출부가 breakdown(실행 중/대기/취소 중)을 따로 보여줄 수 있도록 세 값을 각각도 노출한다.
+  // 값을 추측하지 않고 현재 조회 scope의 실제 status만 센다.
+  const running = runningOnly + queuedOnly + cancellingOnly;
+  return {
+    scopeCount: items.length,
+    scopeLimit,
+    succeeded,
+    failed,
+    cancelled,
+    running,
+    runningOnly,
+    queuedOnly,
+    cancellingOnly,
+    runningAvailable,
+  };
 }
 
 export type RunStatusFilter = "all" | BuildRunStatus;

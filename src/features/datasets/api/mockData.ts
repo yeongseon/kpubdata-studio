@@ -7,6 +7,7 @@ import type {
   RunStagesResponse,
   StageDetailResponse,
 } from "@/shared/lib/builderApi";
+import { DEMO_DATASETS } from "@/shared/lib/demoDatasets";
 
 export const MOCK_DATASETS: DatasetsResponse = {
   datasets: [
@@ -93,6 +94,33 @@ export const MOCK_STAGES: Record<string, RunStagesResponse> = {
       { source_key: "datago__dur_older_adult_caution", bronze: { status: "failed", available: false }, silver: { status: "not_run", available: false }, gold: { status: "not_run", available: false } },
     ],
   },
+  // succeeded DEMO_DATASETS run — bronze/silver/gold 모두 completed(#255 마감 보완, fixture 정합성).
+  "dur-product-info-20260620": {
+    run_id: "dur-product-info-20260620",
+    sources: [
+      { source_key: "datago__dur_product_info", bronze: { status: "completed", available: true }, silver: { status: "completed", available: true }, gold: { status: "completed", available: true } },
+    ],
+  },
+  "dur-usjnt-taboo-20260620": {
+    run_id: "dur-usjnt-taboo-20260620",
+    sources: [
+      { source_key: "datago__dur_usjnt_taboo", bronze: { status: "completed", available: true }, silver: { status: "completed", available: true }, gold: { status: "completed", available: true } },
+    ],
+  },
+  // running/queued DEMO_DATASETS run — Builder RunStages contract에 진행 중 상태가 없으므로
+  // 억지로 만들지 않고 not_run/unavailable만 사용한다(#255 마감 보완 원칙).
+  "dur-pregnancy-taboo-20260621": {
+    run_id: "dur-pregnancy-taboo-20260621",
+    sources: [
+      { source_key: "datago__dur_pregnancy_taboo", bronze: { status: "not_run", available: false }, silver: { status: "not_run", available: false }, gold: { status: "not_run", available: false } },
+    ],
+  },
+  "dur-dosage-caution-20260621": {
+    run_id: "dur-dosage-caution-20260621",
+    sources: [
+      { source_key: "datago__dur_dosage_caution", bronze: { status: "not_run", available: false }, silver: { status: "not_run", available: false }, gold: { status: "not_run", available: false } },
+    ],
+  },
   "air-2026-08-14": {
     run_id: "air-2026-08-14",
     sources: [
@@ -135,6 +163,44 @@ export const MOCK_QUALITY: Record<string, BuildQualityResponse> = {
   // MOCK_STAGES의 bronze failed와 정합되는, 지어내지 않은 값.
   "dur-older-adult-caution-20260618": {
     run_id: "dur-older-adult-caution-20260618",
+    availability: "unavailable",
+    evaluated_checks: 0,
+    quality_results: {},
+    schema_drift: {},
+  },
+  // succeeded — 실제 DEMO_DATASETS recordCount와 정합되는 최소 quality fixture(지어낸 rule 없음).
+  "dur-product-info-20260620": {
+    run_id: "dur-product-info-20260620",
+    availability: "available",
+    evaluated_checks: 1,
+    quality_results: {
+      datago__dur_product_info: [
+        { source_key: "datago__dur_product_info", category: "row_count", rule: "min_rows", column: null, status: "pass", actual: 48512, threshold: 100, affected_rows: null, evaluated_rows: 48512, detail: null },
+      ],
+    },
+    schema_drift: { datago__dur_product_info: [] },
+  },
+  "dur-usjnt-taboo-20260620": {
+    run_id: "dur-usjnt-taboo-20260620",
+    availability: "available",
+    evaluated_checks: 1,
+    quality_results: {
+      datago__dur_usjnt_taboo: [
+        { source_key: "datago__dur_usjnt_taboo", category: "row_count", rule: "min_rows", column: null, status: "pass", actual: 31894, threshold: 100, affected_rows: null, evaluated_rows: 31894, detail: null },
+      ],
+    },
+    schema_drift: { datago__dur_usjnt_taboo: [] },
+  },
+  // running/queued — 아직 평가되지 않았다(N/A ≠ PASS). MOCK_STAGES의 not_run과 정합된다.
+  "dur-pregnancy-taboo-20260621": {
+    run_id: "dur-pregnancy-taboo-20260621",
+    availability: "unavailable",
+    evaluated_checks: 0,
+    quality_results: {},
+    schema_drift: {},
+  },
+  "dur-dosage-caution-20260621": {
+    run_id: "dur-dosage-caution-20260621",
     availability: "unavailable",
     evaluated_checks: 0,
     quality_results: {},
@@ -184,10 +250,94 @@ export function mockDatasetDetail(datasetId: string): DatasetDetailResponse | un
   return dataset ? { ...dataset, run_count: MOCK_RUNS[datasetId]?.runs.length ?? 0 } : undefined;
 }
 
+/** DEMO_DATASETS.buildId → 해당 데모 데이터셋(Builds/Runs 화면이 쓰는 run들). */
+const DEMO_DATASET_BY_BUILD_ID = new Map(DEMO_DATASETS.map((dataset) => [dataset.buildId, dataset] as const));
+
+/** DEMO_DATASETS의 dataset이 이 run에서 실제로 쓰는 유일한 source_key(providerDataset 기반). */
+function demoSourceKey(dataset: (typeof DEMO_DATASETS)[number]): string {
+  return `datago__${dataset.providerDataset}`;
+}
+
+/**
+ * Builds/Runs 화면(#255)의 DEMO_DATASETS run(runId)이면, generic weather-shaped fixture 대신
+ * 그 run의 실제 demo 값(recordCount/날짜/필드/exports)으로 Stage detail을 만든다(#286 후속
+ * 보완 §2). air-2026-08-14 같은 기존 dataset-catalog 전용 run(DEMO_DATASETS에 없음)은 이
+ * 함수가 undefined를 반환해 아래 generic fixture로 그대로 폴백한다 — 기존 화면 동작은
+ * 바뀌지 않는다.
+ */
+function demoStageDetail(
+  runId: string,
+  sourceKey: string,
+  stage: "bronze" | "silver" | "gold",
+  state: { status: StageDetailResponse["status"]; available: boolean },
+): StageDetailResponse | undefined {
+  const dataset = DEMO_DATASET_BY_BUILD_ID.get(runId);
+  if (!dataset || sourceKey !== demoSourceKey(dataset)) return undefined;
+
+  if (stage === "bronze") {
+    return {
+      run_id: runId,
+      stage,
+      source_key: sourceKey,
+      ...state,
+      provider: "datago",
+      dataset: dataset.providerDataset,
+      // Run 시각과 모순되지 않도록 이 run의 실제 startedAt을 그대로 쓴다(generic 2026-08-14 금지).
+      fetched_at: state.available ? dataset.startedAt : null,
+      record_count: state.available ? dataset.recordCount : null,
+    };
+  }
+  if (stage === "silver") {
+    const schema = dataset.fields.map((field) => ({
+      name: field.name,
+      dtype: field.type,
+      nullable: field.nullable,
+      // 실제로 계산한 값이 아니므로 정밀한 것처럼 보이는 숫자를 지어내지 않는다.
+      unique_count: 0,
+    }));
+    return {
+      run_id: runId,
+      stage,
+      source_key: sourceKey,
+      ...state,
+      row_count: state.available ? dataset.recordCount : null,
+      schema: state.available ? schema : [],
+      statistics: state.available
+        ? {
+            row_count: dataset.recordCount,
+            null_counts: Object.fromEntries(dataset.fields.map((field) => [field.name, 0])),
+            duplicate_rate: 0,
+          }
+        : null,
+      validation: state.available ? { ok: true, problems: [] } : null,
+      // 실제 row sample을 만들어낼 근거가 없으므로 빈 배열로 둔다(가짜 medical/DUR 값 지어내지 않음).
+      sample: [],
+    };
+  }
+  return {
+    run_id: runId,
+    stage,
+    source_key: sourceKey,
+    ...state,
+    row_count: state.available ? dataset.recordCount : null,
+    columns: state.available ? dataset.fields.map((field) => field.name) : [],
+    // DEMO_DATASETS에 split 정보가 없으므로 지어내지 않는다.
+    splits: null,
+    // 실제 demo export 형식(예: air-quality → parquet + huggingface)을 그대로 반영한다.
+    exports: state.available ? dataset.exports.map((target) => ({ kind: target.format })) : [],
+    sample: null,
+    sample_available: false,
+  };
+}
+
 export function mockStageDetail(runId: string, sourceKey: string, stage: "bronze" | "silver" | "gold"): StageDetailResponse | undefined {
   const source = MOCK_STAGES[runId]?.sources.find((item) => item.source_key === sourceKey);
   if (!source) return undefined;
   const state = source[stage];
+
+  const demo = demoStageDetail(runId, sourceKey, stage, state);
+  if (demo) return demo;
+
   if (stage === "bronze") return { run_id: runId, stage, source_key: sourceKey, ...state, provider: sourceKey.split("__")[0] ?? null, dataset: sourceKey.split("__")[1] ?? null, fetched_at: state.available ? "2026-08-14T07:05:00Z" : null, record_count: state.available ? 1200 : null };
   if (stage === "silver") return { run_id: runId, stage, source_key: sourceKey, ...state, row_count: state.available ? 1200 : null, schema: state.available ? [{ name: "observed_at", dtype: "datetime", nullable: false, unique_count: 1200 }, { name: "value", dtype: "float64", nullable: true, unique_count: 480 }] : [], statistics: state.available ? { row_count: 1200, null_counts: { observed_at: 0, value: 4 }, duplicate_rate: 0 } : null, validation: state.available ? { ok: true, problems: [] } : null, sample: state.available ? [{ observed_at: "2026-08-14T00:00:00Z", value: 24.2 }, { observed_at: "2026-08-14T01:00:00Z", value: 23.8 }] : [] };
   return { run_id: runId, stage, source_key: sourceKey, ...state, row_count: state.available ? 1200 : null, columns: state.available ? ["observed_at", "value"] : [], splits: null, exports: state.available ? [{ kind: "parquet" }] : [], sample: null, sample_available: false };

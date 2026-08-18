@@ -11,17 +11,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { parse as parseYaml } from "yaml";
-import { getBuildQuality, listBuildStages } from "@/features/datasets/api";
+import { getBuildQuality, getBuildStageDetail, listBuildStages } from "@/features/datasets/api";
 import { DATASET_STAGES, formatDateTime } from "@/features/datasets/model";
 import { StageBadge } from "@/features/datasets/components/StageBadge";
 import { QualityBadge, QualityStateBadge } from "@/features/quality/QualityBadge";
-import { overallQualityState } from "@/features/quality/model";
+import {
+  flattenQualityResults,
+  flattenSchemaDrift,
+  formatQualityValue,
+  overallQualityState,
+  summarizeChecksPassed,
+  warnOrFailResults,
+} from "@/features/quality/model";
 import {
   classifyRunApiError,
   collectFailureEvidence,
   computeBuildKpi,
   failQualityResults,
   failedRunEvents,
+  firstFailedStage,
   matchesSearch,
   matchesStatusFilter,
   summarizeMultiSourceOutcome,
@@ -34,9 +42,16 @@ import { useRunEvents, type RunEventsState } from "@/features/runs/useRunEvents"
 import { EventTimeline } from "@/features/runs/components/EventTimeline";
 import { KubiRunAnalysis } from "@/features/runs/components/KubiRunAnalysis";
 import { useKubiStore } from "@/features/kubi/useKubiSession";
+import { useAssistConfig } from "@/features/assistant/config";
 import { useUIStore } from "@/shared/hooks/useUIStore";
 import { isRealBuilderEnabled } from "@/shared/lib/builderApi";
-import type { BuildQualityResponse, BuildSpecSnapshotResponse, RunStagesResponse } from "@/shared/lib/builderApi";
+import type {
+  BuildQualityResponse,
+  BuildSpecSnapshotResponse,
+  RunStageEntry,
+  RunStagesResponse,
+  StageDetailResponse,
+} from "@/shared/lib/builderApi";
 import type { BuildListItem, BuildRunStatus } from "@/shared/lib/types";
 import {
   Button,
@@ -180,7 +195,19 @@ export function BuildsPage() {
     "BuildSpec snapshot을 불러오지 못했습니다.",
   );
 
-  const live = useSelectedRunPolling(selectedRunId);
+  // Selected Run live(job registry) polling은 실제로 상태가 불확실한 경우에만 켠다(#286 후속
+  // 보완 §1). mock mode는 builderApi.getBuildJob이 항상 실제 fetch를 시도하는 stub이라
+  // succeeded/failed 같은 historical run에서도 매번 실패해 불필요한 "실시간 상태 갱신 실패"
+  // 경고가 떴다 — mock mode에서는 목록의 deterministic mock status를 그대로 신뢰하고 live
+  // polling 자체를 하지 않는다. real mode에서는 `GET /builds` 목록에 이미 존재하는 run은
+  // 그 계약상 완료된(ok/failed) 이력만이므로 이미 terminal이 확정된 상태다 — 목록 로딩이
+  // 끝나 그게 확인될 때까지는 조회를 켜지 않는다(단 한 번의 낭비 호출도 만들지 않기 위해
+  // listState.status === "loaded"까지 기다린다). 목록 로딩이 끝났는데도 scope 밖(deep-link
+  // run)이면 실제로 running/queued/cancelling일 수 있으므로 기존과 동일하게 getBuildJob으로
+  // 확인한다.
+  const shouldPollLiveStatus =
+    Boolean(selectedRunId) && isRealBuilderEnabled() && listState.status === "loaded" && !selectedListItem;
+  const live = useSelectedRunPolling(shouldPollLiveStatus ? selectedRunId : null);
 
   // event polling도 selected Run polling과 같은 "non-terminal이면 계속, terminal이면 멈춤"
   // 정책을 따른다(#255 §3). listItem의 historical 상태는 표시에는 쓰되(RunDetailPanel의
@@ -332,6 +359,19 @@ function KpiTile({ label, value, hint }: { label: string; value: string; hint?: 
   );
 }
 
+/**
+ * Running KPI는 running+queued(+cancelling) 합계를 값으로 유지하되(기존 정책), hint에는
+ * 실제 조회 scope에서 센 status별 breakdown만 보여준다 — 값을 추측하지 않는다(#286 후속 보완 §3).
+ */
+function runningBreakdownHint(kpi: ReturnType<typeof computeBuildKpi>): string {
+  if (kpi.running === 0) return "조회 범위 기준";
+  const parts: string[] = [];
+  if (kpi.runningOnly > 0) parts.push(`실행 중 ${kpi.runningOnly}`);
+  if (kpi.cancellingOnly > 0) parts.push(`취소 중 ${kpi.cancellingOnly}`);
+  if (kpi.queuedOnly > 0) parts.push(`대기 ${kpi.queuedOnly}`);
+  return parts.join(" · ");
+}
+
 function KpiRow({ kpi }: { kpi: ReturnType<typeof computeBuildKpi> }) {
   const scopeHint = `조회된 ${kpi.scopeCount}건 · limit ${kpi.scopeLimit}${kpi.scopeCount >= kpi.scopeLimit ? " (더 있을 수 있음)" : ""}`;
   return (
@@ -344,7 +384,7 @@ function KpiRow({ kpi }: { kpi: ReturnType<typeof computeBuildKpi> }) {
         value={kpi.runningAvailable ? String(kpi.running) : "N/A"}
         hint={
           kpi.runningAvailable
-            ? "조회 범위 기준"
+            ? runningBreakdownHint(kpi)
             : "Builder GET /builds는 완료된 이력만 반환합니다 (실행 중 job은 포함되지 않음)"
         }
       />
@@ -463,6 +503,7 @@ function RunDetailPanel({
 }) {
   const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
   const seedKubiQuestion = useKubiStore((state) => state.seedQuestion);
+  const { isConfigured } = useAssistConfig();
 
   // "이 Run 분석"은 더 이상 전역 Kubi drawer를 자동으로 열지 않는다(#255 §2) — 대신 이 Run summary
   // 바로 아래에 inline card를 펼친다. Run을 바꾸면 카드를 닫아, 이전 Run의 분석 결과가 새 Run의
@@ -475,15 +516,33 @@ function RunDetailPanel({
   const sources = stagesState.status === "loaded" ? stagesState.data.sources : [];
   const outcome = stagesState.status === "loaded" ? summarizeMultiSourceOutcome(sources) : "unavailable";
   const failureEvidence = stagesState.status === "loaded" ? collectFailureEvidence(sources) : [];
-  const qualityStatus =
-    qualityState.status === "loaded"
-      ? overallQualityState(qualityState.data)
-      : qualityState.status === "error"
-        ? "UNAVAILABLE"
-        : undefined;
+  const stageDetails = useStageDetails(runId, stagesState);
+
+  // Quality error(요청 실패)와 Builder semantic unavailable(정상 응답, 결과 없음)을 절대 하나로
+  // 합치지 않는다(#255 후속 보완 §5). overall state는 정상 응답이 있을 때만 계산하고, error는
+  // 아래 렌더링에서 qualityState.status === "error"로 완전히 분리해서 다룬다.
+  const qualityStatus = qualityState.status === "loaded" ? overallQualityState(qualityState.data) : undefined;
   const qualityFails = qualityState.status === "loaded" ? failQualityResults(qualityState.data) : [];
+  const qualityScopedResults = qualityState.status === "loaded" ? flattenQualityResults(qualityState.data) : [];
+  const qualityChecksPassed = qualityState.status === "loaded" ? summarizeChecksPassed(qualityScopedResults) : null;
+  const qualityIssues = qualityState.status === "loaded" ? warnOrFailResults(qualityScopedResults) : [];
+  const qualityDrift = qualityState.status === "loaded" ? flattenSchemaDrift(qualityState.data) : [];
+  const qualityData = qualityState.status === "loaded" ? qualityState.data : null;
+  const qualitySourceBreakdown = qualityData
+    ? Object.keys(qualityData.quality_results).map((sourceKey) => ({
+        sourceKey,
+        summary: summarizeChecksPassed(flattenQualityResults(qualityData, sourceKey)),
+      }))
+    : [];
   const events = eventsState.status === "loaded" ? eventsState.data.events : [];
   const failedEvents = failedRunEvents(events);
+
+  // Quality Center(#254)로 넘어갈 때도 현재 dataset/run 문맥을 잃지 않도록 같은 쿼리 관례를 쓴다.
+  const datasetId = specState.status === "loaded" ? extractDatasetId(specState.data.spec) : null;
+  const qualityCenterHref = `/quality?${new URLSearchParams({
+    ...(datasetId ? { dataset: datasetId } : {}),
+    run: runId,
+  }).toString()}`;
 
   // Run 전체 status: registry에 살아있는 job(live)이 있으면 그 값이 가장 최신이다.
   // 없으면(historical) 목록 요약(listItem.status)을 신뢰한다 — 절대 stage 상태를 run status로
@@ -537,7 +596,13 @@ function RunDetailPanel({
             variant="secondary"
             className="ml-auto"
             onClick={() => {
-              seedKubiQuestion(`Run ${runId}의 상태와 실패 원인을 분석해줘.`);
+              // API Key가 없으면 seed하지 않는다 — pending seed는 항상 useKubiSession의
+              // 일반 ask()로 소비되고, ask()는 isConfigured가 아니면 no_key 에러를 만든다
+              // (#286 후속 보완). inline card는 그래도 열어 KubiRunAnalysis가 no-key 안내를
+              // 보여주게 한다.
+              if (isConfigured) {
+                seedKubiQuestion(`Run ${runId}의 상태와 실패 원인을 분석해줘.`);
+              }
               setShowKubiAnalysis(true);
             }}
           >
@@ -567,54 +632,125 @@ function RunDetailPanel({
           <EmptyState title="Stage 정보가 없습니다" description="이 run에 알려진 source가 없습니다." />
         ) : (
           <div className="mt-4 flex flex-col gap-3">
+            {/* multi-source면 source별로 각자의 pipeline row를 보여준다 — 첫 source를 전체
+                대표로 뭉개지 않는다. */}
             {sources.map((source) => (
-              <div key={source.source_key} className="rounded-lg border border-border p-3">
-                <p className="text-xs font-semibold text-muted-foreground">{source.source_key}</p>
-                <div className="mt-2 flex flex-wrap gap-3">
-                  {DATASET_STAGES.map((stage) => (
-                    <div key={stage} className="flex items-center gap-2">
-                      <span className="text-xs font-medium capitalize text-muted-foreground">{stage}</span>
-                      <StageBadge status={source[stage].status} />
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <SourcePipelineRow key={source.source_key} source={source} details={stageDetails} />
             ))}
           </div>
         )}
+        {qualityState.status === "loaded" && qualityChecksPassed ? (
+          // "별도 Validate stage"를 새로 만들지 않고, Silver/Gold 흐름과 이어지는 compact
+          // checkpoint로만 Quality를 언급한다(#255 후속 보완 §6). 실제 판정은 아래 Quality
+          // 카드가 정본이며, 여기서는 재계산 없이 그 값을 그대로 요약한다.
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Quality checkpoint</span>
+            <QualityStateBadge state={qualityStatus ?? "NOT_EVALUATED"} />
+            <span>
+              {qualityChecksPassed.evaluated === 0
+                ? "평가된 check 없음"
+                : `${qualityChecksPassed.pass}/${qualityChecksPassed.evaluated} PASS · WARN ${qualityChecksPassed.warn} · FAIL ${qualityChecksPassed.fail}`}
+            </span>
+          </div>
+        ) : null}
       </Card>
 
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Quality</h3>
-          {qualityStatus ? <QualityStateBadge state={qualityStatus} /> : null}
+          <div className="flex items-center gap-2">
+            {qualityStatus ? <QualityStateBadge state={qualityStatus} /> : null}
+            {qualityState.status === "loaded" ? (
+              <span className="text-xs text-muted-foreground">availability: {qualityState.data.availability}</span>
+            ) : null}
+          </div>
         </div>
         {qualityState.status === "loading" || qualityState.status === "idle" ? (
           <Skeleton className="mt-4 h-16 w-full" />
         ) : qualityState.status === "error" ? (
-          <p className="mt-3 text-sm text-red-700 dark:text-red-300">
-            {qualityState.permissionDenied
-              ? "이 Run의 Quality 결과를 조회할 권한이 없습니다."
-              : `Quality를 불러오지 못했습니다: ${qualityState.error}`}
-          </p>
+          // (B) 요청 실패 — Builder의 semantic unavailable(정상 응답)과 절대 같은 상태로 합치지
+          // 않는다(#255 후속 보완 §5). UNAVAILABLE badge를 표시하지 않고, 403/404/network·5xx에
+          // 맞는 오류 메시지만 보여준다.
+          <div className="mt-3">
+            <p className="text-sm font-semibold text-red-700 dark:text-red-300">Quality 조회 실패</p>
+            <p className="mt-1 text-sm text-red-700 dark:text-red-300">
+              {qualityState.permissionDenied
+                ? "이 Run의 Quality 결과를 조회할 권한이 없습니다(403)."
+                : qualityState.notFound
+                  ? "이 Run의 Quality 결과를 찾을 수 없습니다(404)."
+                  : `Quality를 불러오지 못했습니다: ${qualityState.error}`}
+            </p>
+          </div>
         ) : qualityState.data.availability === "unavailable" ? (
-          <EmptyState title="Quality 결과 없음" description="legacy run이거나 quality가 계산되지 않았습니다(N/A ≠ PASS)." />
+          // (A) 정상 응답 + availability=unavailable — Builder가 명시적으로 "결과 없음"이라고
+          // 답한 것이지 조회 실패가 아니다.
+          <EmptyState title="Quality 결과 없음 (unavailable)" description="legacy run이거나 quality가 계산되지 않았습니다(N/A ≠ PASS)." />
         ) : qualityState.data.evaluated_checks === 0 ? (
           <EmptyState title="평가된 check가 없습니다" description="availability는 available이지만 evaluated_checks=0입니다." />
         ) : (
-          <ul className="mt-3 flex flex-col gap-2">
-            {Object.entries(qualityState.data.quality_results).flatMap(([sourceKey, results]) =>
-              results.map((result, index) => (
-                <li key={`${sourceKey}-${result.rule}-${index}`} className="flex items-center justify-between gap-3 border-b border-border pb-2 text-sm last:border-0">
-                  <span>
-                    {sourceKey} · {result.category}/{result.rule}
-                    {result.column ? ` · ${result.column}` : ""}
-                  </span>
-                  <QualityBadge status={result.status.toUpperCase() as "PASS" | "WARN" | "FAIL"} />
-                </li>
-              )),
+          <div className="mt-3 flex flex-col gap-4">
+            {qualityChecksPassed ? (
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <span className="font-medium text-emerald-700 dark:text-emerald-400">{qualityChecksPassed.pass} PASS</span>
+                <span className="font-medium text-amber-700 dark:text-amber-400">{qualityChecksPassed.warn} WARN</span>
+                <span className="font-medium text-red-700 dark:text-red-400">{qualityChecksPassed.fail} FAIL</span>
+                <span className="text-xs text-muted-foreground">evaluated {qualityChecksPassed.evaluated}건</span>
+              </div>
+            ) : null}
+
+            {qualitySourceBreakdown.length > 1 ? (
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-semibold text-muted-foreground">Source별 평가 현황</p>
+                {qualitySourceBreakdown.map(({ sourceKey, summary }) => (
+                  <div key={sourceKey} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="font-mono">{sourceKey}</span>
+                    <span className="text-muted-foreground">
+                      {summary.evaluated === 0
+                        ? "평가된 결과 없음 (N/A)"
+                        : `${summary.pass}/${summary.evaluated} PASS · WARN ${summary.warn} · FAIL ${summary.fail}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {/* PASS 상세 전체 나열은 피하고, WARN/FAIL만 근거(source/category/rule/column/actual/threshold)와
+                함께 보여준다(#255 후속 보완 §1). */}
+            {qualityIssues.length > 0 ? (
+              <ul className="flex flex-col gap-2">
+                {qualityIssues.map((result, index) => (
+                  <li
+                    key={`${result.source_key}-${result.rule}-${index}`}
+                    className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2 text-xs last:border-0"
+                  >
+                    <span>
+                      {result.source_key} · {result.category}/{result.rule}
+                      {result.column ? ` · ${result.column}` : ""}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <QualityBadge status={result.status.toUpperCase() as "WARN" | "FAIL"} />
+                      <span className="font-mono text-muted-foreground">
+                        actual {formatQualityValue(result.rule, result.actual)} / threshold{" "}
+                        {formatQualityValue(result.rule, result.threshold)}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">WARN/FAIL 결과가 없습니다.</p>
             )}
-          </ul>
+
+            {qualityDrift.length > 0 ? (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Schema drift {qualityDrift.length}건: {qualityDrift.map((finding) => finding.kind).join(", ")}
+              </p>
+            ) : null}
+
+            <Link className="text-xs font-medium text-accent-subtle-foreground underline" to={qualityCenterHref}>
+              Quality Center에서 상세 보기
+            </Link>
+          </div>
         )}
       </Card>
 
@@ -696,17 +832,14 @@ function RunDetailPanel({
           ) : specState.status === "loaded" ? (
             <div className="text-sm">
               <p className="text-xs text-muted-foreground">digest: {specState.data.spec_digest}</p>
-              {(() => {
-                const datasetId = extractDatasetId(specState.data.spec);
-                return datasetId ? (
-                  <Link
-                    className="mt-2 inline-block text-xs font-medium text-accent-subtle-foreground underline"
-                    to={`/datasets/${encodeURIComponent(datasetId)}`}
-                  >
-                    Dataset 상세 보기 ({datasetId})
-                  </Link>
-                ) : null;
-              })()}
+              {datasetId ? (
+                <Link
+                  className="mt-2 inline-block text-xs font-medium text-accent-subtle-foreground underline"
+                  to={`/datasets/${encodeURIComponent(datasetId)}`}
+                >
+                  Dataset 상세 보기 ({datasetId})
+                </Link>
+              ) : null}
               <p className="mt-2 text-xs text-muted-foreground">
                 편집/재실행 연동은 Add Data Workbench(#250)가 main에 merge된 뒤 제공됩니다 — 현재는 snapshot
                 조회만 지원합니다.
@@ -733,8 +866,14 @@ function extractDatasetId(specYaml: string): string | null {
   }
 }
 
+/**
+ * Builder job status를 그대로 화면 상태로 쓴다.
+ *
+ * 예전에는 cancelling을 running으로 합쳐서 보여줬지만, "취소 중"과 "실행 중"은 사용자가 취소
+ * 요청을 보냈는지 여부가 다른 별개 상태다 — Builder가 보낸 상태를 다른 상태로 재분류하지
+ * 않는다(#255 후속 보완). BuildRunStatus/StatusBadge가 cancelling을 직접 지원한다.
+ */
 function mapLiveStatus(status: "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled"): BuildRunStatus {
-  if (status === "cancelling") return "running";
   return status;
 }
 
@@ -746,4 +885,200 @@ function MultiSourceOutcomeBadge({ outcome }: { outcome: ReturnType<typeof summa
     all_failed: { label: "모든 source 실패", className: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300" },
   }[outcome];
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${meta.className}`}>{meta.label}</span>;
+}
+
+/**
+ * Pipeline / Stage Progress 시각화(#255 후속 보완 §6).
+ *
+ * Bronze/Silver/Gold만 정본 Stage로 취급한다 — Source/Output은 그 자체로는 Stage 상태가
+ * 아니라 문맥/endpoint 표현이며, Validate·Artifact 같은 새 Stage를 만들지 않는다.
+ */
+type StageName = (typeof DATASET_STAGES)[number];
+
+type StageDetailEntry =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "loaded"; data: StageDetailResponse }
+  | { status: "error" };
+
+function stageDetailKey(sourceKey: string, stage: StageName): string {
+  return `${sourceKey}:${stage}`;
+}
+
+/** entry가 실제로 요청한 stage의 detail을 담고 있을 때만 그 타입으로 좁혀서 돌려준다. */
+function pickStageDetail<S extends StageName>(
+  entry: StageDetailEntry | undefined,
+  stage: S,
+): Extract<StageDetailResponse, { stage: S }> | null {
+  if (!entry || entry.status !== "loaded" || entry.data.stage !== stage) return null;
+  return entry.data as Extract<StageDetailResponse, { stage: S }>;
+}
+
+/**
+ * completed && available인 source×stage에 대해서만 stage detail을 조회한다 — 모든
+ * source×stage를 무조건 eager-fetch해 요청을 폭증시키지 않는다. bounded concurrency(3)로
+ * 조회하고, run이 바뀌면 이전 요청은 abort한다.
+ */
+function useStageDetails(runId: string, stagesState: AsyncState<RunStagesResponse>): Record<string, StageDetailEntry> {
+  const [details, setDetails] = useState<Record<string, StageDetailEntry>>({});
+
+  useEffect(() => {
+    setDetails({});
+    if (stagesState.status !== "loaded") return;
+    const sources = stagesState.data.sources;
+    const targets: { sourceKey: string; stage: StageName }[] = [];
+    for (const source of sources) {
+      for (const stage of DATASET_STAGES) {
+        if (source[stage].status === "completed" && source[stage].available) {
+          targets.push({ sourceKey: source.source_key, stage });
+        }
+      }
+    }
+    if (targets.length === 0) return;
+
+    const controller = new AbortController();
+    const concurrency = Math.min(3, targets.length);
+    let nextIndex = 0;
+
+    async function worker() {
+      while (nextIndex < targets.length) {
+        const target = targets[nextIndex++];
+        const key = stageDetailKey(target.sourceKey, target.stage);
+        setDetails((prev) => ({ ...prev, [key]: { status: "loading" } }));
+        try {
+          const detail = await getBuildStageDetail(runId, target.stage, target.sourceKey, 5, controller.signal);
+          if (controller.signal.aborted) return;
+          setDetails((prev) => ({ ...prev, [key]: { status: "loaded", data: detail } }));
+        } catch {
+          if (controller.signal.aborted) return;
+          // detail은 compact 부가 정보일 뿐이다 — 실패해도 Stage summary(status/available)는
+          // 이미 확보되어 있으므로 badge 자체는 계속 정상 표시된다.
+          setDetails((prev) => ({ ...prev, [key]: { status: "error" } }));
+        }
+      }
+    }
+
+    void Promise.all(Array.from({ length: concurrency }, worker));
+    return () => controller.abort();
+  }, [runId, stagesState]);
+
+  return details;
+}
+
+/** source 안에서, 실제 failed로 기록된 stage 이후에 오는 not_run stage("아직 미도달"). 추측이 아니라 순서 비교다. */
+function isUnreachedStage(source: RunStageEntry, stage: StageName): boolean {
+  const failedAt = firstFailedStage(source);
+  if (!failedAt || source[stage].status !== "not_run") return false;
+  return DATASET_STAGES.indexOf(stage) > DATASET_STAGES.indexOf(failedAt);
+}
+
+function PipelineArrow() {
+  return (
+    <span aria-hidden="true" className="self-center px-1 text-muted-foreground">
+      →
+    </span>
+  );
+}
+
+function formatRecordCount(value: number | null): string {
+  return value === null ? "N/A" : `${value.toLocaleString("ko-KR")}행`;
+}
+
+function BronzeStageBox({ state, detail }: { state: RunStageEntry["bronze"]; detail: StageDetailEntry | undefined }) {
+  const data = pickStageDetail(detail, "bronze");
+  return (
+    <div className="flex min-w-32 flex-col gap-1 rounded-md border border-border p-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Bronze</span>
+      <StageBadge status={state.status} />
+      {data ? (
+        <span className="text-[11px] text-muted-foreground">
+          {formatRecordCount(data.record_count)}
+          {data.fetched_at ? ` · ${formatDateTime(data.fetched_at)}` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function SilverStageBox({ state, detail }: { state: RunStageEntry["silver"]; detail: StageDetailEntry | undefined }) {
+  const data = pickStageDetail(detail, "silver");
+  return (
+    <div className="flex min-w-32 flex-col gap-1 rounded-md border border-border p-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Silver</span>
+      <StageBadge status={state.status} />
+      {data ? (
+        <span className="text-[11px] text-muted-foreground">
+          {formatRecordCount(data.row_count)} · 컬럼 {data.schema.length}개
+          {data.validation ? ` · ${data.validation.ok ? "검증 통과" : `문제 ${data.validation.problems.length}건`}` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function GoldStageBox({ state, detail }: { state: RunStageEntry["gold"]; detail: StageDetailEntry | undefined }) {
+  const data = pickStageDetail(detail, "gold");
+  return (
+    <div className="flex min-w-32 flex-col gap-1 rounded-md border border-border p-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Gold</span>
+      <StageBadge status={state.status} />
+      {data ? (
+        <span className="text-[11px] text-muted-foreground">
+          {formatRecordCount(data.row_count)} · 컬럼 {data.columns.length}개
+          {data.splits ? ` · split ${Object.keys(data.splits).length}개` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Output은 Stage가 아니다 — Gold export가 실제로 확인될 때만 compact하게 보여주고,
+ * completed/failed 같은 Stage 상태로 표현하지 않는다.
+ */
+function OutputBox({ detail }: { detail: StageDetailEntry | undefined }) {
+  const data = pickStageDetail(detail, "gold");
+  const exports = data?.exports ?? [];
+  return (
+    <div className="flex min-w-32 flex-col gap-1 rounded-md border border-dashed border-border p-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Output</span>
+      <span className="text-xs text-muted-foreground">
+        {exports.length > 0 ? exports.map((item) => item.kind).join(" · ") : "—"}
+      </span>
+    </div>
+  );
+}
+
+function SourcePipelineRow({ source, details }: { source: RunStageEntry; details: Record<string, StageDetailEntry> }) {
+  const unreached: Record<StageName, boolean> = {
+    bronze: isUnreachedStage(source, "bronze"),
+    silver: isUnreachedStage(source, "silver"),
+    gold: isUnreachedStage(source, "gold"),
+  };
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Source</span>
+        <span className="font-mono text-xs">{source.source_key}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-start gap-1">
+        <div className={source.bronze.status === "failed" ? "rounded-md ring-2 ring-red-400 dark:ring-red-500" : undefined}>
+          <BronzeStageBox state={source.bronze} detail={details[stageDetailKey(source.source_key, "bronze")]} />
+          {unreached.bronze ? <p className="mt-1 text-[11px] text-muted-foreground">미도달</p> : null}
+        </div>
+        <PipelineArrow />
+        <div className={source.silver.status === "failed" ? "rounded-md ring-2 ring-red-400 dark:ring-red-500" : undefined}>
+          <SilverStageBox state={source.silver} detail={details[stageDetailKey(source.source_key, "silver")]} />
+          {unreached.silver ? <p className="mt-1 text-[11px] text-muted-foreground">미도달</p> : null}
+        </div>
+        <PipelineArrow />
+        <div className={source.gold.status === "failed" ? "rounded-md ring-2 ring-red-400 dark:ring-red-500" : undefined}>
+          <GoldStageBox state={source.gold} detail={details[stageDetailKey(source.source_key, "gold")]} />
+          {unreached.gold ? <p className="mt-1 text-[11px] text-muted-foreground">미도달</p> : null}
+        </div>
+        <PipelineArrow />
+        <OutputBox detail={details[stageDetailKey(source.source_key, "gold")]} />
+      </div>
+    </div>
+  );
 }

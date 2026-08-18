@@ -79,8 +79,25 @@ describe("computeBuildKpi", () => {
       failed: 1,
       cancelled: 1,
       running: 2,
+      runningOnly: 1,
+      queuedOnly: 1,
+      cancellingOnly: 0,
       runningAvailable: true,
     });
+  });
+
+  it("breaks the running total down by exact status (running/queued/cancelling) without guessing", () => {
+    const items = [
+      listItem({ id: "a", status: "running" }),
+      listItem({ id: "b", status: "queued" }),
+      listItem({ id: "c", status: "queued" }),
+      listItem({ id: "d", status: "cancelling" }),
+    ];
+    const kpi = computeBuildKpi(items, 50, true);
+    expect(kpi.running).toBe(4);
+    expect(kpi.runningOnly).toBe(1);
+    expect(kpi.queuedOnly).toBe(2);
+    expect(kpi.cancellingOnly).toBe(1);
   });
 
   it("does not fabricate a 0 running count when the scope cannot express it", () => {

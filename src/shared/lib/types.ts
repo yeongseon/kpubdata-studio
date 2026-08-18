@@ -10,6 +10,7 @@ export type DraftStatus = "new" | "dirty" | "validated" | "invalid";
 export type BuildRunStatus =
   | "queued"
   | "running"
+  | "cancelling"
   | "succeeded"
   | "failed"
   | "cancelled";

@@ -73,6 +73,32 @@ describe("KubiRunAnalysis", () => {
     expect(screen.queryByText(/분석 준비 중/)).not.toBeInTheDocument();
   });
 
+  it("does not let session.isDemoAvailable(mock Builder mode) bypass the no-key state (#286 후속 보완)", () => {
+    // mock Builder 모드에서는 isDemoAvailable이 항상 true지만, pending seed는 항상 일반
+    // ask()로 소비되고 ask()는 isConfigured만 본다 — canAsk도 isConfigured만 기준으로 판단해야
+    // seed 후 no_key 에러가 뜨는 상황을 막을 수 있다.
+    useKubiSessionMock.mockReturnValue(session({ turns: [], isDemoAvailable: true }));
+    useAssistConfigMock.mockReturnValue({ isConfigured: false });
+
+    render(<KubiRunAnalysis onClose={vi.fn()} onAskMore={vi.fn()} />);
+
+    expect(screen.getByText("Kubi를 사용하려면 API Key 설정이 필요합니다.")).toBeInTheDocument();
+    expect(screen.queryByText(/분석 준비 중/)).not.toBeInTheDocument();
+    // no-key 상태에서는 "더 질문하기"를 표시하지 않는다.
+    expect(screen.queryByRole("button", { name: "더 질문하기" })).not.toBeInTheDocument();
+  });
+
+  it("no-key 상태에서는 이미 no_key로 실패한 turn이 있어도 ErrorNotice를 복제해서 보여주지 않는다", () => {
+    const turn = baseTurn({ status: "error", error: { kind: "no_key" } });
+    useKubiSessionMock.mockReturnValue(session({ turns: [turn], isDemoAvailable: true, isStale: () => false }));
+    useAssistConfigMock.mockReturnValue({ isConfigured: false });
+
+    render(<KubiRunAnalysis onClose={vi.fn()} onAskMore={vi.fn()} />);
+
+    expect(screen.getByText("Kubi를 사용하려면 API Key 설정이 필요합니다.")).toBeInTheDocument();
+    expect(screen.queryByText("API Key가 설정되어 있지 않습니다. 위에서 먼저 설정하세요.")).not.toBeInTheDocument();
+  });
+
   it("shows a preparing indicator while no matching turn exists yet", () => {
     useKubiSessionMock.mockReturnValue(session({ turns: [] }));
     useAssistConfigMock.mockReturnValue({ isConfigured: true });

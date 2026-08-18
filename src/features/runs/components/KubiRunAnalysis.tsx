@@ -27,7 +27,11 @@ export interface KubiRunAnalysisProps {
 export function KubiRunAnalysis({ onClose, onAskMore }: KubiRunAnalysisProps) {
   const session = useKubiSession();
   const { isConfigured } = useAssistConfig();
-  const canAsk = isConfigured || session.isDemoAvailable;
+  // API Key 미설정 상태를 최우선으로 처리한다 — session.isDemoAvailable(mock Builder 모드에서
+  // 항상 true)로 우회하지 않는다. pending seed는 항상 useKubiSession의 일반 ask()로 소비되고
+  // ask()는 isConfigured만 보고 no_key 여부를 판정하므로, 이 카드의 canAsk 판단도 정확히
+  // 그 기준(isConfigured)에 맞춰야 seed 후 no_key 에러가 뜨는 상황을 미리 막을 수 있다.
+  const canAsk = isConfigured;
 
   // 현재 route context(=이 Run)와 일치하는 가장 최근 turn만 보여준다 — 다른 화면/이전 run에서
   // 만든 turn과 섞지 않는다(#256 stale-context guard, KubiContent의 ContextBar와 동일 원칙).
@@ -49,68 +53,75 @@ export function KubiRunAnalysis({ onClose, onAskMore }: KubiRunAnalysisProps) {
       </div>
 
       {!canAsk ? (
+        // API Key 미설정 — no_key ErrorNotice를 렌더링할 일 자체가 없다(seed 자체를 안 하므로
+        // turn이 생기지 않는다). API Key 입력 UI를 여기 복제하지 않고, 기존 Kubi Drawer로
+        // 안내만 한다. 이 상태에서는 "더 질문하기"도 보여주지 않는다(아래에서 canAsk로 게이팅).
         <div className="mt-3 space-y-2">
           <p className="text-xs text-muted-foreground">Kubi를 사용하려면 API Key 설정이 필요합니다.</p>
           <Button size="sm" variant="secondary" onClick={onAskMore}>
             Kubi 설정 열기
           </Button>
         </div>
-      ) : !turn ? (
-        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          분석 준비 중…
-        </div>
       ) : (
-        <div className="mt-3 space-y-2.5 text-sm">
-          {turn.status === "loading" ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <>
+          {!turn ? (
+            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
               <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              생각 중…
-              <Button size="sm" variant="ghost" onClick={() => session.cancel(turn.id)}>
-                취소
-              </Button>
+              분석 준비 중…
             </div>
-          ) : null}
-
-          {turn.status === "error" && turn.error ? <ErrorNotice error={turn.error} /> : null}
-
-          {turn.response ? (
-            <>
-              <p className="whitespace-pre-wrap leading-6 text-foreground">{turn.response.answer}</p>
-
-              {turn.evidence?.partial ? (
-                <p className="text-xs text-muted-foreground">
-                  일부 evidence를 확인하지 못했습니다: {turn.evidence.unavailable.join(", ")}
-                </p>
-              ) : null}
-
-              {turn.response.evidenceRefs.length > 0 ? (
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Evidence
-                  </p>
-                  <ul className="mt-1 flex flex-wrap gap-1.5">
-                    {turn.response.evidenceRefs.map((ref) => (
-                      <li
-                        key={`${ref.kind}:${ref.id}`}
-                        className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px]"
-                      >
-                        {ref.label}
-                      </li>
-                    ))}
-                  </ul>
+          ) : (
+            <div className="mt-3 space-y-2.5 text-sm">
+              {turn.status === "loading" ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  생각 중…
+                  <Button size="sm" variant="ghost" onClick={() => session.cancel(turn.id)}>
+                    취소
+                  </Button>
                 </div>
               ) : null}
-            </>
-          ) : null}
-        </div>
-      )}
 
-      <div className="mt-3">
-        <Button size="sm" variant="secondary" onClick={onAskMore}>
-          더 질문하기
-        </Button>
-      </div>
+              {turn.status === "error" && turn.error ? <ErrorNotice error={turn.error} /> : null}
+
+              {turn.response ? (
+                <>
+                  <p className="whitespace-pre-wrap leading-6 text-foreground">{turn.response.answer}</p>
+
+                  {turn.evidence?.partial ? (
+                    <p className="text-xs text-muted-foreground">
+                      일부 evidence를 확인하지 못했습니다: {turn.evidence.unavailable.join(", ")}
+                    </p>
+                  ) : null}
+
+                  {turn.response.evidenceRefs.length > 0 ? (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Evidence
+                      </p>
+                      <ul className="mt-1 flex flex-wrap gap-1.5">
+                        {turn.response.evidenceRefs.map((ref) => (
+                          <li
+                            key={`${ref.kind}:${ref.id}`}
+                            className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px]"
+                          >
+                            {ref.label}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          )}
+
+          <div className="mt-3">
+            <Button size="sm" variant="secondary" onClick={onAskMore}>
+              더 질문하기
+            </Button>
+          </div>
+        </>
+      )}
     </Card>
   );
 }
