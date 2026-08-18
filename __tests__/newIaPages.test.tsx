@@ -19,7 +19,6 @@ function renderPage(element: ReactNode) {
 
 describe("새 IA placeholder 화면 (#247)", () => {
   it.each([
-    [<DiscoverPage />, "데이터 탐색"],
     [<WorkspacePage />, "작업대"],
     [<AddDataPage />, "데이터 추가"],
     [<ProviderPage />, "Provider"],
@@ -28,6 +27,12 @@ describe("새 IA placeholder 화면 (#247)", () => {
     renderPage(element);
     expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
     expect(screen.getByText("아직 준비 중인 화면입니다")).toBeInTheDocument();
+  });
+
+  it("Discover is replaced with the real catalog search/filter screen (#249)", () => {
+    renderPage(<DiscoverPage />);
+    expect(screen.getByRole("heading", { name: "데이터 탐색" })).toBeInTheDocument();
+    expect(screen.queryByText("아직 준비 중인 화면입니다")).not.toBeInTheDocument();
   });
 
   it("Reports is replaced with the real Builder evidence-based Report screen (#258)", () => {
