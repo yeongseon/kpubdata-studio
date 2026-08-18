@@ -8,11 +8,9 @@
  * - 기존 사용자: 실제 KPI (DATASETS, BUILD SUCCESS, VALIDATION WARN, RUNNING), 최근 데이터셋, 최근 Build stage 요약, 품질 경고/실패 Build
  */
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { listBuilds } from "@/features/runs/api";
 import type { BuildListItem, BuildRunStatus } from "@/shared/lib/types";
 import {
-  Button,
   Card,
   EmptyState,
   LinkButton,
@@ -134,9 +132,9 @@ function NewUserHome() {
           <p className="mt-3 text-muted-foreground">
             한국어로 질문하면 Kubi가 적합한 공공데이터를 찾아드립니다
           </p>
-          <Button className="mt-6" asChild>
-            <Link to="/kubi">Kubi 열기</Link>
-          </Button>
+          <LinkButton className="mt-6" to="/kubi">
+            Kubi 열기
+          </LinkButton>
         </Card>
 
         <Card variant="elevated" className="flex flex-col items-center justify-center p-12 text-center">
@@ -144,9 +142,9 @@ function NewUserHome() {
           <p className="mt-3 text-muted-foreground">
             Public API, 파일, URL에서 데이터를 직접 가져와 빌드하세요
           </p>
-          <Button className="mt-6" variant="secondary" asChild>
-            <Link to="/add-data">데이터 추가하기</Link>
-          </Button>
+          <LinkButton className="mt-6" variant="secondary" to="/add-data">
+            데이터 추가하기
+          </LinkButton>
         </Card>
       </section>
 
