@@ -3,7 +3,7 @@
  *
  * 시간대별 build 수와 상태별 카운트를 표시합니다.
  */
-import type { BuildStats } from "../api/types";
+import type { BuildStats } from "./api/types";
 
 interface BuildStatsProps {
   data: BuildStats;

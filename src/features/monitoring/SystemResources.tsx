@@ -3,7 +3,7 @@
  *
  * Builder API health, queue status, workers, artifact store 상태를 표시합니다.
  */
-import type { SystemResource } from "../api/types";
+import type { SystemResource } from "./api/types";
 
 interface SystemResourcesProps {
   data: SystemResource;

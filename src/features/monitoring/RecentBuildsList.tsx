@@ -3,10 +3,10 @@
  *
  * Build 상세 화면으로 네비게이션할 수 있는 최근 빌드 정보를 표시합니다.
  */
-import type { RecentBuilds } from "../api/types";
+import type { RecentBuilds } from "./api/types";
 
 interface RecentBuildsListProps {
-  builds: RecentBuilds;
+  builds: RecentBuilds | null;
   isLoading: boolean;
   error: Error | null;
   onNavigateToBuild: (runId: string) => void;

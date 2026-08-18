@@ -4,7 +4,7 @@
  * Builder #516 시스템/집계 monitoring API와 통신합니다.
  * 실연동 모드와 mock 모드를 모두 지원합니다.
  */
-import { builderApi, isRealBuilderEnabled, type ApiError } from "@/shared/lib/builderApi";
+import { apiFetch, isRealBuilderEnabled, type ApiError } from "@/shared/lib/builderApi";
 import {
   buildStatsSchema,
   monitoringResponseSchema,
@@ -17,6 +17,8 @@ import type {
   RecentBuilds,
   SystemResource,
 } from "./types";
+
+export type { BuildStats, MonitoringAvailability, MonitoringResponse, RecentBuilds, SystemResource } from "./types";
 
 /**
  * 시스템 리소스 상태를 조회합니다 (#264).
@@ -32,7 +34,7 @@ export async function getSystemResources(signal?: AbortSignal): Promise<SystemRe
 
   // 실연동 모드에서 Builder API 호출
   // Builder #516 endpoint 형태: GET /monitoring/system
-  return builderApi.apiFetch<SystemResource>(
+  return apiFetch<SystemResource>(
     "/monitoring/system",
     { signal, skipAuth: false },
     systemResourceSchema,
@@ -54,7 +56,7 @@ export async function getBuildStats(limit?: number, signal?: AbortSignal): Promi
 
   const query = limit !== undefined ? `?limit=${limit}` : "";
   // Builder #516 endpoint 형태: GET /monitoring/build-stats?limit=N
-  return builderApi.apiFetch<BuildStats>(
+  return apiFetch<BuildStats>(
     `/monitoring/build-stats${query}`,
     { signal, skipAuth: false },
     buildStatsSchema,
@@ -74,7 +76,7 @@ export async function getMonitoringData(signal?: AbortSignal): Promise<Monitorin
   }
 
   // Builder #516 endpoint 형태: GET /monitoring
-  return builderApi.apiFetch<MonitoringResponse>(
+  return apiFetch<MonitoringResponse>(
     "/monitoring",
     { signal, skipAuth: false },
     monitoringResponseSchema,
@@ -98,7 +100,7 @@ export async function getRecentBuilds(limit = 10, signal?: AbortSignal): Promise
 
   const query = `?limit=${limit}`;
   // 기존 GET /builds endpoint 재사용
-  const response = await builderApi.apiFetch<{ builds: Array<{
+  const response = await apiFetch<{ builds: Array<{
     run_id: string;
     status: "ok" | "failed" | "cancelled";
     started_at: string | null;
@@ -133,7 +135,7 @@ export async function checkMonitoringAvailability(
   }
 
   try {
-    const response = await builderApi.apiFetch<{ availability: MonitoringAvailability }>(
+    const response = await apiFetch<{ availability: MonitoringAvailability }>(
       "/monitoring/availability",
       { signal, skipAuth: false },
     );
