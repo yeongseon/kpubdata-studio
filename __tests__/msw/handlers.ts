@@ -227,6 +227,31 @@ export const handlers = [
     });
   }),
 
+  /** Builder PR #547 publish readiness fixture. */
+  http.get<{ run_id: string }>(`${API_BASE}/builds/:run_id/publish/readiness`, ({ params }) =>
+    HttpResponse.json({
+      run_id: params.run_id,
+      target: "huggingface" as const,
+      ready: true,
+      blockers: [],
+      warnings: [],
+    }),
+  ),
+
+  /** Builder PR #547 publish response fixture — request의 exact Run/destination을 보존한다. */
+  http.post<{ run_id: string }>(`${API_BASE}/builds/:run_id/publish`, async ({ params, request }) => {
+    const body = await request.json() as { destination: string };
+    return HttpResponse.json({
+      run_id: params.run_id,
+      target: "huggingface" as const,
+      publisher: "huggingface",
+      destination: body.destination,
+      reference: `https://huggingface.co/datasets/${body.destination}`,
+      artifact_count: 1,
+      status: "ok",
+    });
+  }),
+
   /**
    * POST /preview — 소스 스키마와 샘플 행 산출 (파일 미기록)
    */
