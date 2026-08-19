@@ -5,10 +5,18 @@
  * pretty-print한 것이다 — Build 제출에 쓰는 `serializeSpec`(compact JSON)과 같은
  * `toBuilderSpec` 호출 결과이므로 표시값과 제출값이 절대 갈라지지 않는다
  * (#250 amendment 1). stale preview(직전 Preview 이후 spec/옵션이 바뀜)면 Build를 막는다.
+ *
+ * 예외 한 가지(#283 리뷰 대응, Epic #246): url source의 endpoint는 secret query
+ * parameter(`api_key`/`serviceKey`/`token`/`secret`, 고엔트로피 값)를 담을 수 있어
+ * `redactBuildSpecForDisplay`로 화면 표시 사본만 별도로 만든다 — 실제 Build 제출은
+ * (`AddDataPage`의 onBuild → `job.start(specResult.spec)`) 이 컴포넌트를 거치지 않고
+ * 원문 spec을 그대로 쓰므로, 표시용 redaction이 제출값에 영향을 주지 않는다.
  */
 import { toBuilderSpec } from "@/features/build-spec/specMapping";
 import { PREVIEW_SOURCE_STATE_LABEL, summarizeChecksPassed, summarizePreviewSources } from "@/features/quality/model";
 import { QualityBadge } from "@/features/quality/QualityBadge";
+import { redactBuildSpecForDisplay } from "@/features/add-data/model";
+import { redactUrlEndpoint } from "@/features/add-data/urlRedaction";
 import type { PreviewSource } from "@/shared/lib/builderApi";
 import type { BuildJobStatus } from "@/features/runs/useBuildJob";
 import type { AddDataDraft, PreviewLimit, PreviewSampleMode } from "@/features/add-data/model";
@@ -32,17 +40,20 @@ export interface ReviewBuildStepProps {
   onCancel: () => void;
 }
 
+// 표시 전용 — sourceSummary/querySummary는 실제 Builder 제출값이 아니라 사람이 읽는
+// Review 요약이므로 secret query parameter를 redact한 endpoint를 쓴다(#283 리뷰
+// 대응, Epic #246). 실제 제출은 이 함수들을 거치지 않는다.
 function sourceSummary(draft: AddDataDraft): string {
   if (draft.sourceKind === "public_api") return `Public API · ${draft.publicApi.provider}/${draft.publicApi.dataset}`;
   if (draft.sourceKind === "file") return `File Upload · ${draft.file.filename ?? draft.file.format ?? ""}`;
-  if (draft.sourceKind === "url") return `URL / REST API · ${draft.url.endpoint}`;
+  if (draft.sourceKind === "url") return `URL / REST API · ${redactUrlEndpoint(draft.url.endpoint).endpoint}`;
   return "선택되지 않음";
 }
 
 function querySummary(draft: AddDataDraft): string {
   if (draft.sourceKind === "public_api") return draft.publicApi.sourceParams;
   if (draft.sourceKind === "file") return `${draft.file.format ?? "—"} · ${draft.file.encoding}`;
-  if (draft.sourceKind === "url") return draft.url.endpoint || "—";
+  if (draft.sourceKind === "url") return redactUrlEndpoint(draft.url.endpoint).endpoint || "—";
   return "—";
 }
 
@@ -75,7 +86,12 @@ export function ReviewBuildStep({
   onBuild,
   onCancel,
 }: ReviewBuildStepProps) {
-  const submissionSpec = spec ? toBuilderSpec(spec) : null;
+  // 실제 제출은 항상 원문 `spec`으로 이뤄진다(AddDataPage의 onBuild가 이 컴포넌트가
+  // 아니라 자신의 specResult.spec을 그대로 job.start에 넘긴다) — 여기서 만드는
+  // displaySpec은 화면 표시 전용 사본이며, redact 여부가 실제 제출값에 전혀 영향을
+  // 주지 않는다(#283 리뷰 대응, Epic #246).
+  const displaySpec = spec ? redactBuildSpecForDisplay(spec) : null;
+  const displaySubmissionSpec = displaySpec ? toBuilderSpec(displaySpec) : null;
   // 여러 source의 quality_results를 합쳐 하나의 PASS로 지어내지 않는다 — Builder가
   // 실제로 반환한 결과를 그대로 합산(pass/warn/fail 카운트)하고, source별 상태가 갈리면
   // mixed로 표시한다(#250 §3).
@@ -216,10 +232,11 @@ export function ReviewBuildStep({
         <Card className="space-y-2">
           <p className="text-sm font-semibold">실제 제출될 canonical BuildSpec</p>
           <pre className="overflow-x-auto rounded-xl bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
-            <code>{submissionSpec ? JSON.stringify(submissionSpec, null, 2) : "스펙을 아직 만들 수 없습니다."}</code>
+            <code>{displaySubmissionSpec ? JSON.stringify(displaySubmissionSpec, null, 2) : "스펙을 아직 만들 수 없습니다."}</code>
           </pre>
           <p className="text-xs text-muted-foreground">
-            Build 시작 후 동일한 설정·검증 결과가 Run 상세에 그대로 이어집니다.
+            Build 시작 후 동일한 설정·검증 결과가 Run 상세에 그대로 이어집니다. URL source의 secret
+            query parameter는 표시에서만 [REDACTED]로 가려지며, 실제 제출값에는 영향을 주지 않습니다.
           </p>
         </Card>
       </div>

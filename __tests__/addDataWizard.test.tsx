@@ -317,21 +317,44 @@ describe("Add Data Workbench — URL source (#250, #498, Auth=None, amendment 2)
     expect(screen.getByLabelText(/인증 \(Auth\)/)).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText(/Endpoint/), {
-      target: { value: "https://api.example.org/v1/air-quality?token=SECRET" },
+      target: { value: "https://api.example.org/v1/air-quality?region=busan" },
     });
 
     const summaryId = await screen.findByText(/ID: api-example-org-v1-air-quality/);
-    // dataset identity(ID/제목)에는 token이 새어 들어가지 않는다 — endpoint 필드 자체에는
-    // 물론 그대로 남는다(Builder SourceRef.endpoint는 원문을 그대로 받는다).
-    expect(within(summaryId.closest("div")!).queryByText(/secret/i)).not.toBeInTheDocument();
+    // dataset identity(ID/제목)에는 query string이 새어 들어가지 않는다 — endpoint 필드
+    // 자체에는 물론 그대로 남는다(Builder SourceRef.endpoint는 원문을 그대로 받는다).
+    expect(within(summaryId.closest("div")!).queryByText(/busan/i)).not.toBeInTheDocument();
 
     next();
     await screen.findByRole("heading", { name: /미리보기 · 검증/ });
     next();
     await screen.findByRole("heading", { name: /검토 · 빌드/ });
     expect(screen.getByText(/"kind": "url"/)).toBeInTheDocument();
-    expect(screen.getByText(/"endpoint": "https:\/\/api\.example\.org\/v1\/air-quality\?token=SECRET"/)).toBeInTheDocument();
+    // 비민감 query parameter는 canonical BuildSpec preview에 그대로 보인다.
+    expect(screen.getByText(/"endpoint": "https:\/\/api\.example\.org\/v1\/air-quality\?region=busan"/)).toBeInTheDocument();
     expect(screen.getByText(/"dataset_id": "api-example-org-v1-air-quality"/)).toBeInTheDocument();
+  });
+
+  it("secret query parameter는 Review DOM(canonical BuildSpec preview 포함)에서 [REDACTED]로 가려진다 (#283 리뷰 대응, Epic #246)", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByRole("button", { name: /URL \/ REST API/ }));
+    next();
+    await screen.findByText("URL / REST API");
+
+    fireEvent.change(screen.getByLabelText(/Endpoint/), {
+      target: { value: "https://api.example.org/v1/air-quality?token=SECRETVALUE1234567890" },
+    });
+
+    await screen.findByText(/ID: api-example-org-v1-air-quality/);
+
+    next();
+    await screen.findByRole("heading", { name: /미리보기 · 검증/ });
+    next();
+    await screen.findByRole("heading", { name: /검토 · 빌드/ });
+
+    // 원문 secret은 화면 어디에도(Source summary/canonical BuildSpec preview) 나타나지 않는다.
+    expect(document.body.textContent ?? "").not.toContain("SECRETVALUE1234567890");
+    expect(screen.getByText(/"endpoint": "https:\/\/api\.example\.org\/v1\/air-quality\?token=REDACTED"/)).toBeInTheDocument();
   });
 });
 

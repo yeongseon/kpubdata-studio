@@ -9,6 +9,7 @@
  * `features/build-spec/specMapping.ts`를 그대로 재사용한다(#250 amendment 1).
  */
 import { parseSourceParams } from "@/features/build-spec/paramsInput";
+import { endpointHasRedactedSecret, redactUrlEndpoint } from "@/features/add-data/urlRedaction";
 import { buildSpecSchema } from "@/shared/lib/schemas";
 import type { BuildSpec, SourceFormat, SourceKind } from "@/shared/lib/types";
 
@@ -130,6 +131,14 @@ export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
     if (!draft.url.endpoint) {
       return { error: "Endpoint를 입력해주세요." };
     }
+    // 저장된 초안을 복원했는데 endpoint의 secret query parameter가 이미 REDACTED로
+    // 지워져 있으면 fail-closed — placeholder를 실제 endpoint/credential처럼 Builder에
+    // 제출하지 않는다(Epic #246). 사용자가 값을 다시 입력해야 Preview/Build가 가능하다.
+    if (endpointHasRedactedSecret(draft.url.endpoint)) {
+      return {
+        error: "저장된 초안에서 시크릿이 포함된 URL 값이 제거되었습니다. Endpoint를 다시 입력해주세요.",
+      };
+    }
     if (!/^https:\/\//i.test(draft.url.endpoint)) {
       return { error: "https:// 로 시작하는 URL만 지원합니다." };
     }
@@ -225,6 +234,21 @@ export function applyBuildSpecToDraft(draft: AddDataDraft, spec: BuildSpec): Add
  * 컬럼 뷰(key/all)·diff 화면 전환처럼 이미 받아온 응답을 다시 그리기만 하는 토글은
  * 새 Preview 호출이 필요 없으므로 서명에서 제외한다.
  */
+/**
+ * 표시 전용 — canonical BuildSpec에서 url source의 endpoint를 secret-redacted
+ * 버전으로 바꾼 사본을 만든다(PR #283 리뷰 대응, Epic #246). Review 화면의 "실제
+ * 제출될 canonical BuildSpec" preview에만 쓰며, 실제 Builder 제출에 쓰이는 spec
+ * 객체는 이 함수를 거치지 않고 `buildSpecFromDraft` 결과를 그대로 쓴다.
+ */
+export function redactBuildSpecForDisplay(spec: BuildSpec): BuildSpec {
+  const source = spec.sources[0];
+  if (!source || source.kind !== "url" || !source.endpoint) return spec;
+  return {
+    ...spec,
+    sources: [{ ...source, endpoint: redactUrlEndpoint(source.endpoint).endpoint }],
+  };
+}
+
 export function draftSignature(draft: AddDataDraft): string {
   const specResult = buildSpecFromDraft(draft);
   return JSON.stringify({

@@ -4,6 +4,7 @@ import {
   applyBuildSpecToDraft,
   buildSpecFromDraft,
   draftSignature,
+  redactBuildSpecForDisplay,
   type AddDataDraft,
 } from "./model";
 
@@ -75,6 +76,16 @@ describe("buildSpecFromDraft", () => {
       format: "json",
     });
     expect(result.spec?.sources[0]).not.toHaveProperty("timeout");
+  });
+
+  it("url: redact된 secret placeholder가 남은 endpoint는 fail-closed로 재입력을 요구한다 (#283, Epic #246)", () => {
+    const draft = draftWith({
+      sourceKind: "url",
+      url: { endpoint: "https://api.example.org/data?api_key=REDACTED", format: null },
+    });
+    const result = buildSpecFromDraft(draft);
+    expect(result.spec).toBeUndefined();
+    expect(result.error).toMatch(/다시 입력/);
   });
 
   it("출력 형식이 비어 있으면 오류를 반환한다", () => {
@@ -149,5 +160,36 @@ describe("applyBuildSpecToDraft", () => {
     expect(applied.sourceKind).toBe("file");
     expect(applied.file.uploadId).toBe("upl_0123456789abcdef0123456789abcdef");
     expect(applied.file.format).toBe("csv");
+  });
+});
+
+describe("redactBuildSpecForDisplay (#283 리뷰 대응, Epic #246)", () => {
+  it("url source의 secret query parameter를 표시용 사본에서만 가린다", () => {
+    const secret = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
+    const result = buildSpecFromDraft(
+      draftWith({ sourceKind: "url", url: { endpoint: `https://api.example.org/data?api_key=${secret}`, format: null } }),
+    );
+    const original = result.spec!;
+    const displaySpec = redactBuildSpecForDisplay(original);
+
+    expect((displaySpec.sources[0].endpoint ?? "")).not.toContain(secret);
+    // 원본 spec 객체는 변형되지 않는다(다른 곳에서 실제 제출에 계속 쓰인다).
+    expect(original.sources[0].endpoint).toContain(secret);
+  });
+
+  it("secret이 없는 url source는 그대로 돌려준다", () => {
+    const result = buildSpecFromDraft(
+      draftWith({ sourceKind: "url", url: { endpoint: "https://api.example.org/data?region=seoul", format: null } }),
+    );
+    const displaySpec = redactBuildSpecForDisplay(result.spec!);
+    expect(displaySpec.sources[0].endpoint).toBe("https://api.example.org/data?region=seoul");
+  });
+
+  it("public_api/file source는 손대지 않는다", () => {
+    const result = buildSpecFromDraft(
+      draftWith({ sourceKind: "public_api", publicApi: { provider: "datago", dataset: "apt_trade", sourceParams: "{}" } }),
+    );
+    const displaySpec = redactBuildSpecForDisplay(result.spec!);
+    expect(displaySpec).toEqual(result.spec);
   });
 });
