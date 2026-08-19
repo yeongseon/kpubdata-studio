@@ -7,6 +7,8 @@ import {
   redactBuildSpecForDisplay,
   type AddDataDraft,
 } from "./model";
+import { REDACTED_PLACEHOLDER } from "./urlRedaction";
+import { PARAMS_REDACTED_SENTINEL } from "./paramsRedaction";
 
 function draftWith(overrides: Partial<AddDataDraft>): AddDataDraft {
   return { ...INITIAL_DRAFT, datasetId: "d", title: "t", description: "desc", ...overrides };
@@ -81,7 +83,41 @@ describe("buildSpecFromDraft", () => {
   it("url: redact된 secret placeholder가 남은 endpoint는 fail-closed로 재입력을 요구한다 (#283, Epic #246)", () => {
     const draft = draftWith({
       sourceKind: "url",
-      url: { endpoint: "https://api.example.org/data?api_key=REDACTED", format: null },
+      url: { endpoint: `https://api.example.org/data?api_key=${REDACTED_PLACEHOLDER}`, format: null },
+    });
+    const result = buildSpecFromDraft(draft);
+    expect(result.spec).toBeUndefined();
+    expect(result.error).toMatch(/다시 입력/);
+  });
+
+  it("url: 정상 query parameter 값이 우연히 sentinel과 같은 뜻의 흔한 단어('REDACTED')여도 오인하지 않는다 (#283 후속 리뷰 §3)", () => {
+    const draft = draftWith({
+      sourceKind: "url",
+      url: { endpoint: "https://api.example.org/data?status=REDACTED", format: null },
+    });
+    const result = buildSpecFromDraft(draft);
+    expect(result.error).toBeUndefined();
+    expect(result.spec?.sources[0]).toMatchObject({ endpoint: "https://api.example.org/data?status=REDACTED" });
+  });
+
+  it("url: userinfo credential(user:pass@host)이 포함된 endpoint는 fail-closed로 거부한다 (#283 후속 리뷰 §4)", () => {
+    const draft = draftWith({
+      sourceKind: "url",
+      url: { endpoint: "https://user:password@api.example.org/data", format: null },
+    });
+    const result = buildSpecFromDraft(draft);
+    expect(result.spec).toBeUndefined();
+    expect(result.error).toMatch(/사용자 정보/);
+  });
+
+  it("public_api: redact된 secret sentinel이 남은 sourceParams는 fail-closed로 재입력을 요구한다 (#283 후속 리뷰 §1)", () => {
+    const draft = draftWith({
+      sourceKind: "public_api",
+      publicApi: {
+        provider: "datago",
+        dataset: "apt_trade",
+        sourceParams: JSON.stringify({ serviceKey: PARAMS_REDACTED_SENTINEL, page: 1 }),
+      },
     });
     const result = buildSpecFromDraft(draft);
     expect(result.spec).toBeUndefined();
@@ -191,5 +227,48 @@ describe("redactBuildSpecForDisplay (#283 리뷰 대응, Epic #246)", () => {
     );
     const displaySpec = redactBuildSpecForDisplay(result.spec!);
     expect(displaySpec).toEqual(result.spec);
+  });
+
+  it("public_api source의 serviceKey는 표시용 사본에서만 가리고 원본은 유지한다 (#283 후속 리뷰 §1)", () => {
+    const secret = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
+    const result = buildSpecFromDraft(
+      draftWith({
+        sourceKind: "public_api",
+        publicApi: { provider: "datago", dataset: "apt_trade", sourceParams: JSON.stringify({ page: 1, serviceKey: secret }) },
+      }),
+    );
+    const original = result.spec!;
+    const displaySpec = redactBuildSpecForDisplay(original);
+
+    expect(JSON.stringify(displaySpec.sources[0].params)).not.toContain(secret);
+    // page처럼 비민감 값은 유지된다(parseSourceParams가 값을 문자열로 정규화한다).
+    expect(displaySpec.sources[0].params.page).toBe("1");
+    // 원본 spec 객체는 변형되지 않는다(다른 곳에서 실제 제출에 계속 쓰인다).
+    expect(original.sources[0].params.serviceKey).toBe(secret);
+  });
+
+  it("public_api source의 api_key도 가리되 비민감 param(region)은 유지한다", () => {
+    const secret = "9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e";
+    const result = buildSpecFromDraft(
+      draftWith({
+        sourceKind: "public_api",
+        publicApi: { provider: "datago", dataset: "apt_trade", sourceParams: JSON.stringify({ api_key: secret, region: "seoul" }) },
+      }),
+    );
+    const displaySpec = redactBuildSpecForDisplay(result.spec!);
+    expect(JSON.stringify(displaySpec.sources[0].params)).not.toContain(secret);
+    expect(displaySpec.sources[0].params.region).toBe("seoul");
+  });
+
+  it("public_api source의 고엔트로피 값도 key 이름과 무관하게 가린다", () => {
+    const highEntropy = "Zx8pQ2vR7mK4nL9wT1yB6cU3sD0fH5jA8gE2rN7iM4x";
+    const result = buildSpecFromDraft(
+      draftWith({
+        sourceKind: "public_api",
+        publicApi: { provider: "datago", dataset: "apt_trade", sourceParams: JSON.stringify({ auth: highEntropy }) },
+      }),
+    );
+    const displaySpec = redactBuildSpecForDisplay(result.spec!);
+    expect(JSON.stringify(displaySpec.sources[0].params)).not.toContain(highEntropy);
   });
 });

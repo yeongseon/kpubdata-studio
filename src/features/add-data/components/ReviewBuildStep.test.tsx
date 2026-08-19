@@ -22,6 +22,17 @@ function urlDraft(endpoint: string): AddDataDraft {
   };
 }
 
+function publicApiDraft(sourceParams: string): AddDataDraft {
+  return {
+    ...INITIAL_DRAFT,
+    sourceKind: "public_api",
+    publicApi: { provider: "datago", dataset: "apt_trade", sourceParams },
+    datasetId: "d",
+    title: "t",
+    description: "desc",
+  };
+}
+
 function renderReview(draft: AddDataDraft) {
   const specResult = buildSpecFromDraft(draft);
   return {
@@ -89,6 +100,46 @@ describe("ReviewBuildStep — URL source secret redaction (#283)", () => {
     expect(specResult.spec?.sources[0]).toMatchObject({
       kind: "url",
       endpoint: `https://api.example.org/data?api_key=${secret}&region=seoul`,
+    });
+  });
+});
+
+describe("ReviewBuildStep — public_api sourceParams secret redaction (#283 후속 리뷰 §1)", () => {
+  it("serviceKey 원문이 Review DOM에 없다", () => {
+    const secret = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
+    renderReview(publicApiDraft(JSON.stringify({ page: 1, serviceKey: secret })));
+    expect(document.body.textContent ?? "").not.toContain(secret);
+  });
+
+  it("api_key 원문이 Review DOM에 없고 region은 유지된다", () => {
+    const secret = "9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e";
+    renderReview(publicApiDraft(JSON.stringify({ api_key: secret, region: "seoul" })));
+    expect(document.body.textContent ?? "").not.toContain(secret);
+    expect(document.body.textContent ?? "").toContain("seoul");
+  });
+
+  it("고엔트로피 값도 key 이름과 무관하게 Review DOM에서 가려진다", () => {
+    const secret = "Zx8pQ2vR7mK4nL9wT1yB6cU3sD0fH5jA8gE2rN7iM4x";
+    renderReview(publicApiDraft(JSON.stringify({ auth: secret })));
+    expect(document.body.textContent ?? "").not.toContain(secret);
+  });
+
+  it("비민감 파라미터는 Review DOM에 그대로 남는다", () => {
+    renderReview(publicApiDraft(JSON.stringify({ region: "seoul", year: 2024 })));
+    expect(document.body.textContent ?? "").toContain("seoul");
+    expect(document.body.textContent ?? "").toContain("2024");
+  });
+
+  it("표시용 redaction은 실제 in-memory submission spec(params 원문)을 바꾸지 않는다", () => {
+    const secret = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
+    const draft = publicApiDraft(JSON.stringify({ serviceKey: secret, region: "seoul" }));
+    const { specResult } = renderReview(draft);
+
+    expect(document.body.textContent ?? "").not.toContain(secret);
+    expect(specResult.spec?.sources[0]).toMatchObject({
+      provider: "datago",
+      dataset: "apt_trade",
+      params: { serviceKey: secret, region: "seoul" },
     });
   });
 });

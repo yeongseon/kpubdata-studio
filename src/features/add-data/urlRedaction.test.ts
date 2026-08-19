@@ -6,7 +6,7 @@
  * regex를 여기서 다시 만들지 않는다.
  */
 import { describe, expect, it } from "vitest";
-import { endpointHasRedactedSecret, redactUrlEndpoint } from "./urlRedaction";
+import { endpointHasRedactedSecret, redactUrlEndpoint, sanitizeUrlEndpointForStorage, urlHasUserinfo } from "./urlRedaction";
 
 const SECRET = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
 
@@ -76,5 +76,62 @@ describe("endpointHasRedactedSecret", () => {
 
   it("secret이 없던 원문 endpoint는 false를 돌려준다", () => {
     expect(endpointHasRedactedSecret("https://api.example.org/data?region=seoul")).toBe(false);
+  });
+
+  it("정상 query parameter 값이 흔한 단어('REDACTED')여도 오인하지 않는다(#283 후속 리뷰 §3)", () => {
+    expect(endpointHasRedactedSecret("https://api.example.org/data?status=REDACTED")).toBe(false);
+  });
+});
+
+describe("urlHasUserinfo (#283 후속 리뷰 §4)", () => {
+  it("username:password@host 형태를 감지한다", () => {
+    expect(urlHasUserinfo("https://username:password@api.example.org/data")).toBe(true);
+  });
+
+  it("username만 있어도 감지한다", () => {
+    expect(urlHasUserinfo("https://username@api.example.org/data")).toBe(true);
+  });
+
+  it("userinfo가 없으면 false를 돌려준다", () => {
+    expect(urlHasUserinfo("https://api.example.org/data?region=seoul")).toBe(false);
+  });
+
+  it("파싱 불가능한 값은 false를 돌려준다", () => {
+    expect(urlHasUserinfo("not-a-url")).toBe(false);
+  });
+});
+
+describe("redactUrlEndpoint — userinfo credential 제거 (#283 후속 리뷰 §4)", () => {
+  it("username:password@host를 완전히 제거한다(가리는 것이 아니라 지운다)", () => {
+    const result = redactUrlEndpoint("https://username:password@api.example.org/data");
+    expect(result.hadSecret).toBe(true);
+    expect(result.endpoint).not.toContain("username");
+    expect(result.endpoint).not.toContain("password");
+    expect(result.endpoint).toBe("https://api.example.org/data");
+  });
+});
+
+describe("sanitizeUrlEndpointForStorage (#283 후속 리뷰 §2, §4)", () => {
+  it("malformed 값(new URL()이 파싱 못하는 값)은 빈 값으로 되돌린다 — secret이 저장되지 않는다", () => {
+    const secret = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
+    const result = sanitizeUrlEndpointForStorage(`not-a-url?token=${secret}`);
+    expect(result).toBe("");
+  });
+
+  it("userinfo credential이 있는 URL은 빈 값으로 되돌린다", () => {
+    const result = sanitizeUrlEndpointForStorage("https://user:password@api.example.org/data");
+    expect(result).toBe("");
+  });
+
+  it("정상 URL의 secret query parameter는 표시용 redaction과 동일하게 가려진다", () => {
+    const secret = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
+    const result = sanitizeUrlEndpointForStorage(`https://api.example.org/data?api_key=${secret}`);
+    expect(result).not.toContain(secret);
+    expect(result).toContain("api.example.org");
+  });
+
+  it("비민감 URL은 그대로 유지한다", () => {
+    const result = sanitizeUrlEndpointForStorage("https://api.example.org/data?region=seoul");
+    expect(result).toBe("https://api.example.org/data?region=seoul");
   });
 });

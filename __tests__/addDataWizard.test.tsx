@@ -335,7 +335,7 @@ describe("Add Data Workbench — URL source (#250, #498, Auth=None, amendment 2)
     expect(screen.getByText(/"dataset_id": "api-example-org-v1-air-quality"/)).toBeInTheDocument();
   });
 
-  it("secret query parameter는 Review DOM(canonical BuildSpec preview 포함)에서 [REDACTED]로 가려진다 (#283 리뷰 대응, Epic #246)", async () => {
+  it("secret query parameter는 Review DOM(canonical BuildSpec preview 포함)에서 가려진다 (#283 리뷰 대응, Epic #246)", async () => {
     renderWizard();
     fireEvent.click(screen.getByRole("button", { name: /URL \/ REST API/ }));
     next();
@@ -354,7 +354,9 @@ describe("Add Data Workbench — URL source (#250, #498, Auth=None, amendment 2)
 
     // 원문 secret은 화면 어디에도(Source summary/canonical BuildSpec preview) 나타나지 않는다.
     expect(document.body.textContent ?? "").not.toContain("SECRETVALUE1234567890");
-    expect(screen.getByText(/"endpoint": "https:\/\/api\.example\.org\/v1\/air-quality\?token=REDACTED"/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/"endpoint": "https:\/\/api\.example\.org\/v1\/air-quality\?token=__KPD_URL_SECRET_REDACTED__"/),
+    ).toBeInTheDocument();
   });
 });
 

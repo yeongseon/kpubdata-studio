@@ -9,7 +9,8 @@
  * `features/build-spec/specMapping.ts`를 그대로 재사용한다(#250 amendment 1).
  */
 import { parseSourceParams } from "@/features/build-spec/paramsInput";
-import { endpointHasRedactedSecret, redactUrlEndpoint } from "@/features/add-data/urlRedaction";
+import { endpointHasRedactedSecret, redactUrlEndpoint, urlHasUserinfo } from "@/features/add-data/urlRedaction";
+import { redactSourceParamsObject, sourceParamsHasRedactedSecret } from "@/features/add-data/paramsRedaction";
 import { buildSpecSchema } from "@/shared/lib/schemas";
 import type { BuildSpec, SourceFormat, SourceKind } from "@/shared/lib/types";
 
@@ -109,6 +110,14 @@ export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
     if (!draft.publicApi.provider || !draft.publicApi.dataset) {
       return { error: "Provider와 Dataset을 선택해주세요." };
     }
+    // 저장된 초안을 복원했는데 sourceParams의 secret 값이 이미 sentinel로 지워져
+    // 있으면 fail-closed — placeholder를 실제 파라미터처럼 Builder에 제출하지 않는다
+    // (#283 후속 리뷰 §1). 사용자가 값을 다시 입력해야 Preview/Build가 가능하다.
+    if (sourceParamsHasRedactedSecret(draft.publicApi.sourceParams)) {
+      return {
+        error: "저장된 초안에서 시크릿이 포함된 파라미터 값이 제거되었습니다. Query/Config를 다시 입력해주세요.",
+      };
+    }
     const parsedParams = parseSourceParams(draft.publicApi.sourceParams);
     if (parsedParams.error) return { error: parsedParams.error };
     source = {
@@ -137,6 +146,13 @@ export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
     if (endpointHasRedactedSecret(draft.url.endpoint)) {
       return {
         error: "저장된 초안에서 시크릿이 포함된 URL 값이 제거되었습니다. Endpoint를 다시 입력해주세요.",
+      };
+    }
+    // URL Auth(userinfo credential)는 계약에 없는 기능이다(#283 후속 리뷰 §4) —
+    // `user:pass@host` 형태는 조용히 지원하는 대신 항상 오류로 막는다.
+    if (urlHasUserinfo(draft.url.endpoint)) {
+      return {
+        error: "URL에 사용자 정보(예: user:pass@host)를 포함할 수 없습니다. Endpoint에 자격 증명을 넣지 마세요.",
       };
     }
     if (!/^https:\/\//i.test(draft.url.endpoint)) {
@@ -235,18 +251,27 @@ export function applyBuildSpecToDraft(draft: AddDataDraft, spec: BuildSpec): Add
  * 새 Preview 호출이 필요 없으므로 서명에서 제외한다.
  */
 /**
- * 표시 전용 — canonical BuildSpec에서 url source의 endpoint를 secret-redacted
- * 버전으로 바꾼 사본을 만든다(PR #283 리뷰 대응, Epic #246). Review 화면의 "실제
- * 제출될 canonical BuildSpec" preview에만 쓰며, 실제 Builder 제출에 쓰이는 spec
- * 객체는 이 함수를 거치지 않고 `buildSpecFromDraft` 결과를 그대로 쓴다.
+ * 표시 전용 — canonical BuildSpec에서 url source의 endpoint, public_api source의
+ * params를 secret-redacted 버전으로 바꾼 사본을 만든다(PR #283 리뷰 대응, Epic #246,
+ * 후속 리뷰 §1). Review 화면의 "실제 제출될 canonical BuildSpec" preview에만 쓰며,
+ * 실제 Builder 제출에 쓰이는 spec 객체는 이 함수를 거치지 않고 `buildSpecFromDraft`
+ * 결과를 그대로 쓴다.
  */
 export function redactBuildSpecForDisplay(spec: BuildSpec): BuildSpec {
   const source = spec.sources[0];
-  if (!source || source.kind !== "url" || !source.endpoint) return spec;
-  return {
-    ...spec,
-    sources: [{ ...source, endpoint: redactUrlEndpoint(source.endpoint).endpoint }],
-  };
+  if (!source) return spec;
+  if (source.kind === "url" && source.endpoint) {
+    return {
+      ...spec,
+      sources: [{ ...source, endpoint: redactUrlEndpoint(source.endpoint).endpoint }],
+    };
+  }
+  if (!source.kind || source.kind === "public_api") {
+    const { params, hadSecret } = redactSourceParamsObject(source.params ?? {});
+    if (!hadSecret) return spec;
+    return { ...spec, sources: [{ ...source, params }] };
+  }
+  return spec;
 }
 
 export function draftSignature(draft: AddDataDraft): string {

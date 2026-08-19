@@ -6,9 +6,10 @@
  * `toBuilderSpec` 호출 결과이므로 표시값과 제출값이 절대 갈라지지 않는다
  * (#250 amendment 1). stale preview(직전 Preview 이후 spec/옵션이 바뀜)면 Build를 막는다.
  *
- * 예외 한 가지(#283 리뷰 대응, Epic #246): url source의 endpoint는 secret query
- * parameter(`api_key`/`serviceKey`/`token`/`secret`, 고엔트로피 값)를 담을 수 있어
- * `redactBuildSpecForDisplay`로 화면 표시 사본만 별도로 만든다 — 실제 Build 제출은
+ * 예외 두 가지(#283 리뷰 대응, Epic #246, 후속 리뷰 §1): url source의 endpoint,
+ * public_api source의 sourceParams는 secret query/param(`api_key`/`serviceKey`/
+ * `token`/`secret`, 고엔트로피 값)을 담을 수 있어 `redactBuildSpecForDisplay`/
+ * `redactSourceParamsText`로 화면 표시 사본만 별도로 만든다 — 실제 Build 제출은
  * (`AddDataPage`의 onBuild → `job.start(specResult.spec)`) 이 컴포넌트를 거치지 않고
  * 원문 spec을 그대로 쓰므로, 표시용 redaction이 제출값에 영향을 주지 않는다.
  */
@@ -17,6 +18,7 @@ import { PREVIEW_SOURCE_STATE_LABEL, summarizeChecksPassed, summarizePreviewSour
 import { QualityBadge } from "@/features/quality/QualityBadge";
 import { redactBuildSpecForDisplay } from "@/features/add-data/model";
 import { redactUrlEndpoint } from "@/features/add-data/urlRedaction";
+import { redactSourceParamsText } from "@/features/add-data/paramsRedaction";
 import type { PreviewSource } from "@/shared/lib/builderApi";
 import type { BuildJobStatus } from "@/features/runs/useBuildJob";
 import type { AddDataDraft, PreviewLimit, PreviewSampleMode } from "@/features/add-data/model";
@@ -51,7 +53,7 @@ function sourceSummary(draft: AddDataDraft): string {
 }
 
 function querySummary(draft: AddDataDraft): string {
-  if (draft.sourceKind === "public_api") return draft.publicApi.sourceParams;
+  if (draft.sourceKind === "public_api") return redactSourceParamsText(draft.publicApi.sourceParams).text;
   if (draft.sourceKind === "file") return `${draft.file.format ?? "—"} · ${draft.file.encoding}`;
   if (draft.sourceKind === "url") return redactUrlEndpoint(draft.url.endpoint).endpoint || "—";
   return "—";
@@ -236,7 +238,8 @@ export function ReviewBuildStep({
           </pre>
           <p className="text-xs text-muted-foreground">
             Build 시작 후 동일한 설정·검증 결과가 Run 상세에 그대로 이어집니다. URL source의 secret
-            query parameter는 표시에서만 [REDACTED]로 가려지며, 실제 제출값에는 영향을 주지 않습니다.
+            query parameter, Public API source의 secret 파라미터 값은 표시에서만 가려지며, 실제
+            제출값에는 영향을 주지 않습니다.
           </p>
         </Card>
       </div>
