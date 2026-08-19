@@ -31,7 +31,7 @@ export const recordSchema = z.record(z.string(), z.string());
 export const jsonRecordSchema = z.record(z.string(), jsonValueSchema);
 
 /** export 옵션은 문자열 키에 임의 값(unknown)을 허용한다 (ExportTarget.options 규약과 정렬) */
-export const exportOptionsSchema = z.record(z.string(), z.unknown());
+export const exportOptionsSchema = z.record(z.string(), jsonValueSchema);
 
 /** 소스 스키마 계약 (VAL-1). Builder sources[].schema 와 1:1. */
 export const schemaContractSchema = z.object({
@@ -111,7 +111,7 @@ export const buildSpecSchema = z.object({
   description: z.string().min(1, "Description is required."),
   sources: z.array(sourceRefSchema).min(1, "At least one source is required."),
   exports: z.array(exportTargetSchema).min(1, "Select at least one export format."),
-  metadata: recordSchema,
+  metadata: jsonRecordSchema,
   // Studio가 편집 UI를 제공하지 않는 canonical 최상위 필드(publish/splits/pii/...)를
   // round-trip 중 유실하지 않도록 보존하는 bucket (#250). specMapping.ts 참고.
   extra: jsonRecordSchema.optional(),

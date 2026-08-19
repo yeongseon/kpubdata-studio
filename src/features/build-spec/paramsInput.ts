@@ -8,8 +8,11 @@
  */
 
 /** 파싱 결과: 성공 시 `data`, 실패 시 한국어 오류 메시지. */
+import { jsonRecordSchema } from "@/shared/lib/schemas";
+import type { JsonValue } from "@/shared/lib/types";
+
 export interface ParsedSourceParams {
-  data?: Record<string, string>;
+  data?: Record<string, JsonValue>;
   error?: string;
 }
 
@@ -25,9 +28,9 @@ export function parseSourceParams(sourceParams: string): ParsedSourceParams {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return { error: "파라미터는 JSON 객체여야 합니다. 예: {\"region\": \"seoul\"}" };
     }
-    const entries = Object.entries(parsed);
-    const values = Object.fromEntries(entries.map(([key, value]) => [key, String(value)]));
-    return { data: values };
+    const result = jsonRecordSchema.safeParse(parsed);
+    if (!result.success) return { error: "파라미터 JSON에는 유한한 number와 JSON 값만 사용할 수 있습니다." };
+    return { data: result.data as Record<string, JsonValue> };
   } catch {
     return { error: "파라미터가 올바른 JSON이 아닙니다. 형식을 확인하세요." };
   }

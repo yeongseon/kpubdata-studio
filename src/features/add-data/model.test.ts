@@ -9,6 +9,7 @@ import {
 } from "./model";
 import { REDACTED_PLACEHOLDER } from "./urlRedaction";
 import { PARAMS_REDACTED_SENTINEL } from "./paramsRedaction";
+import type { BuildSpec } from "@/shared/lib/types";
 
 function draftWith(overrides: Partial<AddDataDraft>): AddDataDraft {
   return { ...INITIAL_DRAFT, datasetId: "d", title: "t", description: "desc", ...overrides };
@@ -199,6 +200,54 @@ describe("applyBuildSpecToDraft", () => {
   });
 });
 
+describe("canonical Add Data preservation", () => {
+  it("preserves trailing sources, source metadata, extras, and nested metadata after YAML apply", () => {
+    const draft = {
+      ...INITIAL_DRAFT,
+      sourceKind: "public_api" as const,
+      datasetId: "dataset",
+      title: "Title",
+      description: "Description",
+      publicApi: { provider: "p", dataset: "d", sourceParams: '{"page":1,"options":{"flag":true}}' },
+      exportFormats: ["jsonl"],
+    };
+    const canonical = {
+      ...buildSpecFromDraft(draft).spec!,
+      sources: [
+        { ...buildSpecFromDraft(draft).spec!.sources[0], alias: "primary", schema: { required: ["id"], dtypes: {}, casts: {} } },
+        { kind: "url" as const, endpoint: "https://example.test/secondary.json", method: "GET" as const, params: {} },
+      ],
+      metadata: { custom: { nested: [1, true] } },
+      extra: { publish: { license: "CC-BY" }, quality: { minRows: 1 } },
+      exports: [{ format: "jsonl", options: { outputPath: "out/data.jsonl", compression: "gzip" } }],
+    };
+    const applied = applyBuildSpecToDraft(INITIAL_DRAFT, canonical);
+    const rebuilt = buildSpecFromDraft(applied).spec!;
+    expect(rebuilt).toEqual(canonical);
+  });
+
+  it("redacts nested secrets in every source without mutating the submission spec", () => {
+    const original: BuildSpec = {
+      ...buildSpecFromDraft({
+        ...INITIAL_DRAFT,
+        sourceKind: "public_api" as const,
+        datasetId: "d",
+        title: "t",
+        description: "desc",
+        publicApi: { provider: "p", dataset: "d", sourceParams: '{"serviceKey":"short-secret","safe":{"region":"seoul"}}' },
+      }).spec!,
+      sources: [
+        { provider: "p", dataset: "d", params: { safe: { region: "seoul" }, serviceKey: "short-secret" } },
+        { kind: "public_api" as const, provider: "p2", dataset: "d2", params: { items: [{ token: "short-secret" }] } },
+      ],
+    };
+    const display = redactBuildSpecForDisplay(original);
+    expect(JSON.stringify(display)).not.toContain("short-secret");
+    expect(original.sources[0].params.serviceKey).toBe("short-secret");
+    expect(display.sources[1].params.items).toEqual([{ token: "__KPD_PARAMS_SECRET_REDACTED__" }]);
+  });
+});
+
 describe("redactBuildSpecForDisplay (#283 리뷰 대응, Epic #246)", () => {
   it("url source의 secret query parameter를 표시용 사본에서만 가린다", () => {
     const secret = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
@@ -241,8 +290,8 @@ describe("redactBuildSpecForDisplay (#283 리뷰 대응, Epic #246)", () => {
     const displaySpec = redactBuildSpecForDisplay(original);
 
     expect(JSON.stringify(displaySpec.sources[0].params)).not.toContain(secret);
-    // page처럼 비민감 값은 유지된다(parseSourceParams가 값을 문자열로 정규화한다).
-    expect(displaySpec.sources[0].params.page).toBe("1");
+    // 비민감 값은 Builder canonical JSON 타입을 그대로 유지한다.
+    expect(displaySpec.sources[0].params.page).toBe(1);
     // 원본 spec 객체는 변형되지 않는다(다른 곳에서 실제 제출에 계속 쓰인다).
     expect(original.sources[0].params.serviceKey).toBe(secret);
   });

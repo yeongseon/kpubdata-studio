@@ -10,9 +10,9 @@
  */
 import { parseSourceParams } from "@/features/build-spec/paramsInput";
 import { endpointHasRedactedSecret, redactUrlEndpoint, urlHasUserinfo } from "@/features/add-data/urlRedaction";
-import { redactSourceParamsObject, sourceParamsHasRedactedSecret } from "@/features/add-data/paramsRedaction";
+import { jsonValueHasRedactedSecret, redactSourceParamsObject, sourceParamsHasRedactedSecret } from "@/features/add-data/paramsRedaction";
 import { buildSpecSchema } from "@/shared/lib/schemas";
-import type { BuildSpec, SourceFormat, SourceKind } from "@/shared/lib/types";
+import type { BuildSpec, JsonValue, SourceFormat, SourceKind, SourceRef } from "@/shared/lib/types";
 
 export interface PublicApiDraft {
   provider: string;
@@ -42,6 +42,8 @@ export type PreviewLimit = 5 | 10 | 20;
 export type PreviewColumnView = "key" | "all";
 
 export interface AddDataDraft {
+  /** YAML에서 읽은 canonical spec. GUI projection과 별도로 보존한다. */
+  canonicalBase?: BuildSpec;
   /** Source 단계에서 아직 선택하지 않았으면 null. */
   sourceKind: SourceKind | null;
   publicApi: PublicApiDraft;
@@ -66,6 +68,7 @@ export interface AddDataDraft {
 }
 
 export const INITIAL_DRAFT: AddDataDraft = {
+  canonicalBase: undefined,
   sourceKind: null,
   publicApi: { provider: "", dataset: "", sourceParams: "{}" },
   file: { uploadId: null, format: null, encoding: "utf-8", filename: null, sizeBytes: null },
@@ -95,6 +98,9 @@ export interface BuildSpecResult {
  * @returns 검증을 통과한 스펙 또는 한국어 오류 메시지.
  */
 export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
+  if (draft.canonicalBase && jsonValueHasRedactedSecret(draft.canonicalBase)) {
+    return { error: "저장된 초안에 복원할 수 없는 secret placeholder가 있습니다. 원본 credential을 다시 입력해 주세요." };
+  }
   if (!draft.sourceKind) {
     return { error: "Source를 먼저 선택해주세요." };
   }
@@ -167,16 +173,41 @@ export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
     };
   }
 
+  const base = draft.canonicalBase;
+  const baseSource = base?.sources[0];
+  const samePrimary = baseSource && (
+    draft.sourceKind === (baseSource.kind ?? "public_api") &&
+    (draft.sourceKind === "public_api"
+      ? baseSource.provider === draft.publicApi.provider && baseSource.dataset === draft.publicApi.dataset
+      : draft.sourceKind === "file"
+        ? baseSource.uploadId === draft.file.uploadId
+        : baseSource.endpoint === draft.url.endpoint)
+  );
+  const projectedSource = source as SourceRef;
+  const mergedPrimary: SourceRef = samePrimary ? { ...baseSource, ...projectedSource } : projectedSource;
+  const exports = draft.exportFormats.map((format) => {
+    const preserved = base?.exports.find((item) => item.format === format);
+    return {
+      ...(preserved ?? {}),
+      format,
+      options: {
+        ...(preserved?.options ?? {}),
+        ...(draft.outputPath ? { outputPath: draft.outputPath } : {}),
+      },
+    };
+  });
+  const metadata: Record<string, JsonValue> = {
+    ...(base?.metadata ?? {}),
+    ...(draft.outputPath ? { outputPath: draft.outputPath } : {}),
+  };
   const candidate: BuildSpec = {
     datasetId: draft.datasetId,
     title: draft.title,
     description: draft.description,
-    sources: [source],
-    exports: draft.exportFormats.map((format) => ({
-      format,
-      options: draft.outputPath ? { outputPath: draft.outputPath } : undefined,
-    })),
-    metadata: draft.outputPath ? { outputPath: draft.outputPath } : {},
+    sources: [mergedPrimary, ...(base?.sources.slice(1) ?? [])],
+    exports,
+    metadata,
+    ...(base?.extra ? { extra: base.extra } : {}),
   };
 
   const result = buildSpecSchema.safeParse(candidate);
@@ -207,13 +238,14 @@ export function applyBuildSpecToDraft(draft: AddDataDraft, spec: BuildSpec): Add
     datasetId: spec.datasetId,
     title: spec.title,
     description: spec.description,
+    canonicalBase: spec,
     // YAML/canonical BuildSpec 편집은 고급 설정과 동급의 명시적 편집으로 취급한다 —
     // 이후 provider/dataset/파일/URL이 바뀌어도 자동 생성값이 이 값을 덮어쓰지 않는다.
     datasetIdTouched: true,
     titleTouched: true,
     descriptionTouched: true,
     exportFormats: spec.exports.map((e) => e.format),
-    outputPath: spec.metadata.outputPath ?? draft.outputPath,
+    outputPath: typeof spec.metadata.outputPath === "string" ? spec.metadata.outputPath : draft.outputPath,
   };
 
   if (kind === "public_api") {
@@ -258,20 +290,16 @@ export function applyBuildSpecToDraft(draft: AddDataDraft, spec: BuildSpec): Add
  * 결과를 그대로 쓴다.
  */
 export function redactBuildSpecForDisplay(spec: BuildSpec): BuildSpec {
-  const source = spec.sources[0];
-  if (!source) return spec;
-  if (source.kind === "url" && source.endpoint) {
-    return {
-      ...spec,
-      sources: [{ ...source, endpoint: redactUrlEndpoint(source.endpoint).endpoint }],
-    };
-  }
-  if (!source.kind || source.kind === "public_api") {
-    const { params, hadSecret } = redactSourceParamsObject(source.params ?? {});
-    if (!hadSecret) return spec;
-    return { ...spec, sources: [{ ...source, params }] };
-  }
-  return spec;
+  return {
+    ...spec,
+    sources: spec.sources.map((source) => {
+      if (source.kind === "url" && source.endpoint) {
+        return { ...source, endpoint: redactUrlEndpoint(source.endpoint).endpoint };
+      }
+      const { params } = redactSourceParamsObject(source.params ?? {});
+      return { ...source, params };
+    }),
+  };
 }
 
 export function draftSignature(draft: AddDataDraft): string {

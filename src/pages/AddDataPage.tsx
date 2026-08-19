@@ -73,6 +73,7 @@ export function AddDataPage() {
   // 설정 변경이 아니라 다른 source로의 교체) touched 플래그를 reset하고 새 identity를
   // 강제로 적용한다 — query params/output/preview 같은 세부 설정 변경과 구분하기 위함.
   const lastIdentitySourceRef = useRef<string | null>(null);
+  const previewRequestIdRef = useRef(0);
 
   const updateDraft = useCallback((patch: Partial<AddDataDraft>) => {
     setDraft((current) => ({ ...current, ...patch }));
@@ -290,6 +291,7 @@ export function AddDataPage() {
     }
     const spec = specResult.spec;
     const signatureAtRequest = draftSignature(draft);
+    const requestId = ++previewRequestIdRef.current;
     setPreview({ status: "loading" });
     setValidation({ status: "validating", valid: false, errors: [] });
 
@@ -298,6 +300,7 @@ export function AddDataPage() {
       validateSpec(spec),
     ]);
 
+    if (requestId !== previewRequestIdRef.current) return;
     if (previewOutcome.status === "fulfilled") {
       setPreview({ status: "loaded", response: previewOutcome.value });
       setLastPreviewSignature(signatureAtRequest);
@@ -308,6 +311,7 @@ export function AddDataPage() {
       });
     }
 
+    if (requestId !== previewRequestIdRef.current) return;
     if (validateOutcome.status === "fulfilled") {
       setValidation({ status: "validated", valid: validateOutcome.value.valid, errors: validateOutcome.value.errors });
     } else {

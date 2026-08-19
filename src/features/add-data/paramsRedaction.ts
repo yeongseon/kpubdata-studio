@@ -32,16 +32,25 @@ export interface RedactedParams {
  */
 export function redactSourceParamsObject(params: Record<string, JsonValue>): RedactedParams {
   let hadSecret = false;
-  const redacted: Record<string, JsonValue> = {};
-  for (const [key, value] of Object.entries(params)) {
-    const stringValue = typeof value === "string" ? value : JSON.stringify(value);
-    if (isSecretKey(key) || looksLikeSecret(stringValue)) {
-      redacted[key] = PARAMS_REDACTED_SENTINEL;
+  const visit = (value: JsonValue, key?: string): JsonValue => {
+    if (key && isSecretKey(key)) {
       hadSecret = true;
-    } else {
-      redacted[key] = value;
+      return PARAMS_REDACTED_SENTINEL;
     }
-  }
+    if (typeof value === "string") {
+      if (looksLikeSecret(value)) {
+        hadSecret = true;
+        return PARAMS_REDACTED_SENTINEL;
+      }
+      return value;
+    }
+    if (Array.isArray(value)) return value.map((item) => visit(item));
+    if (value !== null && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([childKey, childValue]) => [childKey, visit(childValue, childKey)]));
+    }
+    return value;
+  };
+  const redacted = visit(params) as Record<string, JsonValue>;
   return { params: redacted, hadSecret };
 }
 
@@ -87,4 +96,9 @@ export function redactSourceParamsText(sourceParams: string): RedactedParamsText
  */
 export function sourceParamsHasRedactedSecret(sourceParams: string): boolean {
   return sourceParams.includes(PARAMS_REDACTED_SENTINEL);
+}
+
+export function jsonValueHasRedactedSecret(value: unknown): boolean {
+  const serialized = JSON.stringify(value) ?? "";
+  return serialized.includes(PARAMS_REDACTED_SENTINEL) || serialized.includes("__KPD_URL_SECRET_REDACTED__");
 }

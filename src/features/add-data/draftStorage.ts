@@ -20,14 +20,26 @@
  */
 import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
 import { sanitizeUrlEndpointForStorage } from "@/features/add-data/urlRedaction";
-import { redactSourceParamsText } from "@/features/add-data/paramsRedaction";
+import { redactSourceParamsObject, redactSourceParamsText } from "@/features/add-data/paramsRedaction";
 import type { AddDataDraft } from "@/features/add-data/model";
 
 const ADD_DATA_DRAFT_KEY = "kpubdata-studio:add-data-draft";
 
 export function saveAddDataDraft(draft: AddDataDraft): void {
+  const canonicalBase = draft.canonicalBase
+    ? {
+        ...draft.canonicalBase,
+        sources: draft.canonicalBase.sources.map((source) => {
+          if ((source.kind ?? "public_api") === "url" && source.endpoint) {
+            return { ...source, endpoint: sanitizeUrlEndpointForStorage(source.endpoint) };
+          }
+          return { ...source, params: redactSourceParamsObject(source.params ?? {}).params };
+        }),
+      }
+    : undefined;
   const safeDraft: AddDataDraft = {
     ...draft,
+    canonicalBase,
     url: draft.url.endpoint
       ? { ...draft.url, endpoint: sanitizeUrlEndpointForStorage(draft.url.endpoint) }
       : draft.url,

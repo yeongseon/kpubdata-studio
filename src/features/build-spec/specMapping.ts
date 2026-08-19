@@ -16,7 +16,7 @@ import type { BuildSpec, ExportTarget, JsonValue, SourceFormat, SourceKind } fro
 interface BuilderExport {
   kind: string;
   output_path: string;
-  options?: Record<string, unknown>;
+  options?: Record<string, JsonValue>;
 }
 
 /** Builder가 기대하는 source 참조(snake_case, #498 kind=public_api/file/url). */
@@ -46,7 +46,7 @@ export interface BuilderSpec {
   description: string;
   sources: BuilderSourceRef[];
   exports: BuilderExport[];
-  metadata: Record<string, string>;
+  metadata: Record<string, JsonValue>;
 }
 
 /** `toBuilderSpec`/`fromBuilderSpec`이 명시적으로 모델링하는 최상위 canonical 필드. */
@@ -71,7 +71,9 @@ function deriveOutputPath(spec: BuildSpec, target: ExportTarget, index: number):
   const explicitPath = target.options?.["outputPath"];
   if (typeof explicitPath === "string" && explicitPath.length > 0) return explicitPath;
 
-  const base = spec.metadata["outputPath"] ?? `artifacts/builds/${spec.datasetId}`;
+  const base = typeof spec.metadata["outputPath"] === "string"
+    ? spec.metadata["outputPath"]
+    : `artifacts/builds/${spec.datasetId}`;
   if (target.format === "huggingface") {
     return index === 0 ? base : `${base}-${index + 1}`;
   }
@@ -168,7 +170,7 @@ export function fromBuilderSpec(spec: BuilderSpec): BuildSpec {
     })),
     exports: spec.exports.map((e) => {
       // Builder의 output_path는 Studio ExportTarget에 대응 필드가 없어 options에 보존한다(#121).
-      const options: Record<string, unknown> = { ...(e.options ?? {}) };
+      const options: Record<string, JsonValue> = { ...(e.options ?? {}) };
       if (e.output_path) {
         options["outputPath"] = e.output_path;
       }

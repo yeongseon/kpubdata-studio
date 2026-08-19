@@ -217,7 +217,7 @@ function toFormValues(spec: BuildSpec): BuildFormValues {
       ? JSON.stringify(firstSource.params, null, 2)
       : "{}",
     exportFormats: spec.exports.map((e) => e.format),
-    outputPath: spec.metadata.outputPath ?? "",
+    outputPath: typeof spec.metadata.outputPath === "string" ? spec.metadata.outputPath : "",
   };
 }
 

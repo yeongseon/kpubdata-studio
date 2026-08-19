@@ -37,7 +37,7 @@ export interface BuildSpec {
   /** 산출물을 어떤 형식으로 내보낼지 정의한 대상 목록 */
   exports: ExportTarget[];
   /** 후속 단계에서 재사용할 메타데이터 키-값 사전 */
-  metadata: Record<string, string>;
+  metadata: Record<string, JsonValue>;
   /**
    * Studio 폼/YAML 에디터가 직접 모델링하지 않는 canonical 최상위 필드를 그대로
    * 보존한다(#250). Builder BuildSpec은 `publish`/`splits`/`pii`/`license`/`quality`/
@@ -97,7 +97,7 @@ export interface ExportTarget {
   /** 결과물을 어떤 형식으로 내보낼지 결정하는 식별자 */
   format: string;
   /** 특정 export 형식에만 필요한 추가 옵션 집합 */
-  options?: Record<string, unknown>;
+  options?: Record<string, JsonValue>;
 }
 
 /** manifest 스키마 요약의 단일 컬럼 정보(Builder schema_summary.py FieldSummary). */
