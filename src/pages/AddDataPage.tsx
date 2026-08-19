@@ -27,6 +27,7 @@ import { findDataset, identityFromCatalog, identityFromFilename, identityFromUrl
 import {
   INITIAL_DRAFT,
   applyBuildSpecToDraft,
+  buildEditableSpecFromDraft,
   buildSpecFromDraft,
   draftSignature,
   type AddDataDraft,
@@ -35,6 +36,7 @@ import {
   type PreviewSampleMode,
 } from "@/features/add-data/model";
 import { BuildSpecShapeError, YamlSyntaxError, fromYamlText, toYamlText } from "@/features/build-spec/yamlText";
+import type { SourceKind } from "@/shared/lib/types";
 import { previewBuildDetailed } from "@/features/preview/api";
 import { useBuildJob } from "@/features/runs/useBuildJob";
 import { validateSpec } from "@/features/validation/api";
@@ -269,6 +271,21 @@ export function AddDataPage() {
   function handleApplyYaml(text: string) {
     try {
       const spec = fromYamlText(text);
+      // YAML Apply는 explicit authoring(#250 amendment 2)이라 applyBuildSpecToDraft가
+      // *Touched를 모두 true로 세팅한다 — 그런데 Public API/URL identity effect는
+      // provider/dataset/endpoint 변경만 보고 "source가 바뀌었는지"를 판단하므로,
+      // lastIdentitySourceRef를 YAML이 실어온 source 기준으로 먼저 동기화해두지 않으면
+      // sourceChanged로 오판해 방금 세팅한 explicit metadata를 곧바로 덮어쓴다
+      // (#283 후속 리뷰 §6). 최소 구조로 ref만 앞서 맞춰 이후 effect가 "같은 source의
+      // 세부 설정" 경로(= touched 존중)를 타게 한다.
+      const appliedSource = spec.sources[0];
+      const appliedKind: SourceKind = appliedSource?.kind ?? "public_api";
+      if (appliedKind === "public_api" && appliedSource?.provider && appliedSource.dataset) {
+        lastIdentitySourceRef.current = `public_api:${appliedSource.provider}:${appliedSource.dataset}`;
+      } else if (appliedKind === "url" && appliedSource?.endpoint) {
+        const identity = identityFromUrl(appliedSource.endpoint);
+        lastIdentitySourceRef.current = identity.datasetId ? `url:${identity.datasetId}` : lastIdentitySourceRef.current;
+      }
       setDraft((current) => applyBuildSpecToDraft(current, spec));
       setYamlEditError(undefined);
     } catch (cause) {
@@ -283,6 +300,11 @@ export function AddDataPage() {
   }
 
   async function runPreviewAndValidate() {
+    // invalid/local-failure 요청도 기존에 진행 중이던 network request를 논리적으로
+    // stale 처리해야 하므로(#283 후속 리뷰 §4), specResult 계산·early return보다 먼저
+    // requestId를 올린다. 그래야 늦게 도착하는 이전 요청의 응답이 이번 로컬 오류 상태를
+    // 덮어쓰지 않는다.
+    const requestId = ++previewRequestIdRef.current;
     const specResult = buildSpecFromDraft(draft);
     if (specResult.error || !specResult.spec) {
       setPreview({ status: "error", error: specResult.error ?? "빌드 스펙 오류" });
@@ -291,7 +313,6 @@ export function AddDataPage() {
     }
     const spec = specResult.spec;
     const signatureAtRequest = draftSignature(draft);
-    const requestId = ++previewRequestIdRef.current;
     setPreview({ status: "loading" });
     setValidation({ status: "validating", valid: false, errors: [] });
 
@@ -345,6 +366,7 @@ export function AddDataPage() {
   }
 
   const specResult = buildSpecFromDraft(draft);
+  const editableSpec = buildEditableSpecFromDraft(draft);
   const previewSources = preview.status === "loaded" ? preview.response.previews : [];
 
   // Build 성공(실연동 모드는 항상 Builder가 반환한 실제 run_id, mock 모드는 기존 mock 경로
@@ -392,7 +414,11 @@ export function AddDataPage() {
             upload={upload}
             onUploadFile={handleUploadFile}
             specError={specResult.error}
-            yamlText={specResult.spec ? toYamlText(specResult.spec) : ""}
+            // 제출 가능 여부(sentinel fail-closed 포함)와 무관하게 지금 draft로 보여줄
+            // 수 있는 canonical spec을 그린다(#283 후속 리뷰 §3) — sentinel 때문에
+            // specResult.spec이 비어도 YAML 편집 자리 자체가 사라지지 않아야, 사용자가
+            // sentinel을 실제 값으로 바꿔 다시 Apply할 수 있다.
+            yamlText={editableSpec ? toYamlText(editableSpec) : ""}
             yamlEditError={yamlEditError}
             onApplyYaml={handleApplyYaml}
           />

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   INITIAL_DRAFT,
   applyBuildSpecToDraft,
+  buildEditableSpecFromDraft,
   buildSpecFromDraft,
   draftSignature,
   redactBuildSpecForDisplay,
@@ -319,5 +320,182 @@ describe("redactBuildSpecForDisplay (#283 리뷰 대응, Epic #246)", () => {
     );
     const displaySpec = redactBuildSpecForDisplay(result.spec!);
     expect(JSON.stringify(displaySpec.sources[0].params)).not.toContain(highEntropy);
+  });
+});
+
+describe("buildSpecFromDraft — restored sentinel 재입력 복구 (#283 후속 리뷰 §2)", () => {
+  it("primary source의 sentinel은 canonicalBase가 남아있어도 사용자가 값을 다시 입력하면 제출 가능해진다", () => {
+    const restoredBase: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [{ provider: "datago", dataset: "apt_trade", params: { serviceKey: PARAMS_REDACTED_SENTINEL, page: 1 } }],
+      exports: [{ format: "jsonl" }],
+      metadata: {},
+    };
+    const restoredDraft = draftWith({
+      canonicalBase: restoredBase,
+      sourceKind: "public_api",
+      publicApi: {
+        provider: "datago",
+        dataset: "apt_trade",
+        sourceParams: JSON.stringify({ serviceKey: PARAMS_REDACTED_SENTINEL, page: 1 }),
+      },
+    });
+    // 복원 직후에는 GUI 필드에도 sentinel이 그대로 남아 있으므로 여전히 fail-closed.
+    expect(buildSpecFromDraft(restoredDraft).error).toMatch(/다시 입력/);
+
+    const reenteredDraft: AddDataDraft = {
+      ...restoredDraft,
+      publicApi: { ...restoredDraft.publicApi, sourceParams: JSON.stringify({ serviceKey: "real-secret-value", page: 1 }) },
+    };
+    const result = buildSpecFromDraft(reenteredDraft);
+    expect(result.error).toBeUndefined();
+    expect(result.spec?.sources[0]).toMatchObject({ params: { serviceKey: "real-secret-value", page: 1 } });
+  });
+
+  it("trailing source(sources[1+])의 sentinel은 primary를 고쳐도 계속 fail-closed이며, YAML로 실값 재입력해야 복구된다", () => {
+    const base: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [
+        { provider: "datago", dataset: "apt_trade", params: { page: 1 } },
+        {
+          kind: "url" as const,
+          endpoint: `https://example.test/secondary.json?token=${REDACTED_PLACEHOLDER}`,
+          method: "GET" as const,
+          params: {},
+        },
+      ],
+      exports: [{ format: "jsonl" }],
+      metadata: {},
+    };
+    const draft = draftWith({
+      canonicalBase: base,
+      sourceKind: "public_api",
+      publicApi: { provider: "datago", dataset: "apt_trade", sourceParams: JSON.stringify({ page: 1 }) },
+    });
+    // primary source 자체에는 sentinel이 없지만 trailing source에 남아 있어 계속 막힌다.
+    expect(buildSpecFromDraft(draft).error).toMatch(/다시 입력/);
+
+    // YAML Apply로 trailing source의 sentinel을 실제 값으로 교체하면 복구된다.
+    const fixedSpec: BuildSpec = {
+      ...base,
+      sources: [base.sources[0], { ...base.sources[1], endpoint: "https://example.test/secondary.json?token=real-value" }],
+    };
+    const appliedDraft = applyBuildSpecToDraft(draft, fixedSpec);
+    expect(buildSpecFromDraft(appliedDraft).error).toBeUndefined();
+  });
+});
+
+describe("buildEditableSpecFromDraft — YAML 에디터 fail-closed 우회 표시 (#283 후속 리뷰 §3)", () => {
+  it("sentinel 때문에 buildSpecFromDraft가 실패해도 candidate spec은 계속 반환한다", () => {
+    const base: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [{ provider: "datago", dataset: "apt_trade", params: { serviceKey: PARAMS_REDACTED_SENTINEL } }],
+      exports: [{ format: "jsonl" }],
+      metadata: {},
+    };
+    const draft = draftWith({
+      canonicalBase: base,
+      sourceKind: "public_api",
+      publicApi: { provider: "datago", dataset: "apt_trade", sourceParams: JSON.stringify({ serviceKey: PARAMS_REDACTED_SENTINEL }) },
+    });
+
+    expect(buildSpecFromDraft(draft).spec).toBeUndefined();
+    const editable = buildEditableSpecFromDraft(draft);
+    expect(editable).toBeDefined();
+    expect(JSON.stringify(editable)).toContain(PARAMS_REDACTED_SENTINEL);
+  });
+});
+
+describe("buildSpecFromDraft — URL query-only 변경은 identity를 유지한다 (#283 후속 리뷰 §5)", () => {
+  it("query만 바뀌면 alias/schema 등 canonicalBase 보존 필드를 잃지 않는다", () => {
+    const base: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [
+        {
+          kind: "url" as const,
+          endpoint: "https://api.example.org/data?region=seoul",
+          method: "GET" as const,
+          alias: "raw",
+          schema: { required: ["id"], dtypes: {}, casts: {} },
+          params: {},
+        },
+      ],
+      exports: [{ format: "jsonl" }],
+      metadata: {},
+    };
+    const draft = draftWith({
+      canonicalBase: base,
+      sourceKind: "url",
+      url: { endpoint: "https://api.example.org/data?region=busan", format: null },
+    });
+    const result = buildSpecFromDraft(draft);
+    expect(result.error).toBeUndefined();
+    expect(result.spec?.sources[0]).toMatchObject({
+      endpoint: "https://api.example.org/data?region=busan",
+      alias: "raw",
+      schema: { required: ["id"], dtypes: {}, casts: {} },
+    });
+  });
+
+  it("hostname/path가 바뀌면 다른 source로 취급해 이전 alias/schema를 유지하지 않는다", () => {
+    const base: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [
+        {
+          kind: "url" as const,
+          endpoint: "https://api.example.org/data?region=seoul",
+          method: "GET" as const,
+          alias: "raw",
+          schema: { required: ["id"], dtypes: {}, casts: {} },
+          params: {},
+        },
+      ],
+      exports: [{ format: "jsonl" }],
+      metadata: {},
+    };
+    const draft = draftWith({
+      canonicalBase: base,
+      sourceKind: "url",
+      url: { endpoint: "https://other.example.org/other-path", format: null },
+    });
+    const result = buildSpecFromDraft(draft);
+    expect(result.error).toBeUndefined();
+    expect(result.spec?.sources[0]).not.toHaveProperty("alias");
+    expect(result.spec?.sources[0]).not.toHaveProperty("schema");
+  });
+});
+
+describe("buildSpecFromDraft — duplicate export round-trip (#283 후속 리뷰 §7)", () => {
+  it("같은 format의 export가 2개 있으면 각각 options/outputPath를 독립적으로 보존한다", () => {
+    const base: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [{ provider: "datago", dataset: "apt_trade", params: {} }],
+      exports: [
+        { format: "jsonl", options: { outputPath: "a/data.jsonl", compression: "gzip" } },
+        { format: "jsonl", options: { outputPath: "b/data.jsonl", compression: "none" } },
+      ],
+      metadata: {},
+    };
+    const draft = draftWith({
+      canonicalBase: base,
+      sourceKind: "public_api",
+      publicApi: { provider: "datago", dataset: "apt_trade", sourceParams: "{}" },
+      exportFormats: ["jsonl", "jsonl"],
+    });
+    const result = buildSpecFromDraft(draft);
+    expect(result.error).toBeUndefined();
+    expect(result.spec?.exports).toEqual(base.exports);
   });
 });

@@ -285,14 +285,8 @@ export const uploadMetadataSchema = z.object({
   created_at: z.string(),
 });
 
-export const uploadDeleteResponseSchema = z.object({
-  upload_id: z.string(),
-  deleted: z.boolean(),
-});
-
 export type ProviderTestResponse = z.infer<typeof providerTestResponseSchema>;
 export type UploadMetadata = z.infer<typeof uploadMetadataSchema>;
-export type UploadDeleteResponse = z.infer<typeof uploadDeleteResponseSchema>;
 
 /**
  * ============================================

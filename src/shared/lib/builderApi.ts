@@ -53,7 +53,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "DELETE";
+  method?: "GET" | "POST";
   body?: unknown;
   signal?: AbortSignal;
   /** 자동 타임아웃(ms). 미지정 시 DEFAULT_TIMEOUT_MS. 0 이하이면 타임아웃 비활성화. */
@@ -369,7 +369,6 @@ export type CatalogProvider = schemas.CatalogProvider;
 export type CatalogResponse = schemas.CatalogResponse;
 export type ProviderTestResponse = schemas.ProviderTestResponse;
 export type UploadMetadata = schemas.UploadMetadata;
-export type UploadDeleteResponse = schemas.UploadDeleteResponse;
 export type PreviewDiffItem = schemas.PreviewDiffItem;
 export type PreviewTransformSummary = schemas.PreviewTransformSummary;
 export type StageStatus = schemas.StageStatus;
@@ -560,22 +559,6 @@ export const builderApi = {
       `/providers/${encodeURIComponent(provider)}/test`,
       { method: "POST", signal, retries: 0 },
       schemas.providerTestResponseSchema,
-    ),
-
-  /** GET /uploads/{upload_id} — 업로드 메타데이터 조회(content는 응답에 없음, #498). */
-  getUpload: (uploadId: string, signal?: AbortSignal) =>
-    apiFetch(
-      `/uploads/${encodeURIComponent(uploadId)}`,
-      { signal },
-      schemas.uploadMetadataSchema,
-    ),
-
-  /** DELETE /uploads/{upload_id} — 현재 principal 소유 업로드 삭제 (#498). */
-  deleteUpload: (uploadId: string, signal?: AbortSignal) =>
-    apiFetch(
-      `/uploads/${encodeURIComponent(uploadId)}`,
-      { method: "DELETE", signal, retries: 0 },
-      schemas.uploadDeleteResponseSchema,
     ),
 
   // uploadFile은 JSON이 아닌 raw body를 보내야 해서 apiFetch를 쓰지 않는 별도 함수로

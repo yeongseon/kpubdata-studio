@@ -24,7 +24,12 @@ interface BuilderSourceRef {
   kind?: SourceKind;
   provider?: string;
   dataset?: string;
-  params: Record<string, JsonValue>;
+  /**
+   * Builder loader.py SSOT(_FILE_ONLY_FIELDS/_URL_ONLY_FIELDS)는 kind=file/url에서
+   * `params`가 키로 존재하기만 해도 foreign field로 거부한다 — public_api에서만
+   * 보낸다(#283 후속 리뷰 §1).
+   */
+  params?: Record<string, JsonValue>;
   alias?: string;
   /** 소스 스키마 계약 (VAL-1). Studio SourceRef.schema 와 동일 구조. */
   schema?: {
@@ -102,7 +107,9 @@ export function toBuilderSpec(spec: BuildSpec): BuilderSpec {
       ...(source.kind && source.kind !== "public_api" ? { kind: source.kind } : {}),
       ...(source.provider !== undefined ? { provider: source.provider } : {}),
       ...(source.dataset !== undefined ? { dataset: source.dataset } : {}),
-      params: source.params,
+      // Builder loader.py는 kind=file/url에서 `params`가 키로 존재하기만 해도
+      // foreign field로 거부한다 — public_api(kind 생략 포함)에서만 보낸다.
+      ...(!source.kind || source.kind === "public_api" ? { params: source.params } : {}),
       ...(source.alias ? { alias: source.alias } : {}),
       ...(source.schema ? { schema: source.schema } : {}),
       ...(source.uploadId ? { upload_id: source.uploadId } : {}),
@@ -159,7 +166,9 @@ export function fromBuilderSpec(spec: BuilderSpec): BuildSpec {
       ...(source.kind && source.kind !== "public_api" ? { kind: source.kind } : {}),
       ...(source.provider !== undefined ? { provider: source.provider } : {}),
       ...(source.dataset !== undefined ? { dataset: source.dataset } : {}),
-      params: source.params,
+      // wire의 file/url source에는 params가 없다 — Studio 내부 SourceRef.params는
+      // 필드가 여전히 required이므로 빈 객체로 채운다.
+      params: source.params ?? {},
       ...(source.alias ? { alias: source.alias } : {}),
       ...(source.schema ? { schema: source.schema } : {}),
       ...(source.upload_id ? { uploadId: source.upload_id } : {}),

@@ -165,6 +165,11 @@ describe("Add Data Workbench — touched metadata 정책 (#250 최종 검증 §1
     fireEvent.click(screen.getByRole("button", { name: /Public API/ }));
     next();
     await screen.findByText("제공자 연결");
+    // catalog option이 실제 DOM에 나타날 때까지 기다린 뒤에 provider를 선택한다
+    // (Node 20 CI에서 catalog fetch가 아직 준비되지 않아 dataset select가 disabled로
+    // 남아 timeout하던 문제 수정, #283 CI #342 §8) — 같은 파일의 mixed preview
+    // 테스트에 이미 쓰인 패턴을 그대로 재사용한다.
+    await screen.findByRole("option", { name: "datago" });
     fireEvent.change(screen.getByLabelText(/제공자 \(Provider\)/), { target: { value: "datago" } });
     await waitFor(() => expect(screen.getByLabelText(/데이터셋 \(Dataset\)/)).not.toBeDisabled());
     fireEvent.change(screen.getByLabelText(/데이터셋 \(Dataset\)/), { target: { value: "apt_trade" } });
@@ -247,6 +252,56 @@ describe("Add Data Workbench — touched metadata 정책 (#250 최종 검증 §1
     expect(screen.queryByText(/ID: custom-id/)).not.toBeInTheDocument();
     expect(screen.queryByText("커스텀 제목")).not.toBeInTheDocument();
     expect(screen.getByText(/Endpoint를 입력하면 Dataset ID\/제목이 자동으로 채워집니다\./)).toBeInTheDocument();
+  });
+});
+
+describe("Add Data Workbench — YAML Apply explicit metadata (#283 후속 리뷰 §6)", () => {
+  it("YAML Apply로 넣은 custom dataset_id/title/description이 identity effect에 덮이지 않고, 그 뒤 실제 GUI dataset 선택에서는 touched가 reset된다", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByRole("button", { name: /Public API/ }));
+    next();
+    await screen.findByText("제공자 연결");
+    await screen.findByRole("option", { name: "datago" });
+    fireEvent.change(screen.getByLabelText(/제공자 \(Provider\)/), { target: { value: "datago" } });
+    await waitFor(() => expect(screen.getByLabelText(/데이터셋 \(Dataset\)/)).not.toBeDisabled());
+    fireEvent.change(screen.getByLabelText(/데이터셋 \(Dataset\)/), { target: { value: "apt_trade" } });
+    // lastIdentitySourceRef가 "public_api:datago:apt_trade"로 세팅된 상태를 만든다.
+    await screen.findByText(/ID: datago-apt-trade/);
+
+    // Canonical BuildSpec 패널을 열고 YAML 모드로 전환한다.
+    fireEvent.click(screen.getByText("Canonical BuildSpec (GUI ↔ YAML)"));
+    fireEvent.click(screen.getByRole("button", { name: "YAML" }));
+
+    // dataset 자체를 air_quality로 바꾸면서(=provider/dataset 변경) custom metadata를
+    // 명시적으로 지정한다 — lastIdentitySourceRef 동기화가 없으면 sourceChanged 경로가
+    // 타서 이 custom metadata를 catalog identity로 즉시 덮어써 버린다.
+    const customSpec = {
+      dataset_id: "custom-id",
+      title: "Custom title",
+      description: "Custom description",
+      sources: [{ provider: "datago", dataset: "air_quality" }],
+      exports: [{ kind: "jsonl", output_path: "artifacts/builds/custom-id/data.jsonl" }],
+      metadata: {},
+    };
+    const applyButton = screen.getByRole("button", { name: "YAML 적용" });
+    const yamlPanel = applyButton.closest("div")!;
+    const textarea = within(yamlPanel).getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: JSON.stringify(customSpec) } });
+    fireEvent.click(applyButton);
+
+    // React effect가 모두 반영된 뒤에도 custom metadata가 그대로 유지되어야 한다.
+    await screen.findByText(/ID: custom-id/);
+    expect(screen.getByText("Custom title")).toBeInTheDocument();
+    expect(screen.queryByText(/ID: datago-air-quality/)).not.toBeInTheDocument();
+
+    // 폼 모드로 돌아가 실제 GUI에서 다른 dataset을 선택하면 touched가 reset되고 새
+    // catalog identity가 적용되어야 한다(기존 touched 정책 회귀 없음).
+    fireEvent.click(screen.getByRole("button", { name: "Form" }));
+    fireEvent.change(screen.getByLabelText(/데이터셋 \(Dataset\)/), { target: { value: "apt_trade" } });
+    await screen.findByText(/ID: datago-apt-trade/);
+    expect(screen.getByText("아파트 실거래가")).toBeInTheDocument();
+    expect(screen.queryByText(/ID: custom-id/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Custom title")).not.toBeInTheDocument();
   });
 });
 

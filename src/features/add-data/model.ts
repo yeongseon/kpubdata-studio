@@ -9,6 +9,7 @@
  * `features/build-spec/specMapping.ts`를 그대로 재사용한다(#250 amendment 1).
  */
 import { parseSourceParams } from "@/features/build-spec/paramsInput";
+import { identityFromUrl } from "@/features/add-data/identity";
 import { endpointHasRedactedSecret, redactUrlEndpoint, urlHasUserinfo } from "@/features/add-data/urlRedaction";
 import { jsonValueHasRedactedSecret, redactSourceParamsObject, sourceParamsHasRedactedSecret } from "@/features/add-data/paramsRedaction";
 import { buildSpecSchema } from "@/shared/lib/schemas";
@@ -91,16 +92,25 @@ export interface BuildSpecResult {
   error?: string;
 }
 
+interface CandidateResult {
+  /**
+   * 현재 GUI 값 + canonicalBase 보존 필드를 병합한 best-effort BuildSpec. sentinel이
+   * 남아 있어도(= `error`가 함께 있어도) 존재할 수 있다 — YAML 에디터가 sentinel을
+   * 실제 값으로 바꿔 붙여넣을 자리를 보여주려면 candidate 자체는 사라지면 안 된다
+   * (#283 후속 리뷰 §3).
+   */
+  candidate?: BuildSpec;
+  /** candidate를 Builder에 제출 가능한 spec으로 취급하면 안 되는 이유(있다면). */
+  error?: string;
+}
+
 /**
- * 현재 draft로 소스 하나짜리 canonical BuildSpec을 만든다.
- *
- * @param draft - 현재 Add Data draft.
- * @returns 검증을 통과한 스펙 또는 한국어 오류 메시지.
+ * draft의 GUI 값(현재 소스 kind별 입력 + canonicalBase 보존 필드)으로 candidate
+ * BuildSpec을 만든다. sentinel(REDACTED) fail-closed 판정과 스키마 검증은 호출부
+ * (`buildSpecFromDraft`)에서 별도로 수행한다 — 이 함수 자체는 "제출 가능 여부"가
+ * 아니라 "지금 화면에 무엇을 보여줄 수 있는가"를 계산한다.
  */
-export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
-  if (draft.canonicalBase && jsonValueHasRedactedSecret(draft.canonicalBase)) {
-    return { error: "저장된 초안에 복원할 수 없는 secret placeholder가 있습니다. 원본 credential을 다시 입력해 주세요." };
-  }
+function buildCandidateFromDraft(draft: AddDataDraft): CandidateResult {
   if (!draft.sourceKind) {
     return { error: "Source를 먼저 선택해주세요." };
   }
@@ -112,6 +122,10 @@ export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
   }
 
   let source;
+  // sentinel이 남아 있다는 사실은 기록만 해두고(sentinelError) source 자체는 계속
+  // 만든다 — candidate가 있어야 YAML 에디터가 sentinel이 박힌 canonical spec을
+  // 보여주고, 사용자가 그 자리를 실제 값으로 고칠 수 있다.
+  let sentinelError: string | undefined;
   if (draft.sourceKind === "public_api") {
     if (!draft.publicApi.provider || !draft.publicApi.dataset) {
       return { error: "Provider와 Dataset을 선택해주세요." };
@@ -120,9 +134,7 @@ export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
     // 있으면 fail-closed — placeholder를 실제 파라미터처럼 Builder에 제출하지 않는다
     // (#283 후속 리뷰 §1). 사용자가 값을 다시 입력해야 Preview/Build가 가능하다.
     if (sourceParamsHasRedactedSecret(draft.publicApi.sourceParams)) {
-      return {
-        error: "저장된 초안에서 시크릿이 포함된 파라미터 값이 제거되었습니다. Query/Config를 다시 입력해주세요.",
-      };
+      sentinelError = "저장된 초안에서 시크릿이 포함된 파라미터 값이 제거되었습니다. Query/Config를 다시 입력해주세요.";
     }
     const parsedParams = parseSourceParams(draft.publicApi.sourceParams);
     if (parsedParams.error) return { error: parsedParams.error };
@@ -150,9 +162,7 @@ export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
     // 지워져 있으면 fail-closed — placeholder를 실제 endpoint/credential처럼 Builder에
     // 제출하지 않는다(Epic #246). 사용자가 값을 다시 입력해야 Preview/Build가 가능하다.
     if (endpointHasRedactedSecret(draft.url.endpoint)) {
-      return {
-        error: "저장된 초안에서 시크릿이 포함된 URL 값이 제거되었습니다. Endpoint를 다시 입력해주세요.",
-      };
+      sentinelError = "저장된 초안에서 시크릿이 포함된 URL 값이 제거되었습니다. Endpoint를 다시 입력해주세요.";
     }
     // URL Auth(userinfo credential)는 계약에 없는 기능이다(#283 후속 리뷰 §4) —
     // `user:pass@host` 형태는 조용히 지원하는 대신 항상 오류로 막는다.
@@ -181,12 +191,27 @@ export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
       ? baseSource.provider === draft.publicApi.provider && baseSource.dataset === draft.publicApi.dataset
       : draft.sourceKind === "file"
         ? baseSource.uploadId === draft.file.uploadId
-        : baseSource.endpoint === draft.url.endpoint)
+        // URL identity SSOT(hostname+path)와 동일 기준을 재사용한다 — query/userinfo/
+        // fragment만 바뀌어도 identity.ts가 이미 같은 source로 취급하므로(#283 후속
+        // 리뷰 §5), 여기서도 endpoint 원문 비교 대신 identityFromUrl().datasetId로
+        // 비교해 alias/schema 같은 보존 필드를 잃지 않게 한다.
+        : !!baseSource.endpoint &&
+          identityFromUrl(baseSource.endpoint).datasetId !== "" &&
+          identityFromUrl(baseSource.endpoint).datasetId === identityFromUrl(draft.url.endpoint).datasetId)
   );
   const projectedSource = source as SourceRef;
   const mergedPrimary: SourceRef = samePrimary ? { ...baseSource, ...projectedSource } : projectedSource;
+  // 같은 format의 base export가 여러 개 있을 수 있으므로(#283 후속 리뷰 §7) 매번
+  // `.find`로 첫 항목만 재사용하면 두 번째 이후 occurrence가 첫 occurrence의
+  // options/output_path를 덮어써 버린다 — 각 base export를 index 기준으로 한 번씩만
+  // consume해 occurrence별로 보존한다.
+  const usedBaseExportIndices = new Set<number>();
   const exports = draft.exportFormats.map((format) => {
-    const preserved = base?.exports.find((item) => item.format === format);
+    const preservedIndex = base?.exports.findIndex(
+      (item, index) => item.format === format && !usedBaseExportIndices.has(index),
+    );
+    const preserved = preservedIndex !== undefined && preservedIndex >= 0 ? base?.exports[preservedIndex] : undefined;
+    if (preservedIndex !== undefined && preservedIndex >= 0) usedBaseExportIndices.add(preservedIndex);
     return {
       ...(preserved ?? {}),
       format,
@@ -210,11 +235,45 @@ export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
     ...(base?.extra ? { extra: base.extra } : {}),
   };
 
+  return sentinelError ? { candidate, error: sentinelError } : { candidate };
+}
+
+/**
+ * 현재 draft로 소스 하나짜리 canonical BuildSpec을 만든다.
+ *
+ * @param draft - 현재 Add Data draft.
+ * @returns 검증을 통과한 스펙 또는 한국어 오류 메시지.
+ */
+export function buildSpecFromDraft(draft: AddDataDraft): BuildSpecResult {
+  const { candidate, error: candidateError } = buildCandidateFromDraft(draft);
+  if (candidateError) return { error: candidateError };
+  if (!candidate) return { error: "빌드 스펙을 생성하지 못했습니다." };
+
+  // 현재 GUI 값 + canonicalBase 보존 필드 + primary source merge를 모두 반영한
+  // 최종 candidate에 sentinel이 남아 있는지 검사한다(#283 후속 리뷰 §2). primary
+  // source를 사용자가 다시 입력했다면 위 병합에서 canonicalBase의 과거 primary
+  // sentinel은 이미 덮어써져 있으므로 여기서 걸리지 않는다 — 반면 sources[1+](trailing)
+  // 등 GUI가 편집하지 않는 영역에 sentinel이 남아 있으면 계속 fail-closed로 막는다.
+  if (jsonValueHasRedactedSecret(candidate)) {
+    return { error: "저장된 초안에 복원할 수 없는 secret placeholder가 있습니다. 원본 credential을 다시 입력해 주세요." };
+  }
+
   const result = buildSpecSchema.safeParse(candidate);
   if (!result.success) {
     return { error: result.error.issues[0]?.message ?? "빌드 스펙이 올바르지 않습니다." };
   }
   return { spec: result.data as BuildSpec };
+}
+
+/**
+ * YAML 에디터 표시 전용 — 제출 가능 여부(sentinel fail-closed, 스키마 검증)와
+ * 무관하게 지금 draft로 보여줄 수 있는 canonical BuildSpec을 만든다(#283 후속
+ * 리뷰 §3). sentinel이 남아 있어도 candidate 자체는 반환해, 사용자가 YAML에서
+ * sentinel을 실제 값으로 교체해 다시 Apply할 자리를 잃지 않게 한다. Preview/Build
+ * 제출에는 절대 쓰지 않는다 — 그쪽은 항상 `buildSpecFromDraft`를 거친다.
+ */
+export function buildEditableSpecFromDraft(draft: AddDataDraft): BuildSpec | undefined {
+  return buildCandidateFromDraft(draft).candidate;
 }
 
 /**

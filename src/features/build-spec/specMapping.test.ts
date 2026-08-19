@@ -93,7 +93,6 @@ describe("fromBuilderSpec", () => {
           upload_id: "upl_0123456789abcdef0123456789abcdef",
           format: "csv",
           encoding: "utf-8",
-          params: {},
         },
       ],
     };
@@ -112,7 +111,7 @@ describe("fromBuilderSpec", () => {
     const spec: BuilderSpec = {
       ...baseBuilderSpec,
       sources: [
-        { kind: "url", endpoint: "https://api.example.org/data", method: "GET", format: "json", params: {} },
+        { kind: "url", endpoint: "https://api.example.org/data", method: "GET", format: "json" },
       ],
     };
     const result = fromBuilderSpec(spec);
@@ -191,5 +190,99 @@ describe("toBuilderSpec/fromBuilderSpec — extra 최상위 필드 round-trip (#
     const reparsed = JSON.parse(wireText) as Record<string, unknown>;
     expect(reparsed.quality).toEqual({ min_rows: 1 });
     expect(reparsed.dataset_id).toBe("sample");
+  });
+});
+
+describe("toBuilderSpec — kind별 params 계약 (#283 후속 리뷰 §1, builder loader.py SSOT)", () => {
+  it("public_api source는 params key를 포함한다", () => {
+    const spec: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [{ provider: "datago", dataset: "air_quality", params: { page: 1 } }],
+      exports: [{ format: "jsonl" }],
+      metadata: {},
+    };
+    const wire = toBuilderSpec(spec);
+    expect(wire.sources[0]).toHaveProperty("params", { page: 1 });
+  });
+
+  it("file source wire에는 params/provider/dataset/endpoint/method가 없다", () => {
+    const spec: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [{
+        kind: "file",
+        uploadId: "upl_0123456789abcdef0123456789abcdef",
+        format: "csv",
+        encoding: "utf-8",
+        params: {},
+      }],
+      exports: [{ format: "jsonl" }],
+      metadata: {},
+    };
+    const wire = toBuilderSpec(spec);
+    const source = wire.sources[0] as Record<string, unknown>;
+    expect(source).not.toHaveProperty("params");
+    expect(source).not.toHaveProperty("provider");
+    expect(source).not.toHaveProperty("dataset");
+    expect(source).not.toHaveProperty("endpoint");
+    expect(source).not.toHaveProperty("method");
+    expect(source).toMatchObject({
+      kind: "file",
+      upload_id: "upl_0123456789abcdef0123456789abcdef",
+      format: "csv",
+      encoding: "utf-8",
+    });
+  });
+
+  it("url source wire에는 params/provider/dataset/upload_id/encoding이 없다", () => {
+    const spec: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [{
+        kind: "url",
+        endpoint: "https://api.example.org/data",
+        method: "GET",
+        format: "json",
+        params: {},
+      }],
+      exports: [{ format: "jsonl" }],
+      metadata: {},
+    };
+    const wire = toBuilderSpec(spec);
+    const source = wire.sources[0] as Record<string, unknown>;
+    expect(source).not.toHaveProperty("params");
+    expect(source).not.toHaveProperty("provider");
+    expect(source).not.toHaveProperty("dataset");
+    expect(source).not.toHaveProperty("upload_id");
+    expect(source).not.toHaveProperty("encoding");
+    expect(source).toMatchObject({
+      kind: "url",
+      endpoint: "https://api.example.org/data",
+      method: "GET",
+      format: "json",
+    });
+  });
+
+  it("file/url → fromBuilderSpec 왕복 시 Studio 내부 params는 다시 {}로 채워진다", () => {
+    const fileSpec: BuildSpec = {
+      datasetId: "d",
+      title: "t",
+      description: "desc",
+      sources: [{
+        kind: "file",
+        uploadId: "upl_0123456789abcdef0123456789abcdef",
+        format: "csv",
+        encoding: "utf-8",
+        params: {},
+      }],
+      exports: [{ format: "jsonl" }],
+      metadata: {},
+    };
+    const roundTripped = fromBuilderSpec(toBuilderSpec(fileSpec));
+    expect(roundTripped.sources[0]?.params).toEqual({});
   });
 });

@@ -34,8 +34,6 @@ const EXPECTED_OPERATIONS = [
   "getDatasetQualityHistory",
   "query",
   "testProviderConnection",
-  "getUpload",
-  "deleteUpload",
   "uploadFile",
 ] as const;
 
