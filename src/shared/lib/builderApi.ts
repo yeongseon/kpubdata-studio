@@ -355,6 +355,7 @@ export interface BuildsResponse {
 
 // --- 응답 타입 (Zod 스키마에서 추출) ---
 
+export type BuildJob = schemas.BuildJob;
 export type VersionResponse = schemas.VersionResponse;
 export type ValidateResponse = schemas.ValidateResponse;
 export type BuildOutcome = schemas.BuildOutcome;
@@ -363,9 +364,14 @@ export type ArtifactsResponse = schemas.ArtifactsResponse;
 export type PreviewColumn = schemas.PreviewColumn;
 export type PreviewSource = schemas.PreviewSource;
 export type PreviewResponse = schemas.PreviewResponse;
+export type CatalogQuerySupport = schemas.CatalogQuerySupport;
 export type CatalogDataset = schemas.CatalogDataset;
 export type CatalogProvider = schemas.CatalogProvider;
 export type CatalogResponse = schemas.CatalogResponse;
+export type ProviderTestResponse = schemas.ProviderTestResponse;
+export type UploadMetadata = schemas.UploadMetadata;
+export type PreviewDiffItem = schemas.PreviewDiffItem;
+export type PreviewTransformSummary = schemas.PreviewTransformSummary;
 export type StageStatus = schemas.StageStatus;
 export type DatasetSourceRef = schemas.DatasetSourceRef;
 export type SourceStageStatus = schemas.SourceStageStatus;
@@ -395,6 +401,12 @@ export type PublishResponse = schemas.PublishResponse;
 export type PublishErrorCode = schemas.PublishErrorCode;
 export type PublishErrorResponse = schemas.PublishErrorResponse;
 export type PublishBlockedResponse = schemas.PublishBlockedResponse;
+export type BuildSpecSnapshotResponse = schemas.BuildSpecSnapshotResponse;
+export type BuildEventName = schemas.BuildEventName;
+export type BuildEventStatus = schemas.BuildEventStatus;
+export type BuildEventStageName = schemas.BuildEventStageName;
+export type BuildEvent = schemas.BuildEvent;
+export type BuildEventsResponse = schemas.BuildEventsResponse;
 
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
@@ -406,9 +418,22 @@ export const builderApi = {
   validate: (specYaml: string, signal?: AbortSignal) =>
     apiFetch("/validate", { method: "POST", body: { spec: specYaml }, signal }, schemas.validateResponseSchema),
 
-  /** POST /preview — BuildSpec 기반 샘플 미리보기. */
-  preview: (specYaml: string, signal?: AbortSignal) =>
-    apiFetch("/preview", { method: "POST", body: { spec: specYaml }, signal }, schemas.previewResponseSchema),
+  /**
+   * POST /preview — BuildSpec 기반 샘플 미리보기.
+   *
+   * `options`는 #497 sampling 계약(limit 1~1000·기본 5, sample_mode first/random,
+   * seed)을 그대로 전달한다. 생략하면 기존 client와 동일하게 상위 5행을 반환한다.
+   */
+  preview: (
+    specYaml: string,
+    options?: { limit?: number; sample_mode?: "first" | "random"; seed?: number },
+    signal?: AbortSignal,
+  ) =>
+    apiFetch(
+      "/preview",
+      { method: "POST", body: { spec: specYaml, ...options }, signal },
+      schemas.previewResponseSchema,
+    ),
 
   /** POST /build — 빌드 실행. run_id 생략 가능. 비멱등 요청이므로 재시도하지 않는다 (#117). */
   build: (specYaml: string, runId?: string, signal?: AbortSignal) =>
@@ -560,4 +585,108 @@ export const builderApi = {
       { method: "POST", body: request, signal, retries: 0 },
       schemas.queryResponseSchema,
     ),
+
+  /**
+   * POST /providers/{provider}/test — 현재 principal credential로 lightweight
+   * connection test 실행 (#492). Add Data의 Public API 단계에서 "연결 테스트"
+   * 버튼이 호출한다. credential 값 자체는 Studio가 주고받지 않는다 — Builder가
+   * 서버에 저장된 credential(또는 무인증 provider)로 직접 검사한다.
+   */
+  testProviderConnection: (provider: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/providers/${encodeURIComponent(provider)}/test`,
+      { method: "POST", signal, retries: 0 },
+      schemas.providerTestResponseSchema,
+    ),
+
+  /**
+   * GET /builds/{run_id}/spec — 실행에 사용한 canonical(redaction된) BuildSpec snapshot (#487).
+   *
+   * legacy run(snapshot 없음)은 404다 — Studio는 이를 "정보 없음"이 아니라
+   * "snapshot unavailable"로 구분해서 표시해야 한다.
+   */
+  getBuildSpecSnapshot: (runId: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/builds/${encodeURIComponent(runId)}/spec`,
+      { signal },
+      schemas.buildSpecSnapshotResponseSchema,
+    ),
+
+  /**
+   * GET /builds/{run_id}/events — append-only structured run event timeline (#496).
+   *
+   * `tail: true`면 최신 `limit`개를 고르되 반환은 항상 chronological ascending이다.
+   */
+  getBuildEvents: (
+    runId: string,
+    options?: { limit?: number; tail?: boolean },
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.tail !== undefined) params.set("tail", String(options.tail));
+    const query = params.toString();
+    return apiFetch(
+      `/builds/${encodeURIComponent(runId)}/events${query ? `?${query}` : ""}`,
+      { signal },
+      schemas.buildEventsResponseSchema,
+    );
+  },
+
+  // uploadFile은 JSON이 아닌 raw body를 보내야 해서 apiFetch를 쓰지 않는 별도 함수로
+  // 아래에 정의한다(함수 선언은 호이스팅되므로 여기서 참조할 수 있다).
+  uploadFile,
 };
+
+/**
+ * POST /uploads — kind="file" source용 파일 업로드 (#498).
+ *
+ * 요청 body가 JSON이 아니라 raw bytes(`application/octet-stream`)라 `apiFetch`의
+ * JSON-only 경로를 재사용할 수 없다. 인증/재시도/타임아웃 관례는 최대한 맞추되
+ * (Bearer 헤더는 authTokenProvider를 그대로 사용), 비멱등 업로드이므로 재시도는
+ * 하지 않는다. `format`/`encoding`/`filename`은 query parameter로 보낸다.
+ */
+export async function uploadFile(
+  bytes: Blob | ArrayBuffer,
+  options: { format: "csv" | "json" | "jsonl" | "parquet"; encoding?: string; filename?: string },
+  signal?: AbortSignal,
+): Promise<schemas.UploadMetadata> {
+  const params = new URLSearchParams({ format: options.format });
+  if (options.encoding) params.set("encoding", options.encoding);
+  if (options.filename) params.set("filename", options.filename);
+
+  const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
+  const token = authTokenProvider?.() ?? null;
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/uploads?${params.toString()}`, {
+      method: "POST",
+      headers,
+      body: bytes,
+      signal,
+    });
+  } catch (cause) {
+    throw new ApiError(0, "Builder API에 연결하지 못했습니다.", cause);
+  }
+
+  const text = await response.text();
+  let parsed: unknown;
+  try {
+    parsed = text ? JSON.parse(text) : undefined;
+  } catch {
+    throw new ApiError(response.status, "응답 JSON을 파싱하지 못했습니다.");
+  }
+
+  if (!response.ok) {
+    if (response.status === 401 && authErrorCallback) authErrorCallback();
+    throw new ApiError(response.status, formatApiErrorMessage(response.status, parsed), parsed);
+  }
+
+  const result = schemas.uploadMetadataSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new ApiError(500, "Builder 업로드 응답이 예상된 형식과 일치하지 않습니다.", parsed);
+  }
+  return result.data;
+}

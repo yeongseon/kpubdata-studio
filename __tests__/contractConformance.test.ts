@@ -35,6 +35,10 @@ const EXPECTED_OPERATIONS = [
   "publishBuild",
   "getDatasetQualityHistory",
   "query",
+  "getBuildSpecSnapshot",
+  "getBuildEvents",
+  "testProviderConnection",
+  "uploadFile",
 ] as const;
 
 describe("Builder API contract conformance (#36)", () => {
