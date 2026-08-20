@@ -651,73 +651,89 @@ export type BuildQualityResponse = z.infer<typeof buildQualityResponseSchema>;
 export type DatasetQualityHistoryEntry = z.infer<typeof datasetQualityHistoryEntrySchema>;
 export type DatasetQualityHistoryResponse = z.infer<typeof datasetQualityHistoryResponseSchema>;
 
-/** Monitoring 관련 스키마 (#516) */
+/**
+ * Monitoring (#516) — Builder 실제 wire 계약(GET /monitoring/summary,
+ * GET /monitoring/builds) 그대로. availability 어휘는 quality(#486)와 공유하는
+ * available/partial/unavailable이고, 측정된 적 없는 값은 0으로 위장하지 않고
+ * null로 내려온다(#516 원칙).
+ */
+const monitoringAvailabilitySchema = z.enum(["available", "partial", "unavailable"]);
 
-const systemHealthSchema = z.object({
-  status: z.enum(["healthy", "degraded", "unavailable"]),
-  p95_latency: z.number().nullable(),
+export const monitoringApiStatusSchema = z.object({
+  availability: monitoringAvailabilitySchema,
+  sample_count: z.number().int().nullable(),
+  p95_latency_ms: z.number().nullable(),
 });
 
-const queueStatsSchema = z.object({
-  queued: z.number(),
-  running: z.number(),
-  total: z.number(),
+export const monitoringQueueSchema = z.object({
+  availability: monitoringAvailabilitySchema,
+  waiting: z.number().int().nullable(),
+  running: z.number().int().nullable(),
+  total: z.number().int().nullable(),
 });
 
-const workerStatsSchema = z.object({
-  active: z.number(),
-  capacity: z.number(),
+export const monitoringWorkersSchema = z.object({
+  availability: monitoringAvailabilitySchema,
+  active: z.number().int(),
+  capacity: z.number().int(),
   utilization: z.number(),
 });
 
-const artifactStoreStatsSchema = z.object({
-  status: z.enum(["ok", "error", "unavailable"]),
-  last_write: z.string().datetime().nullable(),
+export const monitoringArtifactStoreSchema = z.object({
+  availability: monitoringAvailabilitySchema,
+  last_write_at: z.string().nullable(),
 });
 
-const buildStatsSchema = z.object({
-  time: z.string(),
-  success: z.number(),
-  failed: z.number(),
-  cancelled: z.number(),
+/** GET /monitoring/summary 응답. aggregate status는 healthy/degraded 2값(#516). */
+export const monitoringSummaryResponseSchema = z.object({
+  generated_at: z.string(),
+  status: z.enum(["healthy", "degraded"]),
+  api: monitoringApiStatusSchema,
+  queue: monitoringQueueSchema,
+  workers: monitoringWorkersSchema,
+  artifact_store: monitoringArtifactStoreSchema,
 });
 
-const recentRunSchema = z.object({
-  id: z.string(),
-  title: z.string().nullable(),
-  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
-  started_at: z.string().datetime().nullable(),
-  finished_at: z.string().datetime().nullable(),
-  duration: z.number().nullable(),
+export const monitoringBucketSchema = z.object({
+  bucket_start: z.string(),
+  bucket_end: z.string(),
+  total: z.number().int(),
+  success: z.number().int(),
+  failed: z.number().int(),
+  cancelled: z.number().int(),
 });
 
-const monitoringSystemSchema = z.object({
-  health: systemHealthSchema,
-  queue: queueStatsSchema.nullable(),
-  workers: workerStatsSchema.nullable(),
-  artifact_store: artifactStoreStatsSchema,
+/**
+ * recent run의 status는 BuildIndex 내부 값을 그대로 내려준다(builder는
+ * str로 직렬화) — ok/failed/cancelled 외 실행 중 상태도 올 수 있어 좁은
+ * enum 대신 string으로 받고 표시 매핑은 UI가 담당한다.
+ */
+export const monitoringRecentRunSchema = z.object({
+  run_id: z.string(),
+  status: z.string(),
+  started_at: z.string().nullable(),
+  finished_at: z.string().nullable(),
 });
 
-const monitoringBuildsSchema = z.object({
-  stats: z.array(buildStatsSchema),
-  total_success: z.number(),
-  total_failed: z.number(),
-  total_cancelled: z.number(),
-  recent_runs: z.array(recentRunSchema),
+/** GET /monitoring/builds?window=24h&bucket=hour 응답 (#516). */
+export const monitoringBuildsResponseSchema = z.object({
+  window: z.string(),
+  bucket: z.string(),
+  availability: monitoringAvailabilitySchema,
+  excluded_count: z.number().int(),
+  buckets: z.array(monitoringBucketSchema),
+  recent_runs: z.array(monitoringRecentRunSchema),
 });
 
-export const monitoringResponseSchema = z.object({
-  system: monitoringSystemSchema,
-  builds: monitoringBuildsSchema,
-});
-
-export type MonitoringResponse = z.infer<typeof monitoringResponseSchema>;
-export type SystemHealth = z.infer<typeof systemHealthSchema>;
-export type QueueStats = z.infer<typeof queueStatsSchema>;
-export type WorkerStats = z.infer<typeof workerStatsSchema>;
-export type ArtifactStoreStats = z.infer<typeof artifactStoreStatsSchema>;
-export type BuildStats = z.infer<typeof buildStatsSchema>;
-export type RecentRun = z.infer<typeof recentRunSchema>;
+export type MonitoringAvailability = z.infer<typeof monitoringAvailabilitySchema>;
+export type MonitoringApiStatus = z.infer<typeof monitoringApiStatusSchema>;
+export type MonitoringQueueStats = z.infer<typeof monitoringQueueSchema>;
+export type MonitoringWorkerStats = z.infer<typeof monitoringWorkersSchema>;
+export type MonitoringArtifactStoreStats = z.infer<typeof monitoringArtifactStoreSchema>;
+export type MonitoringSummaryResponse = z.infer<typeof monitoringSummaryResponseSchema>;
+export type MonitoringBucket = z.infer<typeof monitoringBucketSchema>;
+export type MonitoringRecentRun = z.infer<typeof monitoringRecentRunSchema>;
+export type MonitoringBuildsResponse = z.infer<typeof monitoringBuildsResponseSchema>;
 export type PublishTarget = z.infer<typeof publishTargetSchema>;
 export type PublishIssue = z.infer<typeof publishIssueSchema>;
 export type PublishReadinessResponse = z.infer<typeof publishReadinessResponseSchema>;

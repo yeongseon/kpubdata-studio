@@ -586,12 +586,26 @@ export const builderApi = {
        schemas.queryResponseSchema,
      ),
 
-  /** GET /monitoring — 시스템 리소스·Build 통계 monitoring 데이터 (#516). */
-  getMonitoring: (signal?: AbortSignal) =>
+  /**
+   * GET /monitoring/summary — Builder API/Queue/Workers/Artifact Store 시스템
+   * 상태 요약 (#516). 개인 데이터는 포함하지 않는다.
+   */
+  getMonitoringSummary: (signal?: AbortSignal) =>
     apiFetch(
-      "/monitoring",
+      "/monitoring/summary",
       { signal },
-      schemas.monitoringResponseSchema,
+      schemas.monitoringSummaryResponseSchema,
+    ),
+
+  /**
+   * GET /monitoring/builds — 24시간 시간별 build 통계와 recent runs (#516).
+   * ENFORCE_OWNERSHIP에서는 요청 principal이 접근 가능한 run만 집계된다.
+   */
+  getMonitoringBuilds: (signal?: AbortSignal) =>
+    apiFetch(
+      "/monitoring/builds?window=24h&bucket=hour",
+      { signal },
+      schemas.monitoringBuildsResponseSchema,
     ),
 
   /**

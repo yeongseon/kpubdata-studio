@@ -1,20 +1,37 @@
 /**
- * Monitoring 화면 테스트 (#264).
+ * Monitoring 화면 테스트 (#264, #302).
  *
- * - system/builds/recent-runs tabs 렌더링
- * - loading/error/empty states 처리
- * - 자동/수동 새로고침 기능
- * - 데이터 연동 테스트
+ * - system/builds/recent-runs 탭 렌더링
+ * - 실제 Builder 계약(/monitoring/summary + /monitoring/builds) 기준 데이터 표시
+ * - 401은 권한 없음 상태로 구분(실API 응답 기준, #302)
+ * - 실연동 실패 시 mock 폴백 없음(정상 오인 방지, #302)
+ * - unavailable/null을 0/정상으로 표시하지 않음(#302 회귀 테스트)
+ * - recent run → Builds 상세 네비게이션(#302)
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MonitoringPage } from "@/pages/MonitoringPage";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
-import type { MonitoringResponse } from "@/shared/lib/builderApi.schema";
+import type {
+  MonitoringSummaryResponse,
+  MonitoringBuildsResponse,
+} from "@/shared/lib/builderApi.schema";
 
-// 이 저장소는 @testing-library/user-event 의존성을 쓰지 않는다(fireEvent 컨벤션).
-// 테스트 본문의 `await user.click(...)` 표현을 그대로 유지하기 위한 얇은 어댑터다.
+vi.mock("@/shared/lib/builderApi", async () => {
+  const actual = await vi.importActual<typeof import("@/shared/lib/builderApi")>(
+    "@/shared/lib/builderApi",
+  );
+  return {
+    ...actual,
+    isRealBuilderEnabled: vi.fn(() => false),
+    builderApi: {
+      getMonitoringSummary: vi.fn(),
+      getMonitoringBuilds: vi.fn(),
+    },
+  };
+});
+
 function setupUserEvent() {
   return {
     user: {
@@ -25,12 +42,41 @@ function setupUserEvent() {
   };
 }
 
-vi.mock("@/shared/lib/builderApi", () => ({
-  isRealBuilderEnabled: vi.fn(() => false),
-  builderApi: {
-    getMonitoring: vi.fn(),
-  },
-}));
+function summaryFixture(
+  overrides: Partial<MonitoringSummaryResponse> = {},
+): MonitoringSummaryResponse {
+  return {
+    generated_at: "2026-08-20T00:00:00+00:00",
+    status: "healthy",
+    api: { availability: "available", sample_count: 10, p95_latency_ms: 200 },
+    queue: { availability: "available", waiting: 3, running: 2, total: 5 },
+    workers: { availability: "available", active: 2, capacity: 4, utilization: 0.5 },
+    artifact_store: { availability: "available", last_write_at: "2026-08-20T00:00:00+00:00" },
+    ...overrides,
+  };
+}
+
+function buildsFixture(
+  overrides: Partial<MonitoringBuildsResponse> = {},
+): MonitoringBuildsResponse {
+  return {
+    window: "24h",
+    bucket: "hour",
+    availability: "available",
+    excluded_count: 0,
+    buckets: [],
+    recent_runs: [],
+    ...overrides,
+  };
+}
+
+function renderMonitoring() {
+  return render(
+    <MemoryRouter initialEntries={["/monitoring"]}>
+      <MonitoringPage />
+    </MemoryRouter>,
+  );
+}
 
 describe("MonitoringPage", () => {
   beforeEach(() => {
@@ -39,28 +85,17 @@ describe("MonitoringPage", () => {
   });
 
   it("기본 제목과 설명을 렌더링한다", async () => {
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
+    renderMonitoring();
 
     await waitFor(() => {
       expect(
         screen.getByRole("heading", { name: /시스템 모니터링/ }),
       ).toBeInTheDocument();
-      expect(
-        screen.getByText(/실행 이력과 시스템 리소스 상태를 실시간으로 확인합니다/),
-      ).toBeInTheDocument();
     });
   });
 
   it("system/builds/recent-runs 탭을 렌더링한다", async () => {
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
+    renderMonitoring();
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "System Resources" })).toBeInTheDocument();
@@ -71,207 +106,148 @@ describe("MonitoringPage", () => {
 
   it("탭 전환이 정상적으로 작동한다", async () => {
     const { user } = setupUserEvent();
-
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
+    renderMonitoring();
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "System Resources" }).className).toContain(
-        "border-b-2"
+        "border-b-2",
       );
     });
 
     await user.click(screen.getByRole("button", { name: "Build Statistics" }));
 
     expect(screen.getByRole("button", { name: "Build Statistics" }).className).toContain(
-      "border-b-2"
+      "border-b-2",
     );
-    expect(screen.getByRole("button", { name: "System Resources" }).className).not.toContain(
-      "border-b-2"
-    );
+    expect(
+      screen.getByRole("button", { name: "System Resources" }).className,
+    ).not.toContain("border-b-2");
   });
 
-  it("loading 상태를 올바르게 표시한다", async () => {
+  it("실연동 모드에서 실제 Builder 엔드포인트 2개를 병렬 호출한다 (#302)", async () => {
     vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
-    vi.mocked(builderApi.getMonitoring).mockImplementation(
-      () => new Promise(() => {})
-    );
+    vi.mocked(builderApi.getMonitoringSummary).mockResolvedValue(summaryFixture());
+    vi.mocked(builderApi.getMonitoringBuilds).mockResolvedValue(buildsFixture());
 
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getAllByText("데이터 로드 중...")).toHaveLength(1);
-    // Skeleton은 aria-hidden이라 role로 잡히지 않는다 — 시각적 skeleton 블록 수로 확인한다.
-    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
-  });
-
-  it("데이터 로드 후 system 리소스를 올바르게 표시한다", async () => {
-    const mockResponse: MonitoringResponse = {
-      system: {
-        health: {
-          status: "healthy",
-          p95_latency: 245,
-        },
-        queue: {
-          queued: 3,
-          running: 2,
-          total: 5,
-        },
-        workers: {
-          active: 2,
-          capacity: 4,
-          utilization: 0.5,
-        },
-        artifact_store: {
-          status: "ok",
-          last_write: new Date().toISOString(),
-        },
-      },
-      builds: {
-        stats: [
-          { time: "00:00", success: 12, failed: 1, cancelled: 0 },
-          { time: "04:00", success: 8, failed: 0, cancelled: 1 },
-        ],
-        total_success: 20,
-        total_failed: 1,
-        total_cancelled: 1,
-        recent_runs: [],
-      },
-    };
-
-    vi.mocked(builderApi.getMonitoring).mockResolvedValue(mockResponse);
-
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
+    renderMonitoring();
 
     await waitFor(() => {
-      expect(screen.getByText("Builder API")).toBeInTheDocument();
+      expect(builderApi.getMonitoringSummary).toHaveBeenCalled();
+      expect(builderApi.getMonitoringBuilds).toHaveBeenCalled();
+    });
+  });
+
+  it("401 응답은 권한 없음 상태로 구분한다 — 실API 응답 기준 (#302)", async () => {
+    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
+    const { ApiError } = await vi.importActual<typeof import("@/shared/lib/builderApi")>(
+      "@/shared/lib/builderApi",
+    );
+    vi.mocked(builderApi.getMonitoringSummary).mockRejectedValue(
+      new ApiError(401, "인증이 필요합니다"),
+    );
+    vi.mocked(builderApi.getMonitoringBuilds).mockResolvedValue(buildsFixture());
+
+    renderMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("권한이 없습니다")).toBeInTheDocument();
+    });
+    expect(builderApi.getMonitoringBuilds).toHaveBeenCalled();
+  });
+
+  it("실연동 실패 시 mock 데이터로 대체하지 않는다 (#302)", async () => {
+    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
+    vi.mocked(builderApi.getMonitoringSummary).mockRejectedValue(new Error("network down"));
+    vi.mocked(builderApi.getMonitoringBuilds).mockRejectedValue(new Error("network down"));
+
+    renderMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("데이터를 가져올 수 없습니다")).toBeInTheDocument();
+    });
+    // mock fixture의 run id가 실연동 실패 화면에 나타나면 정상 오인이다.
+    expect(screen.queryByText("run-001")).not.toBeInTheDocument();
+  });
+
+  it("api가 unavailable이면 정상으로 표시하지 않는다 (#302 회귀)", async () => {
+    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
+    vi.mocked(builderApi.getMonitoringSummary).mockResolvedValue(
+      summaryFixture({
+        status: "degraded",
+        api: { availability: "unavailable", sample_count: null, p95_latency_ms: null },
+      }),
+    );
+    vi.mocked(builderApi.getMonitoringBuilds).mockResolvedValue(buildsFixture());
+
+    renderMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("사용 불가")).toBeInTheDocument();
+    });
+    // Builder API 카드의 배지가 정상이어선 안 된다(Artifact Store의 정상 배지와 구분).
+    const apiCard = screen.getByText("Builder API").closest("div")?.parentElement?.parentElement;
+    expect(apiCard).not.toBeNull();
+    expect(apiCard?.textContent).not.toContain("정상");
+    expect(screen.getByText(/측정 불가/)).toBeInTheDocument();
+  });
+
+  it("queue 측정값이 null이면 0이 아니라 — 로 표시한다 (#302 회귀)", async () => {
+    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
+    vi.mocked(builderApi.getMonitoringSummary).mockResolvedValue(
+      summaryFixture({
+        queue: { availability: "unavailable", waiting: null, running: null, total: null },
+      }),
+    );
+    vi.mocked(builderApi.getMonitoringBuilds).mockResolvedValue(buildsFixture());
+
+    renderMonitoring();
+
+    await waitFor(() => {
       expect(screen.getByText("Queue")).toBeInTheDocument();
-      expect(screen.getByText("Workers")).toBeInTheDocument();
-      expect(screen.getByText("Artifact Store")).toBeInTheDocument();
     });
+    // 대기/실행/전체가 전부 —(측정 불가)이고 0으로 표시되지 않는다.
+    const queueSection = screen.getByText("대기 중").closest("div")?.parentElement;
+    expect(queueSection).not.toBeNull();
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
   });
 
-  it("자동 새로고침 토글 기능이 작동한다", async () => {
-    const { user } = setupUserEvent();
-
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /자동 새로고침 ON/ })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole("button", { name: /자동 새로고침 ON/ }));
-
-    expect(screen.getByRole("button", { name: /자동 새로고침 OFF/ })).toBeInTheDocument();
-  });
-
-  it("수동 새로고침 버튼이 작동한다", async () => {
+  it("partial 집계는 제외 건수와 함께 안내한다 (#302)", async () => {
     vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
-    const mockResponse: MonitoringResponse = {
-      system: {
-        health: {
-          status: "healthy",
-          p95_latency: 200,
-        },
-        queue: null,
-        workers: null,
-        artifact_store: {
-          status: "ok",
-          last_write: new Date().toISOString(),
-        },
-      },
-      builds: {
-        stats: [],
-        total_success: 0,
-        total_failed: 0,
-        total_cancelled: 0,
-        recent_runs: [],
-      },
-    };
-
-    vi.mocked(builderApi.getMonitoring).mockResolvedValue(mockResponse);
+    vi.mocked(builderApi.getMonitoringSummary).mockResolvedValue(summaryFixture());
+    vi.mocked(builderApi.getMonitoringBuilds).mockResolvedValue(
+      buildsFixture({
+        availability: "partial",
+        excluded_count: 2,
+        buckets: [
+          {
+            bucket_start: "2026-08-20T01:00:00+00:00",
+            bucket_end: "2026-08-20T02:00:00+00:00",
+            total: 3,
+            success: 3,
+            failed: 0,
+            cancelled: 0,
+          },
+        ],
+      }),
+    );
 
     const { user } = setupUserEvent();
+    renderMonitoring();
 
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
+    await user.click(await screen.findByRole("button", { name: "Build Statistics" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "새로고침" })).toBeInTheDocument();
-    });
-
-    const refreshButton = screen.getByRole("button", { name: "새로고침" });
-
-    await user.click(refreshButton);
-
-    expect(vi.mocked(builderApi.getMonitoring)).toHaveBeenCalled();
-  });
-
-  it("API 에러 시 error state를 올바르게 표시한다", async () => {
-    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
-    vi.mocked(builderApi.getMonitoring).mockRejectedValue(new Error("API Error"));
-
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/데이터를 가져올 수 없습니다/)).toBeInTheDocument();
+      expect(screen.getByText(/제외 2건/)).toBeInTheDocument();
     });
   });
 
-  it("빈 데이터일 때 empty state를 올바르게 표시한다", async () => {
+  it("빈 데이터일 때 empty state를 표시한다", async () => {
     vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
-    const mockResponse: MonitoringResponse = {
-      system: {
-        health: {
-          status: "healthy",
-          p95_latency: 100,
-        },
-        queue: null,
-        workers: null,
-        artifact_store: {
-          status: "ok",
-          last_write: null,
-        },
-      },
-      builds: {
-        stats: [],
-        total_success: 0,
-        total_failed: 0,
-        total_cancelled: 0,
-        recent_runs: [],
-      },
-    };
-
-    vi.mocked(builderApi.getMonitoring).mockResolvedValue(mockResponse);
+    vi.mocked(builderApi.getMonitoringSummary).mockResolvedValue(summaryFixture());
+    vi.mocked(builderApi.getMonitoringBuilds).mockResolvedValue(buildsFixture());
 
     const { user } = setupUserEvent();
-
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
+    renderMonitoring();
 
     await user.click(await screen.findByRole("button", { name: "Build Statistics" }));
 
@@ -280,110 +256,82 @@ describe("MonitoringPage", () => {
     });
   });
 
-  it("recent runs 탭에서 데이터를 올바르게 표시한다", async () => {
+  it("recent runs 탭에서 run_id·상태·소요시간을 표시한다", async () => {
     vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
-    const mockResponse: MonitoringResponse = {
-      system: {
-        health: {
-          status: "healthy",
-          p95_latency: 150,
-        },
-        queue: null,
-        workers: null,
-        artifact_store: {
-          status: "ok",
-          last_write: new Date().toISOString(),
-        },
-      },
-      builds: {
-        stats: [],
-        total_success: 2,
-        total_failed: 1,
-        total_cancelled: 0,
+    vi.mocked(builderApi.getMonitoringSummary).mockResolvedValue(summaryFixture());
+    vi.mocked(builderApi.getMonitoringBuilds).mockResolvedValue(
+      buildsFixture({
         recent_runs: [
           {
-            id: "run-001",
-            title: "테스트 빌드",
-            status: "succeeded",
-            started_at: new Date(Date.now() - 3600000).toISOString(),
-            finished_at: new Date(Date.now() - 1800000).toISOString(),
-            duration: 1800,
+            run_id: "run-abc",
+            status: "ok",
+            started_at: "2026-08-20T00:00:00+00:00",
+            finished_at: "2026-08-20T00:30:00+00:00",
           },
         ],
-      },
-    };
-
-    vi.mocked(builderApi.getMonitoring).mockResolvedValue(mockResponse);
-
-    const { user } = setupUserEvent();
-
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
+      }),
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Recent Runs" })).toBeInTheDocument();
-    });
+    const { user } = setupUserEvent();
+    renderMonitoring();
 
-    await user.click(screen.getByRole("button", { name: "Recent Runs" }));
+    await user.click(await screen.findByRole("button", { name: "Recent Runs" }));
 
-    expect(screen.getByText("테스트 빌드")).toBeInTheDocument();
+    expect(await screen.findByText("run-abc")).toBeInTheDocument();
+    // BuildIndex 내부 값 ok는 성공으로 표시한다.
     expect(screen.getByText("성공")).toBeInTheDocument();
     expect(screen.getByText(/1800초/)).toBeInTheDocument();
   });
 
-  it("실연동 모드에서는 builderApi를 호출한다", async () => {
+  it("recent run의 보기 링크가 Builds 상세로 이동한다 (#302 네비게이션)", async () => {
     vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
+    vi.mocked(builderApi.getMonitoringSummary).mockResolvedValue(summaryFixture());
+    vi.mocked(builderApi.getMonitoringBuilds).mockResolvedValue(
+      buildsFixture({
+        recent_runs: [
+          {
+            run_id: "run-nav",
+            status: "ok",
+            started_at: "2026-08-20T00:00:00+00:00",
+            finished_at: "2026-08-20T00:10:00+00:00",
+          },
+        ],
+      }),
+    );
 
-    const mockResponse: MonitoringResponse = {
-      system: {
-        health: {
-          status: "healthy",
-          p95_latency: 120,
-        },
-        queue: null,
-        workers: null,
-        artifact_store: {
-          status: "ok",
-          last_write: null,
-        },
-      },
-      builds: {
-        stats: [],
-        total_success: 0,
-        total_failed: 0,
-        total_cancelled: 0,
-        recent_runs: [],
-      },
-    };
+    const locationRef: { current: { pathname: string } | null } = { current: null };
+    function LocationProbe() {
+      locationRef.current = useLocation();
+      return null;
+    }
 
-    vi.mocked(builderApi.getMonitoring).mockResolvedValue(mockResponse);
-
+    const { user } = setupUserEvent();
     render(
-      <MemoryRouter>
-        <MonitoringPage />
+      <MemoryRouter initialEntries={["/monitoring"]}>
+        <Routes>
+          <Route path="/monitoring" element={<MonitoringPage />} />
+          <Route path="/builds/:buildId" element={<LocationProbe />} />
+        </Routes>
       </MemoryRouter>,
     );
 
+    await user.click(await screen.findByRole("button", { name: "Recent Runs" }));
+    const viewLink = await screen.findByRole("link", { name: "보기" });
+    await user.click(viewLink);
+
     await waitFor(() => {
-      expect(vi.mocked(builderApi.getMonitoring)).toHaveBeenCalled();
+      expect(locationRef.current).not.toBeNull();
     });
+    expect(locationRef.current?.pathname).toBe("/builds/run-nav");
   });
 
-  it("mock 모드에서는 mock 데이터를 사용한다", async () => {
-    vi.mocked(isRealBuilderEnabled).mockReturnValue(false);
-
-    render(
-      <MemoryRouter>
-        <MonitoringPage />
-      </MemoryRouter>,
-    );
+  it("mock 모드에서는 네트워크를 호출하지 않는다", async () => {
+    renderMonitoring();
 
     await waitFor(() => {
-      expect(vi.mocked(builderApi.getMonitoring)).not.toHaveBeenCalled();
-      expect(screen.getByText("Builder API")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /시스템 모니터링/ })).toBeInTheDocument();
     });
+    expect(builderApi.getMonitoringSummary).not.toHaveBeenCalled();
+    expect(builderApi.getMonitoringBuilds).not.toHaveBeenCalled();
   });
 });
