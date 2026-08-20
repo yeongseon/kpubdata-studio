@@ -23,17 +23,17 @@ import { z } from "zod";
 
 /**
  * Studio가 실제로 검토·연동한 Builder API 계약 버전(고정 pin, "최신 Builder main과 항상
- * 동일"이 아니다). 1.6.0 -> 1.7.0: Silver/Gold read-only `/query` 추가(#504, additive —
- * 기존 엔드포인트는 변경 없음).
+ * 동일"이 아니다). 1.17.0은 Builder PR #547에서 검토한 idempotent publish
+ * readiness/POST 계약까지 포함한다.
  *
  * Builder는 additive 변경마다 이 값을 계속 올린다. Studio는 자신이 실제로 검토·
- * 연동한 버전만 고정한다 — 현재는 async build job 표면(POST /builds, GET
- * /builds/{run_id}, builder #480/#482)까지 검토·연동했다. 미연동 operation(예:
+ * 연동한 버전만 고정한다 — 현재는 async build job과 publish 표면까지 검토·연동했다.
+ * 미연동 operation(예:
  * provider credentials 1.8.0, monitoring 1.11.0)은 여기 숫자에 반영해도 실제
  * 호출이 없으므로 따로 올리지 않는다. pin 정책 자체는 builder ADR 0013(#521)의
  * 기능별 최소 SemVer 판정으로 전환 중이다.
  */
-export const API_CONTRACT_VERSION = "1.16.0";
+export const API_CONTRACT_VERSION = "1.17.0";
 
 /** 실제 Builder 호출 활성화 여부(미설정 시 mock 사용). */
 export function isRealBuilderEnabled(): boolean {
@@ -392,6 +392,15 @@ export type QueryStage = schemas.QueryStage;
 export type QueryRequest = schemas.QueryRequest;
 export type QueryResponse = schemas.QueryResponse;
 export type QueryErrorCode = schemas.QueryErrorCode;
+export type PublishTarget = schemas.PublishTarget;
+export type PublishIssue = schemas.PublishIssue;
+export type PublishReadinessResponse = schemas.PublishReadinessResponse;
+export type PublishHuggingFaceOptions = schemas.PublishHuggingFaceOptions;
+export type PublishRequest = schemas.PublishRequest;
+export type PublishResponse = schemas.PublishResponse;
+export type PublishErrorCode = schemas.PublishErrorCode;
+export type PublishErrorResponse = schemas.PublishErrorResponse;
+export type PublishBlockedResponse = schemas.PublishBlockedResponse;
 export type BuildSpecSnapshotResponse = schemas.BuildSpecSnapshotResponse;
 export type BuildEventName = schemas.BuildEventName;
 export type BuildEventStatus = schemas.BuildEventStatus;
@@ -529,6 +538,28 @@ export const builderApi = {
       `/builds/${encodeURIComponent(runId)}/quality`,
       { signal },
       schemas.buildQualityResponseSchema,
+    ),
+
+  /** GET /builds/{run_id}/publish/readiness — Builder가 계산한 게시 준비 상태. */
+  getPublishReadiness: (
+    runId: string,
+    target: schemas.PublishTarget,
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams({ target });
+    return apiFetch(
+      `/builds/${encodeURIComponent(runId)}/publish/readiness?${params.toString()}`,
+      { signal, retries: 0 },
+      schemas.publishReadinessResponseSchema,
+    );
+  },
+
+  /** POST /builds/{run_id}/publish — 원격 side effect이므로 클라이언트 자동 재시도 금지. */
+  publishBuild: (runId: string, request: schemas.PublishRequest, signal?: AbortSignal) =>
+    apiFetch(
+      `/builds/${encodeURIComponent(runId)}/publish`,
+      { method: "POST", body: request, signal, retries: 0, timeoutMs: 0 },
+      schemas.publishResponseSchema,
     ),
 
   /** GET /datasets/{dataset_id}/quality/history — dataset quality 이력. */

@@ -50,7 +50,8 @@ describe("router 딥링크 회귀 (#247)", () => {
     expect(await screen.findByText("Manifest 요약")).toBeInTheDocument();
 
     await navigateTo("/builds/abc/publish");
-    expect(screen.getByText("HuggingFace Dataset")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "abc 게시" })).toBeInTheDocument();
+    expect(screen.getByText("Hugging Face")).toBeInTheDocument();
   });
 
   it("새 IA route(#247)도 셸 안에서 정상적으로 렌더된다", async () => {

@@ -527,6 +527,65 @@ export const datasetQualityHistoryResponseSchema = z.object({
 
 /**
  * ============================================
+ * Build Publish API (1.17.0, builder #491 / PR #547)
+ * ============================================
+ */
+
+export const publishTargetSchema = z.literal("huggingface");
+
+export const publishIssueSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+}).strict();
+
+export const publishReadinessResponseSchema = z.object({
+  run_id: z.string(),
+  target: publishTargetSchema,
+  ready: z.boolean(),
+  blockers: z.array(publishIssueSchema),
+  warnings: z.array(publishIssueSchema),
+}).strict();
+
+export const publishHuggingFaceOptionsSchema = z.object({
+  private: z.boolean().default(true),
+}).strict();
+
+export const publishRequestSchema = z.object({
+  target: publishTargetSchema,
+  destination: z.string(),
+  options: publishHuggingFaceOptionsSchema.optional(),
+}).strict();
+
+export const publishResponseSchema = z.object({
+  run_id: z.string(),
+  target: publishTargetSchema,
+  publisher: z.string(),
+  destination: z.string(),
+  reference: z.string(),
+  artifact_count: z.number().int().nonnegative(),
+  status: z.string(),
+}).strict();
+
+export const publishErrorCodeSchema = z.enum([
+  "unsupported_target",
+  "publish_in_progress",
+  "publish_state_unknown",
+  "publish_conflict",
+  "publish_failed",
+]);
+
+export const publishErrorResponseSchema = z.object({
+  error: z.string(),
+  code: publishErrorCodeSchema.optional(),
+});
+
+export const publishBlockedResponseSchema = z.object({
+  error: z.string(),
+  blockers: z.array(publishIssueSchema),
+}).strict();
+
+/**
+ * ============================================
  * Read-only Query API (1.7.0, #504)
  * ============================================
  */
@@ -591,6 +650,15 @@ export type QualityAvailability = z.infer<typeof qualityAvailabilitySchema>;
 export type BuildQualityResponse = z.infer<typeof buildQualityResponseSchema>;
 export type DatasetQualityHistoryEntry = z.infer<typeof datasetQualityHistoryEntrySchema>;
 export type DatasetQualityHistoryResponse = z.infer<typeof datasetQualityHistoryResponseSchema>;
+export type PublishTarget = z.infer<typeof publishTargetSchema>;
+export type PublishIssue = z.infer<typeof publishIssueSchema>;
+export type PublishReadinessResponse = z.infer<typeof publishReadinessResponseSchema>;
+export type PublishHuggingFaceOptions = z.infer<typeof publishHuggingFaceOptionsSchema>;
+export type PublishRequest = z.input<typeof publishRequestSchema>;
+export type PublishResponse = z.infer<typeof publishResponseSchema>;
+export type PublishErrorCode = z.infer<typeof publishErrorCodeSchema>;
+export type PublishErrorResponse = z.infer<typeof publishErrorResponseSchema>;
+export type PublishBlockedResponse = z.infer<typeof publishBlockedResponseSchema>;
 
 /**
  * ============================================

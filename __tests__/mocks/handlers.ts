@@ -75,4 +75,27 @@ export const handlers = [
       files: ["manifest.json", "sample.parquet"],
     }),
   ),
+
+  http.get(`${BASE}/builds/:runId/publish/readiness`, ({ params }) =>
+    HttpResponse.json({
+      run_id: String(params.runId),
+      target: "huggingface",
+      ready: true,
+      blockers: [],
+      warnings: [],
+    }),
+  ),
+
+  http.post(`${BASE}/builds/:runId/publish`, async ({ params, request }) => {
+    const body = await request.json() as { destination: string };
+    return HttpResponse.json({
+      run_id: String(params.runId),
+      target: "huggingface",
+      publisher: "huggingface",
+      destination: body.destination,
+      reference: `https://huggingface.co/datasets/${body.destination}`,
+      artifact_count: 1,
+      status: "ok",
+    });
+  }),
 ];

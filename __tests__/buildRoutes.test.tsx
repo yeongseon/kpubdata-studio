@@ -55,10 +55,10 @@ describe("build-centric routes", () => {
     expect(screen.getByText(/12,304/)).toBeInTheDocument();
   });
 
-  it("renders the publish page with destination options and an enabled publish button", () => {
+  it("renders the real publish page with only the supported Hugging Face target", () => {
     renderAt("/builds/abc/publish", <BuildPublishPage />);
-    expect(screen.getByText("HuggingFace Dataset")).toBeInTheDocument();
-    // buildId가 있으면 게시 버튼이 활성화되어 실제 게시를 수행한다 (#9).
-    expect(screen.getByRole("button", { name: "게시" })).toBeEnabled();
+    expect(screen.getByText("Hugging Face")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "최종 확인" })).toBeDisabled();
+    expect(screen.queryByText(/Kaggle|Local only/)).not.toBeInTheDocument();
   });
 });
