@@ -46,7 +46,24 @@ describe("loadCatalog (#249)", () => {
       vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
       const fetchMock = vi.fn().mockResolvedValue(
         mockResponse(200, {
-          providers: [{ name: "datago", datasets: [{ name: "air", title: "대기질", requires_service_key: true }] }],
+          providers: [
+            {
+              name: "datago",
+              datasets: [
+                {
+                  name: "air",
+                  title: "대기질",
+                  description: "전국 측정소별 대기질 측정정보",
+                  tags: ["대기질", "환경"],
+                  source_url: "https://api.data.go.kr/openapi",
+                  representation: "api_json",
+                  operations: ["list", "get"],
+                  query_support: null,
+                  requires_service_key: true,
+                },
+              ],
+            },
+          ],
         }),
       );
       vi.stubGlobal("fetch", fetchMock);

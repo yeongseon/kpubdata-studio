@@ -14,30 +14,49 @@ import { builderApi, isRealBuilderEnabled, type CatalogResponse } from "@/shared
  * mock 모드에서 쓰는 결정적 fixture.
  *
  * requires_service_key가 true/false 둘 다 있어야 배지/필터를 시연할 수 있고, provider가
- * 2개 이상이어야 provider 필터가 의미를 갖는다. 실제 Builder #490 rich metadata(description/
- * tags/source_url 등)는 아직 스키마에 없으므로 이 fixture도 3필드(name/title/
- * requires_service_key)만 채운다 — P0는 그 이상을 가정하지 않는다.
+ * 2개 이상이어야 provider 필터가 의미를 갖는다. Builder #490 rich metadata(description/
+ * tags/source_url 등)가 catalog 스키마에 포함됨에 따라(#250) fixture도 스키마 전체를
+ * 채운다 — P0 화면은 표시하지 않아도 계약과 드리프트되지 않는다.
  */
+function dataset(
+  name: string,
+  title: string,
+  requiresServiceKey: boolean,
+  description = null,
+): CatalogResponse["providers"][number]["datasets"][number] {
+  return {
+    name,
+    title,
+    description,
+    tags: [],
+    source_url: null,
+    representation: "api_json",
+    operations: ["list"],
+    query_support: null,
+    requires_service_key: requiresServiceKey,
+  };
+}
+
 const MOCK_CATALOG: CatalogResponse = {
   providers: [
     {
       name: "datago",
       datasets: [
-        { name: "air_quality", title: "대기오염 정보", requires_service_key: true },
-        { name: "apt_trade", title: "아파트 실거래가", requires_service_key: true },
-        { name: "dur_product_info", title: "DUR 품목정보", requires_service_key: false },
+        dataset("air_quality", "대기오염 정보", true),
+        dataset("apt_trade", "아파트 실거래가", true),
+        dataset("dur_product_info", "DUR 품목정보", false),
       ],
     },
     {
       name: "kosis",
       datasets: [
-        { name: "population_stat", title: "인구총조사", requires_service_key: false },
+        dataset("population_stat", "인구총조사", false),
       ],
     },
     {
       name: "seoul",
       datasets: [
-        { name: "bike_rental", title: "따릉이 대여 현황", requires_service_key: true },
+        dataset("bike_rental", "따릉이 대여 현황", true),
       ],
     },
   ],
