@@ -19,16 +19,30 @@ const CATALOG: CatalogResponse = {
     {
       name: "datago",
       datasets: [
-        { name: "air_quality", title: "대기오염 정보", requires_service_key: true },
-        { name: "dur_product_info", title: "DUR 품목정보", requires_service_key: false },
+        dataset("air_quality", "대기오염 정보", true),
+        dataset("dur_product_info", "DUR 품목정보", false),
       ],
     },
     {
       name: "seoul",
-      datasets: [{ name: "bike_rental", title: "따릉이 대여 현황", requires_service_key: true }],
+      datasets: [dataset("bike_rental", "따릉이 대여 현황", true)],
     },
   ],
 };
+
+function dataset(name: string, title: string, requiresServiceKey: boolean) {
+  return {
+    name,
+    title,
+    description: null,
+    tags: [],
+    source_url: null,
+    representation: "api_json" as const,
+    operations: ["list" as const],
+    query_support: null,
+    requires_service_key: requiresServiceKey,
+  };
+}
 
 describe("flattenCatalog", () => {
   it("flattens every provider's datasets into one list, keeping the provider name attached", () => {
