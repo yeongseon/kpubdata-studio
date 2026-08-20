@@ -7,6 +7,8 @@
  * localStorage 접근 실패(SSR/프라이빗 모드 등)도 안전한 기본값(null/false)으로 폴백한다.
  */
 /** 기본 초안 저장 키(New Build Wizard). 다른 초안 흐름(Add Data 등)은 별도 key를 넘긴다(#250). */
+import { ownedStorageKey } from "@/features/auth/storageOwner";
+
 const DRAFT_KEY = "kpubdata-studio:new-build-draft";
 
 /** 초안 봉투 스키마 버전. 호환되지 않게 형태가 바뀌면 올린다. */
@@ -32,7 +34,7 @@ interface DraftValidator<T> {
  *
  * @param value - 직렬화 가능한 초안 값.
  */
-export function saveDraft<T>(value: T, key: string = DRAFT_KEY): void {
+export function saveDraft<T>(value: T, key: string = ownedStorageKey(DRAFT_KEY)): void {
   try {
     const envelope: DraftEnvelope<T> = {
       version: DRAFT_VERSION,
@@ -55,7 +57,7 @@ export function saveDraft<T>(value: T, key: string = DRAFT_KEY): void {
  * @param key - 초안 저장 key(선택). 미제공 시 New Build Wizard 기본 key를 쓴다.
  * @returns 저장된 초안 값 또는 null.
  */
-export function loadDraft<T>(validator?: DraftValidator<T>, key: string = DRAFT_KEY): T | null {
+export function loadDraft<T>(validator?: DraftValidator<T>, key: string = ownedStorageKey(DRAFT_KEY)): T | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
@@ -89,7 +91,7 @@ export function loadDraft<T>(validator?: DraftValidator<T>, key: string = DRAFT_
  *
  * @param key - 초안 저장 key(선택). 미제공 시 New Build Wizard 기본 key를 쓴다.
  */
-export function clearDraft(key: string = DRAFT_KEY): void {
+export function clearDraft(key: string = ownedStorageKey(DRAFT_KEY)): void {
   try {
     localStorage.removeItem(key);
   } catch {
@@ -103,7 +105,7 @@ export function clearDraft(key: string = DRAFT_KEY): void {
  * @param key - 초안 저장 key(선택). 미제공 시 New Build Wizard 기본 key를 쓴다.
  * @returns 초안 존재 여부.
  */
-export function hasDraft(key: string = DRAFT_KEY): boolean {
+export function hasDraft(key: string = ownedStorageKey(DRAFT_KEY)): boolean {
   try {
     return localStorage.getItem(key) !== null;
   } catch {

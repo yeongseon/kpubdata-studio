@@ -13,6 +13,7 @@ import { listBuilds } from "@/features/runs/api";
 import { listReportSummaries } from "@/features/reports/repository";
 import type { ReportSummary } from "@/features/reports/types";
 import {
+  clearAllSavedSpecs,
   deleteSavedSpec,
   duplicateSavedSpec,
   listSavedSpecSummaries,
@@ -156,6 +157,17 @@ export function WorkspacePage() {
     refreshLocal();
   }
 
+  function handleClearAllSpecs() {
+    if (
+      !window.confirm(
+        "현재 로그인 사용자의 Saved BuildSpec을 모두 삭제하시겠습니까? 되돌릴 수 없습니다.",
+      )
+    )
+      return;
+    clearAllSavedSpecs();
+    refreshLocal();
+  }
+
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
       <PageHeader
@@ -237,7 +249,23 @@ export function WorkspacePage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <PageHeader eyebrow="Saved BuildSpecs" title="저장한 BuildSpec" className="mb-0" />
+        <PageHeader
+          eyebrow="Saved BuildSpecs"
+          title="저장한 BuildSpec"
+          className="mb-0"
+          actions={
+            savedSpecSummaries.length > 0 ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                onClick={handleClearAllSpecs}
+              >
+                전체 삭제
+              </Button>
+            ) : undefined
+          }
+        />
 
         {actionError ? <ErrorState className="py-4" message={actionError} /> : null}
 

@@ -6,6 +6,8 @@
  * Reports 진입점으로 연결"하는 최소 handoff만 제공한다. `draftStorage.ts`와 동일한
  * `{version, data, savedAt}` 봉투 규약을 따른다.
  */
+import { ownedStorageKey } from "@/features/auth/storageOwner";
+
 export interface KubiReportNote {
   note: string;
   reason: string;
@@ -25,7 +27,7 @@ interface InboxEnvelope {
 function readEnvelope(): InboxEnvelope {
   const empty: InboxEnvelope = { version: INBOX_VERSION, notes: [] };
   try {
-    const raw = localStorage.getItem(INBOX_KEY);
+    const raw = localStorage.getItem(ownedStorageKey(INBOX_KEY));
     if (!raw) return empty;
     const parsed = JSON.parse(raw) as unknown;
     if (
@@ -50,7 +52,7 @@ export function queueKubiReportNote(note: KubiReportNote): void {
     if (envelope.notes.length > INBOX_LIMIT) {
       envelope.notes = envelope.notes.slice(envelope.notes.length - INBOX_LIMIT);
     }
-    localStorage.setItem(INBOX_KEY, JSON.stringify(envelope));
+    localStorage.setItem(ownedStorageKey(INBOX_KEY), JSON.stringify(envelope));
   } catch {
     // localStorage 사용 불가 시 무시.
   }
@@ -76,7 +78,7 @@ export function removeKubiReportNote(note: KubiReportNote): void {
     );
     if (index === -1) return;
     envelope.notes.splice(index, 1);
-    localStorage.setItem(INBOX_KEY, JSON.stringify(envelope));
+    localStorage.setItem(ownedStorageKey(INBOX_KEY), JSON.stringify(envelope));
   } catch {
     // localStorage 사용 불가 시 무시.
   }

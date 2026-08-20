@@ -15,6 +15,7 @@
  */
 import { buildSpecSchema } from "@/shared/lib/schemas";
 import type { BuildSpec } from "@/shared/lib/types";
+import { ownedStorageKey } from "@/features/auth/storageOwner";
 
 const SPEC_STORE_KEY = "kpubdata-studio:build-specs";
 
@@ -51,7 +52,7 @@ interface SpecStoreEnvelope {
 function readEnvelope(): SpecStoreEnvelope {
   const empty: SpecStoreEnvelope = { version: SPEC_STORE_VERSION, entries: {} };
   try {
-    const raw = localStorage.getItem(SPEC_STORE_KEY);
+    const raw = localStorage.getItem(ownedStorageKey(SPEC_STORE_KEY));
     if (!raw) return empty;
     const parsed = JSON.parse(raw) as unknown;
     if (
@@ -79,7 +80,7 @@ function readEnvelope(): SpecStoreEnvelope {
  */
 function writeEnvelope(envelope: SpecStoreEnvelope): void {
   try {
-    localStorage.setItem(SPEC_STORE_KEY, JSON.stringify(envelope));
+    localStorage.setItem(ownedStorageKey(SPEC_STORE_KEY), JSON.stringify(envelope));
   } catch {
     // 용량 초과/사용 불가 시 무시.
   }
@@ -154,7 +155,7 @@ export function hasBuildSpec(runId: string): boolean {
  */
 export function clearBuildSpecs(): void {
   try {
-    localStorage.removeItem(SPEC_STORE_KEY);
+    localStorage.removeItem(ownedStorageKey(SPEC_STORE_KEY));
   } catch {
     // 무시.
   }

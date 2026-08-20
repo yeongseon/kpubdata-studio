@@ -10,6 +10,7 @@
  * 값이 로컬 저장소에 평문으로 남지 않게 한다.
  */
 import { redactSecrets } from "@/features/assistant/scrub";
+import { ownedStorageKey } from "@/features/auth/storageOwner";
 import type { BuildSpec } from "@/shared/lib/types";
 import {
   SAVED_SPEC_VERSION,
@@ -49,7 +50,7 @@ function isStorageAvailable(): boolean {
 function readEnvelope(): StoreEnvelope {
   if (!isStorageAvailable()) return emptyEnvelope();
   try {
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = localStorage.getItem(ownedStorageKey(STORE_KEY));
     if (!raw) return emptyEnvelope();
     const parsed = JSON.parse(raw) as unknown;
     if (
@@ -59,7 +60,7 @@ function readEnvelope(): StoreEnvelope {
       typeof (parsed as StoreEnvelope).specs !== "object" ||
       (parsed as StoreEnvelope).specs === null
     ) {
-      localStorage.removeItem(STORE_KEY);
+      localStorage.removeItem(ownedStorageKey(STORE_KEY));
       return emptyEnvelope();
     }
     return parsed as StoreEnvelope;
@@ -83,7 +84,7 @@ function writeEnvelope(envelope: StoreEnvelope): SaveResult {
     return { ok: false, reason: "BuildSpec을 저장 형식으로 변환하지 못했습니다." };
   }
   try {
-    localStorage.setItem(STORE_KEY, serialized);
+    localStorage.setItem(ownedStorageKey(STORE_KEY), serialized);
     return { ok: true, revision: 0 };
   } catch (cause) {
     const isQuota =
@@ -237,6 +238,20 @@ export function deleteSavedSpec(id: string): boolean {
   if (!envelope.specs[id]) return false;
   delete envelope.specs[id];
   return writeEnvelope(envelope).ok;
+}
+
+/**
+ * 현재 소유자(로그인 사용자 또는 anonymous)의 Saved BuildSpec을 전부 삭제한다 (#293).
+ * 다른 소유자 버킷은 건드리지 않는다.
+ */
+export function clearAllSavedSpecs(): boolean {
+  if (!isStorageAvailable()) return false;
+  try {
+    localStorage.removeItem(ownedStorageKey(STORE_KEY));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** 저장된 Saved BuildSpec이 있는지 확인한다(빈 상태 안내용). */

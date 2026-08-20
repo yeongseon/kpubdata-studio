@@ -11,6 +11,7 @@
  * "저장됨"이라고 잘못 표시하지 않도록 항상 명시적 결과를 반환한다(#258 §11, §12).
  */
 import { REPORT_VERSION, type ReportDraft, type ReportSummary } from "./types";
+import { ownedStorageKey } from "@/features/auth/storageOwner";
 
 const STORE_KEY = "kpubdata-studio:reports";
 export const STORE_VERSION = 1;
@@ -43,7 +44,7 @@ function isStorageAvailable(): boolean {
 function readEnvelope(): StoreEnvelope {
   if (!isStorageAvailable()) return emptyEnvelope();
   try {
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = localStorage.getItem(ownedStorageKey(STORE_KEY));
     if (!raw) return emptyEnvelope();
     const parsed = JSON.parse(raw) as unknown;
     if (
@@ -53,7 +54,7 @@ function readEnvelope(): StoreEnvelope {
       typeof (parsed as StoreEnvelope).reports !== "object" ||
       (parsed as StoreEnvelope).reports === null
     ) {
-      localStorage.removeItem(STORE_KEY);
+      localStorage.removeItem(ownedStorageKey(STORE_KEY));
       return emptyEnvelope();
     }
     return parsed as StoreEnvelope;
@@ -77,7 +78,7 @@ function writeEnvelope(envelope: StoreEnvelope): SaveResult {
     return { ok: false, reason: "Report 내용을 저장 형식으로 변환하지 못했습니다." };
   }
   try {
-    localStorage.setItem(STORE_KEY, serialized);
+    localStorage.setItem(ownedStorageKey(STORE_KEY), serialized);
     return { ok: true, revision: 0 };
   } catch (cause) {
     const isQuota =
