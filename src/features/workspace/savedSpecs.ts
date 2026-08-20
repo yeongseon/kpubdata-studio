@@ -194,7 +194,11 @@ export function createSavedSpec(input: CreateSavedSpecInput): { entry: SavedBuil
     revision: 0,
   };
   const result = saveSpec(entry, { force: true });
-  return { entry: result.ok ? { ...entry, revision: result.revision } : entry, result };
+  if (!result.ok) return { entry, result };
+  // saveSpec은 저장 시각을 새로 찍으므로, 저장된 정본을 그대로 돌려준다 —
+  // 생성 시각과 저장 시각이 어긋나면 caller가 updatedAt를 신뢰할 수 없다.
+  const stored = getSavedSpec(entry.id);
+  return { entry: stored ?? { ...entry, revision: result.revision }, result };
 }
 
 /** 이름만 바꿔 저장한다. */
