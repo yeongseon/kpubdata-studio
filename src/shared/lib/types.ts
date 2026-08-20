@@ -38,8 +38,22 @@ export interface BuildSpec {
   /** 산출물을 어떤 형식으로 내보낼지 정의한 대상 목록 */
   exports: ExportTarget[];
   /** 후속 단계에서 재사용할 메타데이터 키-값 사전 */
-  metadata: Record<string, string>;
+  metadata: Record<string, JsonValue>;
+  /**
+   * Studio 폼/YAML 에디터가 직접 모델링하지 않는 canonical 최상위 필드를 그대로
+   * 보존한다(#250). Builder BuildSpec은 `publish`/`splits`/`pii`/`license`/`quality`/
+   * `composition` 등 Studio가 아직 편집 UI를 제공하지 않는 필드를 허용하며,
+   * `additionalProperties: true`다. 이 값이 있으면 GUI가 손대지 않는 한 round-trip
+   * 중 유실되지 않도록 `toBuilderSpec`이 이 값을 먼저 펼치고 알려진 필드로 덮어쓴다.
+   */
+  extra?: Record<string, JsonValue>;
 }
+
+/** kind="public_api"(기본)/file/url 구분(#498). */
+export type SourceKind = "public_api" | "file" | "url";
+
+/** kind="file"/"url" source가 실제로 지원하는 포맷(Builder #498 계약 기준). */
+export type SourceFormat = "csv" | "json" | "jsonl" | "parquet";
 
 export interface SchemaContract {
   /** 반드시 존재해야 하는 컬럼 이름 목록 (Builder validate_table required_columns). */
@@ -51,22 +65,40 @@ export interface SchemaContract {
 }
 
 export interface SourceRef {
-  /** provider 어댑터 이름 */
-  provider: string;
-  /** provider 내부의 dataset 이름 또는 코드 */
-  dataset: string;
+  /**
+   * source 종류(#498, #250). 생략하면 Builder는 항상 "public_api"로 해석한다
+   * (하위 호환 — 기존 spec/테스트가 kind 없이도 그대로 동작).
+   */
+  kind?: SourceKind;
+  /** provider 어댑터 이름. kind="public_api"에서 필수. */
+  provider?: string;
+  /** provider 내부의 dataset 이름 또는 코드. kind="public_api"에서 필수. */
+  dataset?: string;
   params: Record<string, JsonValue>;
   /** 동일 provider/dataset을 여러 번 사용할 때 구분용 별칭 */
   alias?: string;
   /** 소스 스키마 계약 (VAL-1). undefined면 Silver 검증을 생략한다 (하위 호환). */
   schema?: SchemaContract;
+  /** kind="file"에서 필수. `POST /uploads`가 발급한 식별자(`upl_` + hex 32자). */
+  uploadId?: string;
+  /**
+   * 소스 content 포맷. kind="file"에서 필수(업로드 시 검증된 format과 일치해야
+   * 함), kind="url"에서는 선택(json/jsonl/csv만 허용, 생략 시 Content-Type로 추론).
+   */
+  format?: SourceFormat;
+  /** kind="file"에서 텍스트(csv/json/jsonl) 디코딩에 쓰는 인코딩. 기본 utf-8. */
+  encoding?: string;
+  /** kind="url"에서 필수. https만 허용(SSRF 정책, #498). */
+  endpoint?: string;
+  /** kind="url"에서만 쓰이며 P0는 GET만 허용한다. */
+  method?: "GET";
 }
 
 export interface ExportTarget {
   /** 결과물을 어떤 형식으로 내보낼지 결정하는 식별자 */
   format: string;
   /** 특정 export 형식에만 필요한 추가 옵션 집합 */
-  options?: Record<string, unknown>;
+  options?: Record<string, JsonValue>;
 }
 
 /** manifest 스키마 요약의 단일 컬럼 정보(Builder schema_summary.py FieldSummary). */

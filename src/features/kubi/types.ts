@@ -88,7 +88,8 @@ export interface KubiEvidence {
   buildSpecSummary?: {
     title: string;
     description: string;
-    sources: { provider: string; dataset: string; alias?: string; paramKeys: string[] }[];
+    // kind="file"/"url" source(#498)는 provider/dataset이 없다 — public_api만 채워진다.
+    sources: { provider?: string; dataset?: string; alias?: string; paramKeys: string[] }[];
     exportFormats: string[];
     metadataKeys: string[];
   };
