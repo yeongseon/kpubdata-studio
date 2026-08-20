@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useParams, useSearchParams } from "react-router-dom";
 import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
+import { parseSourceParams } from "@/features/build-spec/paramsInput";
 import { previewBuild } from "@/features/preview/api";
 import { useBuild } from "@/features/runs/useBuild";
 import { useBuildJob } from "@/features/runs/useBuildJob";
@@ -17,6 +18,7 @@ import { validateSpec } from "@/features/validation/api";
 import { createSavedSpec, getSavedSpec } from "@/features/workspace/savedSpecs";
 import type { SavedSpecValidation } from "@/features/workspace/types";
 import { builderApi, type CatalogDataset, type CatalogProvider } from "@/shared/lib/builderApi";
+import { providerLabel } from "@/shared/lib/providerLabels";
 import { buildFormValuesSchema, buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
 import type { BuildSpec } from "@/shared/lib/types";
 import {
@@ -34,19 +36,6 @@ import {
 } from "@/shared/ui";
 
 const exportFormats = exportFormatSchema.options;
-
-const PROVIDER_LABELS: Readonly<Record<string, string>> = {
-  bok: "한국은행 ECOS (BOK)",
-  datago: "공공데이터포털 (data.go.kr)",
-  kosis: "통계청 KOSIS",
-  krx: "한국거래소 (KRX)",
-  law: "국가법령정보센터",
-  localdata: "지역정보포털 (LocalData)",
-  lofin: "지방재정365 (LOFIN)",
-  semas: "소상공인시장진흥공단 (SEMAS)",
-  seoul: "서울 열린데이터광장",
-  sgis: "통계지리정보서비스 (SGIS)",
-};
 
 interface BuildFormValues {
   datasetId: string;
@@ -154,26 +143,6 @@ const STEP_FIELDS: Array<Array<keyof BuildFormValues>> = [
 ];
 
 /**
- * textarea의 JSON 파라미터 문자열을 `Record<string, string>`으로 정규화한다.
- *
- * @param sourceParams - 사용자가 입력한 JSON 문자열.
- * @returns 파싱된 객체 또는 한국어 오류 메시지.
- */
-function parseSourceParams(sourceParams: string) {
-  try {
-    const parsed = JSON.parse(sourceParams) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { error: "파라미터는 JSON 객체여야 합니다. 예: {\"region\": \"seoul\"}" };
-    }
-    const entries = Object.entries(parsed);
-    const values = Object.fromEntries(entries.map(([key, value]) => [key, String(value)]));
-    return { data: values };
-  } catch {
-    return { error: "파라미터가 올바른 JSON이 아닙니다. 형식을 확인하세요." };
-  }
-}
-
-/**
  * 폼 입력값으로 BuildSpec 후보를 만들고 zod로 검증한다.
  *
  * 폼은 소스 하나와 outputPath만 다루지만, 편집 대상 스펙은 소스를 여럿 갖거나 폼에
@@ -230,13 +199,15 @@ function toFormValues(spec: BuildSpec): BuildFormValues {
     datasetId: spec.datasetId,
     title: spec.title,
     description: spec.description,
-    provider: firstSource.provider,
-    sourceDataset: firstSource.dataset,
+    // New Build Wizard는 kind="public_api" source만 편집한다(file/url은 #250 Add Data
+    // Workbench 전용) — provider/dataset이 없는 소스를 불러오면 빈 문자열로 대체한다.
+    provider: firstSource.provider ?? "",
+    sourceDataset: firstSource.dataset ?? "",
     sourceParams: Object.keys(firstSource.params).length > 0
       ? JSON.stringify(firstSource.params, null, 2)
       : "{}",
     exportFormats: spec.exports.map((e) => e.format),
-    outputPath: spec.metadata.outputPath ?? "",
+    outputPath: typeof spec.metadata.outputPath === "string" ? spec.metadata.outputPath : "",
   };
 }
 
@@ -258,10 +229,6 @@ type CatalogState =
   | { readonly status: "loading"; readonly providers: readonly CatalogProvider[]; readonly error?: undefined }
   | { readonly status: "loaded"; readonly providers: readonly CatalogProvider[]; readonly error?: undefined }
   | { readonly status: "error"; readonly providers: readonly CatalogProvider[]; readonly error: string };
-
-function providerLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider;
-}
 
 function catalogProvider(providers: readonly CatalogProvider[], provider: string): CatalogProvider | undefined {
   return providers.find((entry) => entry.name === provider);

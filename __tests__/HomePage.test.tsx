@@ -4,21 +4,23 @@ import { describe, expect, it } from "vitest";
 import { HomePage } from "@/pages/HomePage";
 
 describe("HomePage", () => {
-  it("renders the Korean dashboard heading and status summary", () => {
+  it("renders the existing-user dashboard heading and KPI summary once builds load (#248)", async () => {
     render(
       <MemoryRouter>
         <HomePage />
       </MemoryRouter>,
     );
 
+    // mock 빌드 이력에 성공한 빌드가 있어 기존 사용자 대시보드(ExistingUserHome)가 렌더된다.
     expect(
-      screen.getByRole("heading", {
-        name: /공공데이터 수집부터 결과물 생성까지 한 번에 관리하세요/,
+      await screen.findByRole("heading", {
+        name: "작업 현황을 한눈에 확인하세요",
       }),
     ).toBeInTheDocument();
-    // 상태 요약 카드 라벨(실행 상태 기반)
-    expect(screen.getByText("실행 중")).toBeInTheDocument();
-    expect(screen.getByText("성공")).toBeInTheDocument();
+    // 상태 요약 KPI 카드 라벨
+    expect(screen.getByText("DATASETS")).toBeInTheDocument();
+    expect(screen.getByText("BUILD SUCCESS")).toBeInTheDocument();
+    expect(screen.getByText("RUNNING")).toBeInTheDocument();
   });
 
   it("loads recent builds from the mock builder data", async () => {
@@ -30,9 +32,9 @@ describe("HomePage", () => {
 
     // 데모 빌드 이력이 최근 빌드 목록에 표시된다.
     expect(await screen.findByText("대기오염 정보")).toBeInTheDocument();
-    // 빠른 시작 카드의 새 빌드 링크
+    // 각 빌드 행에서 상세로 이동하는 링크가 있다.
     expect(
-      screen.getAllByRole("link", { name: /새 빌드 만들기/ }).length,
+      screen.getAllByRole("link", { name: "보기" }).length,
     ).toBeGreaterThanOrEqual(1);
   });
 });

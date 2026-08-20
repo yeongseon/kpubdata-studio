@@ -19,6 +19,7 @@ import { DatasetDetailPage } from "@/pages/DatasetDetailPage";
 import { DiscoverPage } from "@/pages/DiscoverPage";
 import { HomePage } from "@/pages/HomePage";
 import { KubiPage } from "@/pages/KubiPage";
+import { LoginPage } from "@/pages/LoginPage";
 import { MonitoringPage } from "@/pages/MonitoringPage";
 import { NewBuildPage } from "@/pages/NewBuildPage";
 import { PreviewPage } from "@/pages/PreviewPage";
@@ -27,6 +28,7 @@ import { QualityPage } from "@/pages/QualityPage";
 import { ReportEditorPage } from "@/pages/ReportEditorPage";
 import { ReportsPage } from "@/pages/ReportsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { SignupPage } from "@/pages/SignupPage";
 import { ValidatePage } from "@/pages/ValidatePage";
 import { WorkspacePage } from "@/pages/WorkspacePage";
 
@@ -51,6 +53,16 @@ function withFeatureBoundary(feature: string, element: ReactElement): ReactEleme
  * @returns 각 경로별 렌더링 규칙을 담은 브라우저 라우터 인스턴스.
  */
 export const router = createBrowserRouter([
+    // Login/Signup(#263)은 App Shell(사이드바/헤더) 밖의 독립 화면이라 Layout의 children이
+    // 아니라 최상위 형제 라우트로 둔다 — 로그인 전 상태에는 아직 보여줄 워크스페이스 셸이 없다.
+    {
+      path: "/login",
+      element: <LoginPage />,
+    },
+    {
+      path: "/signup",
+      element: <SignupPage />,
+    },
     {
       path: "/",
       element: <Layout />,
@@ -60,8 +72,8 @@ export const router = createBrowserRouter([
         index: true,
         element: withFeatureBoundary("홈", <HomePage />),
       },
-      // 새 IA(#247)의 WORKSPACE 그룹. Discover/Workspace는 아직 placeholder이며
-      // #249/#260에서 실제 화면으로 교체된다.
+      // 새 IA(#247)의 WORKSPACE 그룹. Discover는 #249에서 구현됨. Workspace는 아직
+      // placeholder이며 #260에서 실제 화면으로 교체된다.
       {
         path: "discover",
         element: withFeatureBoundary("Discover", <DiscoverPage />),

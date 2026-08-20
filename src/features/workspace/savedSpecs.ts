@@ -108,7 +108,9 @@ function firstSourceProvider(spec: BuildSpec): string {
 }
 
 function outputPath(spec: BuildSpec): string {
-  return spec.metadata.outputPath ?? "";
+  // metadata는 JsonValue 사전(#250)이므로 string으로 좁혀서만 읽는다(표시용 요약).
+  const value = spec.metadata.outputPath;
+  return typeof value === "string" ? value : "";
 }
 
 /** 저장된 Saved BuildSpec 목록을 최근 수정 순으로 요약해 반환한다. */

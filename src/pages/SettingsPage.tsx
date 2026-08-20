@@ -5,6 +5,7 @@
  * `/version`을 호출해 계약 버전 호환성을 점검한다(#29).
  */
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { API_BASE } from "@/shared/config/env";
 import {
   API_CONTRACT_VERSION,
@@ -128,9 +129,17 @@ export function SettingsPage() {
                 </button>
               </div>
             ) : (
-              <p className="text-muted-foreground">
-                로그인되지 않았습니다. 실연동 모드에서는 Builder 호출을 위해 Google 로그인이 필요합니다.
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-muted-foreground">
+                  로그인되지 않았습니다. 실연동 모드에서는 Builder 호출을 위해 로그인이 필요합니다.
+                </p>
+                <Link
+                  to="/login"
+                  className="shrink-0 rounded-lg border border-border px-3 py-1 text-xs font-medium text-accent-subtle-foreground hover:bg-muted"
+                >
+                  로그인
+                </Link>
+              </div>
             )}
           </div>
         </Card>

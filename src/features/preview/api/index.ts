@@ -97,6 +97,54 @@ export async function previewBuild(spec: BuildSpec, signal?: AbortSignal): Promi
     return { rows: MOCK_ROWS, schema: MOCK_SCHEMA, warnings: [] };
   }
 
-  const response = await builderApi.preview(serializeSpec(spec), signal);
+  const response = await builderApi.preview(serializeSpec(spec), undefined, signal);
   return transformPreviewResponse(response);
+}
+
+/**
+ * 현재 빌드 스펙으로 Builder `/preview`의 전체 응답(소스별 statistics/quality_results/
+ * diff 포함)을 요청한다 (#497, #250). `previewBuild`는 단일 대표 소스를 `{rows,schema}`로
+ * 평탄화하지만, Add Data Workbench의 Preview & Validation/Diff 화면은 소스별 원본
+ * 응답 전체(diff_available/sample_mode/quality_results 등)가 그대로 필요해 별도로 둔다.
+ *
+ * mock 모드에서는 네트워크를 타지 않고 결정적 mock 응답을 반환한다.
+ *
+ * @param spec - 미리보기를 생성할 대상 빌드 스펙.
+ * @param options - limit(1~1000, 기본 5)/sample_mode(first|random)/seed.
+ * @param signal - 취소용 AbortSignal(선택).
+ * @returns Builder `/preview`의 원본(Zod 검증된) 응답.
+ */
+export async function previewBuildDetailed(
+  spec: BuildSpec,
+  options?: { limit?: number; sample_mode?: "first" | "random"; seed?: number },
+  signal?: AbortSignal,
+): Promise<PreviewResponse> {
+  if (!isRealBuilderEnabled()) {
+    return {
+      dataset_id: spec.datasetId,
+      previews: [
+        {
+          source_key: spec.sources[0]?.alias || spec.sources[0]?.dataset || "source",
+          status: "ok",
+          error: null,
+          schema: [
+            { name: "region", dtype: "string", nullable: false, unique_count: 3 },
+            { name: "value", dtype: "int64", nullable: true, unique_count: 3 },
+          ],
+          sample: MOCK_ROWS,
+          total_rows: MOCK_ROWS.length,
+          statistics: { row_count: MOCK_ROWS.length, null_counts: { region: 0, value: 0 }, duplicate_rate: 0 },
+          quality_results: [],
+          source_sample: MOCK_ROWS,
+          sample_mode: options?.sample_mode ?? "first",
+          diff_available: false,
+          diffs: [],
+          transform_summary: null,
+          diff_truncated: false,
+        },
+      ],
+    };
+  }
+
+  return builderApi.preview(serializeSpec(spec), options, signal);
 }
