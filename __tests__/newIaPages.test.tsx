@@ -18,14 +18,6 @@ function renderPage(element: ReactNode) {
 }
 
 describe("새 IA placeholder 화면 (#247)", () => {
-  it.each([
-    [<MonitoringPage />, "모니터링"],
-  ])("renders its title and a 준비 중 안내 without crashing", (element, title) => {
-    renderPage(element);
-    expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
-    expect(screen.getByText("아직 준비 중인 화면입니다")).toBeInTheDocument();
-  });
-
   it("Workspace is replaced with the real Recent Work/Saved BuildSpecs screen (#260)", () => {
     renderPage(<WorkspacePage />);
     expect(screen.getByRole("heading", { name: "작업대" })).toBeInTheDocument();
@@ -35,6 +27,12 @@ describe("새 IA placeholder 화면 (#247)", () => {
   it("Discover is replaced with the real catalog search/filter screen (#249)", () => {
     renderPage(<DiscoverPage />);
     expect(screen.getByRole("heading", { name: "데이터 탐색" })).toBeInTheDocument();
+    expect(screen.queryByText("아직 준비 중인 화면입니다")).not.toBeInTheDocument();
+  });
+
+  it("Monitoring is replaced with the real system/build statistics screen (#264)", async () => {
+    renderPage(<MonitoringPage />);
+    expect(await screen.findByRole("heading", { name: "시스템 모니터링" })).toBeInTheDocument();
     expect(screen.queryByText("아직 준비 중인 화면입니다")).not.toBeInTheDocument();
   });
 
