@@ -6,11 +6,24 @@
  * - 자동/수동 새로고침 기능
  * - 데이터 연동 테스트
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MonitoringPage } from "@/pages/MonitoringPage";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
+import type { MonitoringResponse } from "@/shared/lib/builderApi.schema";
+
+// 이 저장소는 @testing-library/user-event 의존성을 쓰지 않는다(fireEvent 컨벤션).
+// 테스트 본문의 `await user.click(...)` 표현을 그대로 유지하기 위한 얇은 어댑터다.
+function setupUserEvent() {
+  return {
+    user: {
+      click: async (element: Element) => {
+        fireEvent.click(element);
+      },
+    },
+  };
+}
 
 vi.mock("@/shared/lib/builderApi", () => ({
   isRealBuilderEnabled: vi.fn(() => false),
@@ -66,22 +79,23 @@ describe("MonitoringPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "System Resources" })).toHaveClass(
-        expect.stringContaining("border-b-2")
+      expect(screen.getByRole("button", { name: "System Resources" }).className).toContain(
+        "border-b-2"
       );
     });
 
     await user.click(screen.getByRole("button", { name: "Build Statistics" }));
 
-    expect(screen.getByRole("button", { name: "Build Statistics" })).toHaveClass(
-      expect.stringContaining("border-b-2")
+    expect(screen.getByRole("button", { name: "Build Statistics" }).className).toContain(
+      "border-b-2"
     );
-    expect(screen.getByRole("button", { name: "System Resources" })).not.toHaveClass(
-      expect.stringContaining("border-b-2")
+    expect(screen.getByRole("button", { name: "System Resources" }).className).not.toContain(
+      "border-b-2"
     );
   });
 
   it("loading 상태를 올바르게 표시한다", async () => {
+    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
     vi.mocked(builderApi.getMonitoring).mockImplementation(
       () => new Promise(() => {})
     );
@@ -93,11 +107,12 @@ describe("MonitoringPage", () => {
     );
 
     expect(screen.getAllByText("데이터 로드 중...")).toHaveLength(1);
-    expect(screen.getAllByRole("progressbar")).toHaveLength(5);
+    // Skeleton은 aria-hidden이라 role로 잡히지 않는다 — 시각적 skeleton 블록 수로 확인한다.
+    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
   });
 
   it("데이터 로드 후 system 리소스를 올바르게 표시한다", async () => {
-    const mockResponse = {
+    const mockResponse: MonitoringResponse = {
       system: {
         health: {
           status: "healthy",
@@ -165,7 +180,8 @@ describe("MonitoringPage", () => {
   });
 
   it("수동 새로고침 버튼이 작동한다", async () => {
-    const mockResponse = {
+    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
+    const mockResponse: MonitoringResponse = {
       system: {
         health: {
           status: "healthy",
@@ -209,6 +225,7 @@ describe("MonitoringPage", () => {
   });
 
   it("API 에러 시 error state를 올바르게 표시한다", async () => {
+    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
     vi.mocked(builderApi.getMonitoring).mockRejectedValue(new Error("API Error"));
 
     render(
@@ -223,7 +240,8 @@ describe("MonitoringPage", () => {
   });
 
   it("빈 데이터일 때 empty state를 올바르게 표시한다", async () => {
-    const mockResponse = {
+    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
+    const mockResponse: MonitoringResponse = {
       system: {
         health: {
           status: "healthy",
@@ -247,11 +265,15 @@ describe("MonitoringPage", () => {
 
     vi.mocked(builderApi.getMonitoring).mockResolvedValue(mockResponse);
 
+    const { user } = setupUserEvent();
+
     render(
       <MemoryRouter>
         <MonitoringPage />
       </MemoryRouter>,
     );
+
+    await user.click(await screen.findByRole("button", { name: "Build Statistics" }));
 
     await waitFor(() => {
       expect(screen.getByText(/빌드 기록이 없습니다/)).toBeInTheDocument();
@@ -259,7 +281,8 @@ describe("MonitoringPage", () => {
   });
 
   it("recent runs 탭에서 데이터를 올바르게 표시한다", async () => {
-    const mockResponse = {
+    vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
+    const mockResponse: MonitoringResponse = {
       system: {
         health: {
           status: "healthy",
@@ -314,7 +337,7 @@ describe("MonitoringPage", () => {
   it("실연동 모드에서는 builderApi를 호출한다", async () => {
     vi.mocked(isRealBuilderEnabled).mockReturnValue(true);
 
-    const mockResponse = {
+    const mockResponse: MonitoringResponse = {
       system: {
         health: {
           status: "healthy",

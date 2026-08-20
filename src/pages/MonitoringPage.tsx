@@ -27,6 +27,8 @@ import {
   Skeleton,
   PageHeader,
   Button,
+  LinkButton,
+  type StatusValue,
 } from "@/shared/ui";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type {
@@ -41,20 +43,19 @@ import type {
 
 type TabType = "system" | "builds" | "recent-runs";
 
-type TabType = "system" | "builds";
 type LoadingState = "idle" | "loading" | "success" | "error";
 
 export function MonitoringPage() {
   const [activeTab, setActiveTab] = useState<TabType>("system");
   const [loading, setLoading] = useState<LoadingState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<MonitoringData | null>(null);
+  const [data, setData] = useState<MonitoringResponse | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   const [isPageVisible, setIsPageVisible] = useState(true);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const previousHealthRef = string | null>(null);
+  const previousHealthRef = useRef<string | null>(null);
 
   const fetchMonitoringData = useCallback(async () => {
     if (!isPageVisible) return;
@@ -708,9 +709,9 @@ function RecentRunsTab({
               {run.duration !== null ? `${run.duration}초` : "—"}
             </div>
             <div className="text-right">
-              <Button variant="secondary" size="sm" asChild>
-                <a href={`/builds/${run.id}`}>보기</a>
-              </Button>
+              <LinkButton variant="secondary" size="sm" to={`/builds/${run.id}`}>
+                보기
+              </LinkButton>
             </div>
           </li>
         ))}

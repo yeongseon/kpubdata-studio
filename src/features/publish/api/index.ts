@@ -1,75 +1,101 @@
-/**
- * 게시(publish) 워크플로 API 진입점 (#9).
- *
- * 빌드 결과를 외부 배포 대상(로컬/HuggingFace/GitHub)에 게시한다. Builder service가
- * 아직 publish 엔드포인트를 노출하지 않으므로 현재는 결정적 mock 결과를 반환한다.
- * Builder publish 엔드포인트가 생기면 이 함수만 실제 호출로 교체한다.
- */
-import { isRealBuilderEnabled } from "@/shared/lib/builderApi";
-import type { BuildSpec } from "@/shared/lib/types";
+/** Builder PR #547의 publish HTTP 계약을 Studio 공용 API 계층에 연결한다. */
+import {
+  ApiError,
+  builderApi,
+  type PublishErrorCode,
+  type PublishReadinessResponse,
+  type PublishRequest,
+  type PublishResponse,
+  type PublishTarget,
+} from "@/shared/lib/builderApi";
 
-/**
- * 게시 대상. Builder의 `PUBLISHER_REGISTRY` 키와 일치해야 한다.
- *
- * Builder가 실제로 제공하는 publisher는 local / huggingface / kaggle 세 가지다.
- * 이전에는 여기에 "github"가 있었지만 Builder에 대응 publisher가 없어, 사용자가 고를 수
- * 있는데 실행은 불가능한 선택지였다 (#120).
- */
-export type PublishDestination = "local" | "huggingface" | "kaggle";
+export type {
+  PublishIssue,
+  PublishReadinessResponse,
+  PublishRequest,
+  PublishResponse,
+  PublishTarget,
+} from "@/shared/lib/builderApi";
 
-export interface PublishResult {
-  /** 게시 결과 상태 */
-  status: "published" | "failed";
-  /** 게시된 결과물 위치(로컬은 없음) */
-  url?: string;
-  /** 실패 시 메시지 */
-  error?: string;
+const HUGGING_FACE_DESTINATION =
+  /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
+
+export function validatePublishDestination(destination: string): string | undefined {
+  if (!destination.trim()) return "Hugging Face destination을 입력하세요.";
+  if (!HUGGING_FACE_DESTINATION.test(destination)) {
+    return "destination은 owner/dataset 형식이어야 합니다.";
+  }
+  return undefined;
 }
 
-/**
- * 빌드 결과를 선택한 대상에 게시한다.
- *
- * Builder service(`service/app.py`)는 `/version`, `/validate`, `/preview`, `/build`,
- * `/artifacts/{run_id}`, `/builds`만 노출하며 publish 엔드포인트가 없다. 게시 로직 자체는
- * Builder CLI(`kpubdata publish`)와 `PUBLISHER_REGISTRY`에 존재하지만 HTTP로는 닿을 수 없다.
- *
- * 따라서 실연동 모드에서 성공을 반환하면 아무 일도 일어나지 않았는데 게시된 것처럼 보인다.
- * 이는 이슈 #120이 지적한 문제이므로, 여기서는 성공을 가장하지 않고 실패 사유를 그대로
- * 돌려준다. Builder에 `POST /publish`가 추가되면 이 분기를 실제 호출로 교체한다.
- *
- * @param buildId - 게시할 빌드 실행 ID.
- * @param destination - 배포 대상.
- * @param signal - 취소용 AbortSignal(선택).
- * @returns 게시 결과(상태 + 결과 링크).
- */
-export async function publishBuild(
-  buildId: string,
-  destination: PublishDestination,
+export function getPublishReadiness(
+  runId: string,
+  target: PublishTarget = "huggingface",
   signal?: AbortSignal,
-): Promise<PublishResult> {
-  // 이미 취소된 신호로 호출되면 취소 흐름이 일관되게 동작하도록 AbortError를 던진다.
-  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+): Promise<PublishReadinessResponse> {
+  return builderApi.getPublishReadiness(runId, target, signal);
+}
 
-  if (isRealBuilderEnabled()) {
-    return {
-      status: "failed",
-      error:
-        "Builder에 게시 엔드포인트가 없어 실제 게시를 수행할 수 없습니다. " +
-        "현재는 Builder CLI(kpubdata publish)로만 게시할 수 있습니다.",
-    };
+export function publishBuild(
+  runId: string,
+  request: PublishRequest,
+  signal?: AbortSignal,
+): Promise<PublishResponse> {
+  return builderApi.publishBuild(runId, request, signal);
+}
+
+export type PublishFailureKind = PublishErrorCode | "forbidden" | "not_found" | "network" | "invalid_request" | "readiness_changed" | "unknown";
+
+export interface PublishFailure {
+  kind: PublishFailureKind;
+  message: string;
+}
+
+function errorCode(cause: ApiError): PublishErrorCode | undefined {
+  if (!cause.details || typeof cause.details !== "object") return undefined;
+  const code = (cause.details as { code?: unknown }).code;
+  if (
+    code === "unsupported_target" ||
+    code === "publish_in_progress" ||
+    code === "publish_state_unknown" ||
+    code === "publish_conflict" ||
+    code === "publish_failed"
+  ) return code;
+  return undefined;
+}
+
+/** 서버 원문/HTML/secret을 화면에 되비추지 않고 stable status/code만 번역한다. */
+export function describePublishFailure(cause: unknown): PublishFailure {
+  if (!(cause instanceof ApiError)) {
+    return { kind: "unknown", message: "게시 요청을 완료하지 못했습니다." };
   }
 
-  // mock 모드에서는 게시 흐름 UI(진행/성공/취소)를 개발·검증할 수 있도록 성공을 반환한다.
-  // 실제 결과 URL이 없으므로 url은 비워 둔다(깨진 링크 방지).
-  void buildId;
-  void destination;
-  return { status: "published" };
+  const code = errorCode(cause);
+  if (code === "publish_in_progress") {
+    return { kind: code, message: "같은 게시 작업이 이미 진행 중입니다." };
+  }
+  if (code === "publish_state_unknown") {
+    return { kind: code, message: "이전 게시 결과를 확인할 수 없어 자동 재시도가 차단되었습니다. Builder 운영자에게 상태 확인을 요청하세요." };
+  }
+  if (code === "publish_conflict") {
+    return { kind: code, message: "같은 Run과 destination이 다른 공개 설정으로 이미 게시되었습니다." };
+  }
+  if (code === "publish_failed" || cause.status === 502) {
+    return { kind: code ?? "unknown", message: "외부 게시 서비스에서 작업을 완료하지 못했습니다. 결과가 불명확할 수 있으므로 자동 재시도하지 않습니다." };
+  }
+  if (cause.status === 409) return { kind: "readiness_changed", message: "게시 직전 Builder 재검증에서 준비 상태가 변경되었습니다. readiness를 다시 확인하세요." };
+  if (cause.status === 403) return { kind: "forbidden", message: "이 Run을 게시할 권한이 없습니다." };
+  if (cause.status === 404) return { kind: "not_found", message: "선택한 Run을 Builder에서 찾을 수 없습니다." };
+  if (cause.status === 0 || cause.status === 408) return { kind: "network", message: "Builder 응답을 받지 못했습니다. 원격 게시 결과는 확인되지 않았습니다." };
+  if (cause.status === 400 || code === "unsupported_target") return { kind: code ?? "invalid_request", message: "게시 요청 형식이 Builder 계약과 일치하지 않습니다." };
+  return { kind: "unknown", message: "Builder에서 게시 요청을 완료하지 못했습니다." };
 }
 
-/** 게시 전 메타데이터 점검(필수 라이선스/제목 등). 누락 항목 메시지를 반환한다. */
-export function checkPublishReadiness(spec: Pick<BuildSpec, "title" | "metadata">): string[] {
-  const problems: string[] = [];
-  if (!spec.title.trim()) problems.push("제목이 필요합니다.");
-  if (!spec.metadata.license) problems.push("라이선스 정보가 필요합니다.");
-  return problems;
+export function isSafePublishReference(reference: string): boolean {
+  try {
+    const url = new URL(reference);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }

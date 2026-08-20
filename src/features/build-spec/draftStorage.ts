@@ -6,6 +6,7 @@
  * 버전과 (선택적) zod 스키마로 검증해 버전 불일치/손상된 값은 조용히 무시·정리한다.
  * localStorage 접근 실패(SSR/프라이빗 모드 등)도 안전한 기본값(null/false)으로 폴백한다.
  */
+/** 기본 초안 저장 키(New Build Wizard). 다른 초안 흐름(Add Data 등)은 별도 key를 넘긴다(#250). */
 const DRAFT_KEY = "kpubdata-studio:new-build-draft";
 
 /** 초안 봉투 스키마 버전. 호환되지 않게 형태가 바뀌면 올린다. */
@@ -31,14 +32,14 @@ interface DraftValidator<T> {
  *
  * @param value - 직렬화 가능한 초안 값.
  */
-export function saveDraft<T>(value: T): void {
+export function saveDraft<T>(value: T, key: string = DRAFT_KEY): void {
   try {
     const envelope: DraftEnvelope<T> = {
       version: DRAFT_VERSION,
       data: value,
       savedAt: new Date().toISOString(),
     };
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(envelope));
+    localStorage.setItem(key, JSON.stringify(envelope));
   } catch {
     // localStorage 사용 불가 시 무시.
   }
@@ -51,11 +52,12 @@ export function saveDraft<T>(value: T): void {
  * 손상된 값으로 보고 정리한 뒤 null을 반환한다.
  *
  * @param validator - 데이터를 검증할 zod 스키마(선택). 미제공 시 버전만 확인한다.
+ * @param key - 초안 저장 key(선택). 미제공 시 New Build Wizard 기본 key를 쓴다.
  * @returns 저장된 초안 값 또는 null.
  */
-export function loadDraft<T>(validator?: DraftValidator<T>): T | null {
+export function loadDraft<T>(validator?: DraftValidator<T>, key: string = DRAFT_KEY): T | null {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
     if (
@@ -64,14 +66,14 @@ export function loadDraft<T>(validator?: DraftValidator<T>): T | null {
       (parsed as DraftEnvelope<unknown>).version !== DRAFT_VERSION
     ) {
       // 버전 불일치/봉투 아님: 안전하게 정리.
-      clearDraft();
+      clearDraft(key);
       return null;
     }
     const data = (parsed as DraftEnvelope<unknown>).data;
     if (validator) {
       const result = validator.safeParse(data);
       if (!result.success) {
-        clearDraft();
+        clearDraft(key);
         return null;
       }
       return result.data;
@@ -84,10 +86,12 @@ export function loadDraft<T>(validator?: DraftValidator<T>): T | null {
 
 /**
  * 저장된 초안을 삭제한다.
+ *
+ * @param key - 초안 저장 key(선택). 미제공 시 New Build Wizard 기본 key를 쓴다.
  */
-export function clearDraft(): void {
+export function clearDraft(key: string = DRAFT_KEY): void {
   try {
-    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(key);
   } catch {
     // 무시.
   }
@@ -96,11 +100,12 @@ export function clearDraft(): void {
 /**
  * 저장된 초안이 존재하는지 확인한다.
  *
+ * @param key - 초안 저장 key(선택). 미제공 시 New Build Wizard 기본 key를 쓴다.
  * @returns 초안 존재 여부.
  */
-export function hasDraft(): boolean {
+export function hasDraft(key: string = DRAFT_KEY): boolean {
   try {
-    return localStorage.getItem(DRAFT_KEY) !== null;
+    return localStorage.getItem(key) !== null;
   } catch {
     return false;
   }

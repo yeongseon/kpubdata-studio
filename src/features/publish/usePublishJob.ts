@@ -1,59 +1,82 @@
-/**
- * 게시(publish) 작업을 상태 머신으로 관리하는 훅 (#9).
- *
- * idle → publishing → published/failed/cancelled. 취소(AbortController)를 지원하며,
- * Builder publish 엔드포인트가 비동기로 바뀌면 이 훅 내부만 폴링으로 확장한다.
- */
-import { useCallback, useRef, useState } from "react";
-import { publishBuild, type PublishDestination, type PublishResult } from "@/features/publish/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  describePublishFailure,
+  publishBuild,
+  type PublishFailure,
+  type PublishRequest,
+  type PublishResponse,
+} from "@/features/publish/api";
 
-export type PublishJobStatus = "idle" | "publishing" | "published" | "failed" | "cancelled";
+export type PublishJobStatus = "idle" | "publishing" | "published" | "failed" | "aborted";
 
 export interface PublishJob {
   status: PublishJobStatus;
-  result?: PublishResult;
-  error?: string;
-  start: (buildId: string, destination: PublishDestination) => Promise<void>;
-  cancel: () => void;
+  result?: PublishResponse;
+  failure?: PublishFailure;
+  start: (runId: string, request: PublishRequest) => Promise<void>;
+  stopWaiting: () => void;
+  reset: () => void;
 }
 
-/**
- * 게시 상태와 제어(start/cancel)를 제공하는 훅.
- *
- * @returns PublishJob 상태와 제어 함수.
- */
 export function usePublishJob(): PublishJob {
   const [status, setStatus] = useState<PublishJobStatus>("idle");
-  const [result, setResult] = useState<PublishResult>();
-  const [error, setError] = useState<string>();
+  const [result, setResult] = useState<PublishResponse>();
+  const [failure, setFailure] = useState<PublishFailure>();
   const controllerRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef(false);
+  const operationRef = useRef(0);
 
-  const start = useCallback(async (buildId: string, destination: PublishDestination) => {
+  const start = useCallback(async (runId: string, request: PublishRequest) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    const operation = ++operationRef.current;
     const controller = new AbortController();
     controllerRef.current = controller;
     setStatus("publishing");
-    setError(undefined);
+    setFailure(undefined);
     setResult(undefined);
     try {
-      const res = await publishBuild(buildId, destination, controller.signal);
-      if (controller.signal.aborted) return;
-      setResult(res);
-      setStatus(res.status === "published" ? "published" : "failed");
-      if (res.status !== "published") setError(res.error ?? "게시에 실패했습니다.");
+      const response = await publishBuild(runId, request, controller.signal);
+      if (controller.signal.aborted || operation !== operationRef.current) return;
+      if (response.run_id !== runId || response.target !== request.target) {
+        setStatus("failed");
+        setFailure({ kind: "unknown", message: "Builder 응답의 Run 또는 target이 요청과 일치하지 않습니다." });
+        return;
+      }
+      setResult(response);
+      setStatus("published");
     } catch (cause) {
+      if (operation !== operationRef.current) return;
       if (controller.signal.aborted) {
-        setStatus("cancelled");
+        setStatus("aborted");
         return;
       }
       setStatus("failed");
-      setError(cause instanceof Error ? cause.message : "게시에 실패했습니다.");
+      setFailure(describePublishFailure(cause));
+    } finally {
+      if (operation === operationRef.current) {
+        if (controllerRef.current === controller) controllerRef.current = null;
+        inFlightRef.current = false;
+      }
     }
   }, []);
 
-  const cancel = useCallback(() => {
+  const stopWaiting = useCallback(() => {
     controllerRef.current?.abort();
-    setStatus((current) => (current === "publishing" ? "cancelled" : current));
+    setStatus((current) => current === "publishing" ? "aborted" : current);
   }, []);
 
-  return { status, result, error, start, cancel };
+  const reset = useCallback(() => {
+    operationRef.current += 1;
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    inFlightRef.current = false;
+    setStatus("idle");
+    setResult(undefined);
+    setFailure(undefined);
+  }, []);
+
+  useEffect(() => () => controllerRef.current?.abort(), []);
+
+  return { status, result, failure, start, stopWaiting, reset };
 }
