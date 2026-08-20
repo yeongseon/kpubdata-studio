@@ -523,10 +523,18 @@ export const builderApi = {
    * SQL은 사용자가 명시적으로 실행을 선택했을 때만 호출해야 하며, 자동 재시도하지 않는다
    * (429/504가 이미 포화·타임아웃 신호이므로 재시도가 상황을 악화시킬 수 있다).
    */
-  query: (request: schemas.QueryRequest, signal?: AbortSignal) =>
+   query: (request: schemas.QueryRequest, signal?: AbortSignal) =>
+     apiFetch(
+       "/query",
+       { method: "POST", body: request, signal, retries: 0 },
+       schemas.queryResponseSchema,
+     ),
+
+  /** GET /monitoring — 시스템 리소스·Build 통계 monitoring 데이터 (#516). */
+  getMonitoring: (signal?: AbortSignal) =>
     apiFetch(
-      "/query",
-      { method: "POST", body: request, signal, retries: 0 },
-      schemas.queryResponseSchema,
+      "/monitoring",
+      { signal },
+      schemas.monitoringResponseSchema,
     ),
 };

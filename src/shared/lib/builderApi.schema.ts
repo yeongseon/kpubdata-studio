@@ -509,3 +509,71 @@ export type QualityAvailability = z.infer<typeof qualityAvailabilitySchema>;
 export type BuildQualityResponse = z.infer<typeof buildQualityResponseSchema>;
 export type DatasetQualityHistoryEntry = z.infer<typeof datasetQualityHistoryEntrySchema>;
 export type DatasetQualityHistoryResponse = z.infer<typeof datasetQualityHistoryResponseSchema>;
+
+/** Monitoring 관련 스키마 (#516) */
+
+const systemHealthSchema = z.object({
+  status: z.enum(["healthy", "degraded", "unavailable"]),
+  p95_latency: z.number().nullable(),
+});
+
+const queueStatsSchema = z.object({
+  queued: z.number(),
+  running: z.number(),
+  total: z.number(),
+});
+
+const workerStatsSchema = z.object({
+  active: z.number(),
+  capacity: z.number(),
+  utilization: z.number(),
+});
+
+const artifactStoreStatsSchema = z.object({
+  status: z.enum(["ok", "error", "unavailable"]),
+  last_write: z.string().datetime().nullable(),
+});
+
+const buildStatsSchema = z.object({
+  time: z.string(),
+  success: z.number(),
+  failed: z.number(),
+  cancelled: z.number(),
+});
+
+const recentRunSchema = z.object({
+  id: z.string(),
+  title: z.string().nullable(),
+  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+  started_at: z.string().datetime().nullable(),
+  finished_at: z.string().datetime().nullable(),
+  duration: z.number().nullable(),
+});
+
+const monitoringSystemSchema = z.object({
+  health: systemHealthSchema,
+  queue: queueStatsSchema.nullable(),
+  workers: workerStatsSchema.nullable(),
+  artifact_store: artifactStoreStatsSchema,
+});
+
+const monitoringBuildsSchema = z.object({
+  stats: z.array(buildStatsSchema),
+  total_success: z.number(),
+  total_failed: z.number(),
+  total_cancelled: z.number(),
+  recent_runs: z.array(recentRunSchema),
+});
+
+export const monitoringResponseSchema = z.object({
+  system: monitoringSystemSchema,
+  builds: monitoringBuildsSchema,
+});
+
+export type MonitoringResponse = z.infer<typeof monitoringResponseSchema>;
+export type SystemHealth = z.infer<typeof systemHealthSchema>;
+export type QueueStats = z.infer<typeof queueStatsSchema>;
+export type WorkerStats = z.infer<typeof workerStatsSchema>;
+export type ArtifactStoreStats = z.infer<typeof artifactStoreStatsSchema>;
+export type BuildStats = z.infer<typeof buildStatsSchema>;
+export type RecentRun = z.infer<typeof recentRunSchema>;

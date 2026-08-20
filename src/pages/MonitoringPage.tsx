@@ -28,63 +28,18 @@ import {
   PageHeader,
   Button,
 } from "@/shared/ui";
-import type { BuildRunStatus } from "@/shared/lib/types";
+import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
+import type {
+  MonitoringResponse,
+  SystemHealth,
+  QueueStats,
+  WorkerStats,
+  ArtifactStoreStats,
+  BuildStats,
+  RecentRun,
+} from "@/shared/lib/builderApi.schema";
 
 type TabType = "system" | "builds" | "recent-runs";
-
-interface SystemHealth {
-  status: "healthy" | "degraded" | "unavailable";
-  p95Latency: number | null;
-}
-
-interface QueueStats {
-  queued: number;
-  running: number;
-  total: number;
-}
-
-interface WorkerStats {
-  active: number;
-  capacity: number;
-  utilization: number;
-}
-
-interface ArtifactStoreStats {
-  status: "ok" | "error" | "unavailable";
-  lastWrite: string | null;
-}
-
-interface BuildStats {
-  time: string;
-  success: number;
-  failed: number;
-  cancelled: number;
-}
-
-interface RecentRun {
-  id: string;
-  title: string | null;
-  status: BuildRunStatus;
-  startedAt: string | null;
-  finishedAt: string | null;
-  duration: number | null;
-}
-
-interface MonitoringData {
-  system: {
-    health: SystemHealth;
-    queue: QueueStats | null;
-    workers: WorkerStats | null;
-    artifactStore: ArtifactStoreStats;
-  };
-  builds: {
-    stats: BuildStats[];
-    totalSuccess: number;
-    totalFailed: number;
-    totalCancelled: number;
-    recentRuns: RecentRun[];
-  };
-}
 
 type TabType = "system" | "builds";
 type LoadingState = "idle" | "loading" | "success" | "error";
@@ -108,25 +63,18 @@ export function MonitoringPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/monitoring");
+      let result: MonitoringResponse;
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error("unauthorized");
-        }
-        if (response.status === 403) {
-          throw new Error("monitoring-disabled");
-        }
-        throw new Error("Failed to fetch monitoring data");
+      if (isRealBuilderEnabled()) {
+        result = await builderApi.getMonitoring();
+      } else {
+        result = getMockData();
       }
-
-      const result = await response.json();
 
       setData(result);
       setLoading("success");
       setLastRefreshTime(new Date());
 
-      // 상태 변경 감지 및 알림
       const currentHealth = result.system.health.status;
       if (previousHealthRef.current && previousHealthRef.current !== currentHealth) {
         if (currentHealth === "degraded") {
@@ -301,7 +249,7 @@ export function MonitoringPage() {
       ) : activeTab === "builds" ? (
         <BuildStatisticsTab loading={loading} data={data?.builds} />
       ) : (
-        <RecentRunsTab loading={loading} data={data?.builds?.recentRuns} />
+        <RecentRunsTab loading={loading} data={data?.builds?.recent_runs} />
       )}
     </main>
   );
@@ -312,7 +260,7 @@ function SystemResourcesTab({
   data,
 }: {
   loading: LoadingState;
-  data: MonitoringData["system"] | undefined;
+  data: MonitoringResponse["system"] | undefined;
 }) {
   if (loading === "error") {
     return (
@@ -338,7 +286,7 @@ function SystemResourcesTab({
         <WorkerStatsCard stats={data.workers} />
       </div>
 
-      <ArtifactStoreCard stats={data.artifactStore} />
+      <ArtifactStoreCard stats={data.artifact_store} />
     </div>
   );
 }
@@ -348,7 +296,7 @@ function BuildStatisticsTab({
   data,
 }: {
   loading: LoadingState;
-  data: MonitoringData["builds"] | undefined;
+  data: MonitoringResponse["builds"] | undefined;
 }) {
   if (loading === "error") {
     return (
@@ -365,7 +313,7 @@ function BuildStatisticsTab({
     return <BuildStatisticsSkeleton />;
   }
 
-  const totalBuilds = data.totalSuccess + data.totalFailed + data.totalCancelled;
+  const totalBuilds = data.total_success + data.total_failed + data.total_cancelled;
 
   if (totalBuilds === 0) {
     return (
@@ -384,19 +332,19 @@ function BuildStatisticsTab({
         <Card className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">성공</span>
           <span className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
-            {data.totalSuccess}
+            {data.total_success}
           </span>
         </Card>
         <Card className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">실패</span>
           <span className="text-2xl font-semibold text-red-600 dark:text-red-400">
-            {data.totalFailed}
+            {data.total_failed}
           </span>
         </Card>
         <Card className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">취소</span>
           <span className="text-2xl font-semibold text-muted-foreground">
-            {data.totalCancelled}
+            {data.total_cancelled}
           </span>
         </Card>
       </div>
@@ -407,13 +355,6 @@ function BuildStatisticsTab({
 }
 
 function SystemHealthCard({ health }: { health: SystemHealth }) {
-  const status: StatusValue =
-    health.status === "healthy"
-      ? "succeeded"
-      : health.status === "degraded"
-      ? "invalid"
-      : "failed";
-
   const statusLabel =
     health.status === "healthy"
       ? "정상"
@@ -431,8 +372,8 @@ function SystemHealthCard({ health }: { health: SystemHealth }) {
               {statusLabel}
             </span>
             <span className="text-sm text-muted-foreground">
-              {health.p95Latency !== null
-                ? `P95 Latency: ${health.p95Latency}ms`
+              {health.p95_latency !== null
+                ? `P95 Latency: ${health.p95_latency}ms`
                 : "Latency: 측정 불가"}
             </span>
           </div>
@@ -539,8 +480,8 @@ function ArtifactStoreCard({ stats }: { stats: ArtifactStoreStats }) {
           {statusLabel}
         </span>
         <span className="text-sm text-muted-foreground">
-          {stats.lastWrite
-            ? `마지막 쓰기: ${new Date(stats.lastWrite).toLocaleString("ko-KR")}`
+          {stats.last_write
+            ? `마지막 쓰기: ${new Date(stats.last_write).toLocaleString("ko-KR")}`
             : "마지막 쓰기: 없음"}
         </span>
       </div>
@@ -761,7 +702,7 @@ function RecentRunsTab({
               </span>
             </div>
             <div className="text-muted-foreground">
-              {run.startedAt ? new Date(run.startedAt).toLocaleString("ko-KR") : "—"}
+              {run.started_at ? new Date(run.started_at).toLocaleString("ko-KR") : "—"}
             </div>
             <div className="text-muted-foreground">
               {run.duration !== null ? `${run.duration}초` : "—"}
@@ -803,47 +744,47 @@ function RecentRunsSkeleton() {
   );
 }
 
-function getMockData(): MonitoringData {
+function getMockData(): MonitoringResponse {
   const now = new Date();
   const recentRuns: RecentRun[] = [
     {
       id: "run-001",
       title: "서울시 공공주택 데이터 수집",
       status: "succeeded",
-      startedAt: new Date(now.getTime() - 3600000).toISOString(),
-      finishedAt: new Date(now.getTime() - 1800000).toISOString(),
+      started_at: new Date(now.getTime() - 3600000).toISOString(),
+      finished_at: new Date(now.getTime() - 1800000).toISOString(),
       duration: 1800,
     },
     {
       id: "run-002",
       title: "부산시 교통통계 데이터",
       status: "failed",
-      startedAt: new Date(now.getTime() - 7200000).toISOString(),
-      finishedAt: new Date(now.getTime() - 6000000).toISOString(),
+      started_at: new Date(now.getTime() - 7200000).toISOString(),
+      finished_at: new Date(now.getTime() - 6000000).toISOString(),
       duration: 1200,
     },
     {
       id: "run-003",
       title: "인천시 환경데이터",
       status: "running",
-      startedAt: new Date(now.getTime() - 600000).toISOString(),
-      finishedAt: null,
+      started_at: new Date(now.getTime() - 600000).toISOString(),
+      finished_at: null,
       duration: null,
     },
     {
       id: "run-004",
       title: "대구시 문화시설 정보",
       status: "succeeded",
-      startedAt: new Date(now.getTime() - 10800000).toISOString(),
-      finishedAt: new Date(now.getTime() - 9000000).toISOString(),
+      started_at: new Date(now.getTime() - 10800000).toISOString(),
+      finished_at: new Date(now.getTime() - 9000000).toISOString(),
       duration: 1800,
     },
     {
       id: "run-005",
       title: "광주시 의료기관 데이터",
       status: "cancelled",
-      startedAt: new Date(now.getTime() - 14400000).toISOString(),
-      finishedAt: new Date(now.getTime() - 12000000).toISOString(),
+      started_at: new Date(now.getTime() - 14400000).toISOString(),
+      finished_at: new Date(now.getTime() - 12000000).toISOString(),
       duration: 2400,
     },
   ];
@@ -852,7 +793,7 @@ function getMockData(): MonitoringData {
     system: {
       health: {
         status: "healthy",
-        p95Latency: 245,
+        p95_latency: 245,
       },
       queue: {
         queued: 3,
@@ -864,9 +805,9 @@ function getMockData(): MonitoringData {
         capacity: 4,
         utilization: 0.5,
       },
-      artifactStore: {
+      artifact_store: {
         status: "ok",
-        lastWrite: new Date().toISOString(),
+        last_write: new Date().toISOString(),
       },
     },
     builds: {
@@ -878,10 +819,10 @@ function getMockData(): MonitoringData {
         { time: "16:00", success: 18, failed: 0, cancelled: 0 },
         { time: "20:00", success: 10, failed: 1, cancelled: 1 },
       ],
-      totalSuccess: 83,
-      totalFailed: 5,
-      totalCancelled: 2,
-      recentRuns,
+      total_success: 83,
+      total_failed: 5,
+      total_cancelled: 2,
+      recent_runs: recentRuns,
     },
   };
 }
