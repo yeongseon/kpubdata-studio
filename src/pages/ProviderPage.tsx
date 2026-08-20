@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import {
   Card,
   Button,
+  LinkButton,
   PageHeader,
   EmptyState,
   Skeleton,
@@ -155,9 +156,7 @@ export function ProviderPage() {
         title="데이터 제공 기관 연결"
         description="공공데이터 제공 기관과 연결하고 자격 증명(credential)을 관리합니다."
         actions={
-          <Button variant="primary" asChild>
-            <a href="/settings">설정으로 이동</a>
-          </Button>
+          <LinkButton to="/settings">설정으로 이동</LinkButton>
         }
       />
 
@@ -302,7 +301,7 @@ export function ProviderPage() {
                   {selectedProvider.status !== "not_configured" && (
                     <Button
                       size="sm"
-                      variant="destructive"
+                      variant="danger"
                       onClick={handleCredentialDelete}
                     >
                       삭제
