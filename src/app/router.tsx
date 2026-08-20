@@ -10,7 +10,6 @@ import { Layout } from "@/app/Layout";
 import { AddDataPage } from "@/pages/AddDataPage";
 import { ArtifactsPage } from "@/pages/ArtifactsPage";
 import { BuildArtifactsPage } from "@/pages/BuildArtifactsPage";
-import { BuildDetailPage } from "@/pages/BuildDetailPage";
 import { BuildPublishPage } from "@/pages/BuildPublishPage";
 import { BuildRunPage } from "@/pages/BuildRunPage";
 import { BuildsPage } from "@/pages/BuildsPage";
@@ -108,9 +107,11 @@ export const router = createBrowserRouter([
         element: withFeatureBoundary("Quality", <QualityPage />),
       },
       // Build 단위 중심 라우트 (제안 §3.3): 상세 → 편집/실행/결과물/게시.
+      // 레거시 딥링크(#255 §5): /builds/:buildId도 동일한 master-detail(BuildsPage)을
+      // 열어 canonical form(/builds?run=)과 같은 context를 보여준다.
       {
         path: "builds/:buildId",
-        element: withFeatureBoundary("빌드 상세", <BuildDetailPage />),
+        element: withFeatureBoundary("빌드 상세", <BuildsPage />),
       },
       {
         // 편집은 New Build와 동일한 에디터를 재사용한다.

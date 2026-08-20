@@ -1,162 +1,1084 @@
 /**
- * 빌드 목록 페이지 (/builds).
+ * Builds / Runs master-detail 화면 (`/builds`, `/builds?run=<id>`, 레거시 `/builds/:buildId`, #255).
  *
- * 전체 빌드 실행 이력을 표로 보여주고, 제목 검색과 시작 시각 정렬을 제공한다(제안 §5.6/§12).
- * 현재 목록은 mock이며 #29 Builder API 연동 시 실제 데이터로 교체된다.
+ * 상단 KPI → Run 목록(master) → 선택 Run 상세(Pipeline/Stage Progress, Quality, Failure
+ * evidence, Artifacts/Dataset navigation) 구조로 Builder 상태를 있는 그대로 보여준다.
+ * Studio는 Builder가 반환한 값을 재계산하거나 추측하지 않는다(#246 원칙).
+ *
+ * 데이터 표면별로 독립된 상태를 유지한다 — Quality/Artifact/BuildSpec snapshot 중 하나가
+ * 실패해도 Run 기본 정보와 Stage Progress는 계속 보여야 한다(#255 §8/§13).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listBuilds } from "@/features/runs/api";
-import type { BuildListItem } from "@/shared/lib/types";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { parse as parseYaml } from "yaml";
+import { getBuildQuality, getBuildStageDetail, listBuildStages } from "@/features/datasets/api";
+import { DATASET_STAGES, formatDateTime } from "@/features/datasets/model";
+import { StageBadge } from "@/features/datasets/components/StageBadge";
+import { QualityBadge, QualityStateBadge } from "@/features/quality/QualityBadge";
+import {
+  flattenQualityResults,
+  flattenSchemaDrift,
+  formatQualityValue,
+  overallQualityState,
+  summarizeChecksPassed,
+  warnOrFailResults,
+} from "@/features/quality/model";
+import {
+  classifyRunApiError,
+  collectFailureEvidence,
+  computeBuildKpi,
+  failQualityResults,
+  failedRunEvents,
+  firstFailedStage,
+  matchesSearch,
+  matchesStatusFilter,
+  summarizeMultiSourceOutcome,
+  type RunStatusFilter,
+} from "@/features/runs/model";
+import { isTerminalBuilderStatus, listBuilds } from "@/features/runs/api";
+import { getBuildSpecSnapshot } from "@/features/runs/api/runDetail";
+import { useSelectedRunPolling } from "@/features/runs/useSelectedRunPolling";
+import { useRunEvents, type RunEventsState } from "@/features/runs/useRunEvents";
+import { EventTimeline } from "@/features/runs/components/EventTimeline";
+import { KubiRunAnalysis } from "@/features/runs/components/KubiRunAnalysis";
+import { useKubiStore } from "@/features/kubi/useKubiSession";
+import { useAssistConfig } from "@/features/assistant/config";
+import { useUIStore } from "@/shared/hooks/useUIStore";
+import { isRealBuilderEnabled } from "@/shared/lib/builderApi";
+import type {
+  BuildQualityResponse,
+  BuildSpecSnapshotResponse,
+  RunStageEntry,
+  RunStagesResponse,
+  StageDetailResponse,
+} from "@/shared/lib/builderApi";
+import type { BuildListItem, BuildRunStatus } from "@/shared/lib/types";
 import {
   Button,
   Card,
+  Disclosure,
   EmptyState,
   ErrorState,
-  LinkButton,
   PageHeader,
+  Select,
   SkeletonTable,
+  Skeleton,
   StatusBadge,
   TextInput,
 } from "@/shared/ui";
 
-interface BuildsState {
-  status: "loading" | "loaded" | "error";
-  runs?: BuildListItem[];
-  error?: string;
-}
+/** `/builds` 요청 scope. Builder에 전체 count가 없으므로 KPI는 반드시 이 값 안에서만 계산한다. */
+const LIST_LIMIT = 100;
 
-function formatTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("ko-KR");
-}
+type AsyncState<T> =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "loaded"; data: T }
+  | { status: "error"; error: string; notFound?: boolean; permissionDenied?: boolean };
 
-/** ISO 시작 시각을 timestamp로 정렬하기 위한 안전한 변환(null이면 0으로 처리하여 나중에 정렬). */
-function startedAtMillis(iso: string | null): number {
-  if (!iso) return 0; // null인 경우 목록 끝으로 보냄
-  const ms = new Date(iso).getTime();
-  return Number.isNaN(ms) ? 0 : ms;
-}
+const STATUS_FILTERS: { value: RunStatusFilter; label: string }[] = [
+  { value: "all", label: "전체 상태" },
+  { value: "succeeded", label: "성공" },
+  { value: "failed", label: "실패" },
+  { value: "running", label: "실행 중" },
+  { value: "queued", label: "대기 중" },
+  { value: "cancelled", label: "취소됨" },
+];
 
-/**
- * 빌드 실행 목록 표(검색/정렬)와 새 빌드 진입점을 보여주는 페이지.
- *
- * @returns 빌드 목록 화면.
- */
-export function BuildsPage() {
-  const [state, setState] = useState<BuildsState>({ status: "loading" });
-  const [query, setQuery] = useState("");
-  const [newestFirst, setNewestFirst] = useState(true);
+function useAsync<T>(
+  load: (signal: AbortSignal) => Promise<T>,
+  deps: unknown[],
+  errorMessage: string,
+): AsyncState<T> {
+  const [state, setState] = useState<AsyncState<T>>({ status: "idle" });
 
-  const load = useCallback(() => {
-    let active = true;
+  useEffect(() => {
+    const controller = new AbortController();
     setState({ status: "loading" });
-    listBuilds()
-      .then((result) => {
-        if (active) setState({ status: "loaded", runs: result });
+    load(controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) setState({ status: "loaded", data });
       })
       .catch((cause: unknown) => {
-        if (!active) return;
+        if (controller.signal.aborted) return;
+        const kind = classifyRunApiError(cause);
         setState({
+          status: "error",
+          error: cause instanceof Error ? cause.message : errorMessage,
+          notFound: kind === "not_found",
+          permissionDenied: kind === "permission_denied",
+        });
+      });
+    return () => controller.abort();
+  }, deps);
+
+  return state;
+}
+
+export function BuildsPage() {
+  const { buildId: legacyRunId } = useParams<{ buildId?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const [listState, setListState] = useState<AsyncState<BuildListItem[]>>({ status: "loading" });
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<RunStatusFilter>("all");
+
+  const loadList = useCallback(() => {
+    const controller = new AbortController();
+    setListState({ status: "loading" });
+    listBuilds(LIST_LIMIT)
+      .then((items) => {
+        if (!controller.signal.aborted) setListState({ status: "loaded", data: items });
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        setListState({
           status: "error",
           error: cause instanceof Error ? cause.message : "빌드 목록을 불러오지 못했습니다.",
         });
       });
-    return () => {
-      active = false;
-    };
+    return () => controller.abort();
   }, []);
 
-  useEffect(() => load(), [load]);
+  useEffect(() => loadList(), [loadList]);
 
-  const runs = state.runs;
-  const visible = useMemo(() => {
-    if (!runs) return [];
-    const filtered = runs.filter((run) => {
-      const titleOrId = run.title ?? run.id; // title이 null이면 run ID로 검색
-      return titleOrId.toLowerCase().includes(query.trim().toLowerCase());
-    });
-    return [...filtered].sort((a, b) => {
-      const diff = startedAtMillis(a.startedAt) - startedAtMillis(b.startedAt);
-      return newestFirst ? -diff : diff;
-    });
-  }, [runs, query, newestFirst]);
+  // 새 canonical form은 ?run=. 레거시 /builds/:buildId 딥링크도 같은 context를 연다(#255 §5).
+  // 둘 다 있으면 canonical(?run=)이 우선한다.
+  const selectedRunId = searchParams.get("run") || legacyRunId || null;
+
+  const selectRun = useCallback(
+    (runId: string) => {
+      navigate(`/builds?run=${encodeURIComponent(runId)}`);
+    },
+    [navigate],
+  );
+
+  const clearSelection = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("run");
+    // dataset/stage는 selected Run에서 파생된 Kubi context 값이다(#255 §2) — run 선택을
+    // 지우면 함께 지워 다음 화면에 이전 run의 문맥이 남지 않게 한다.
+    next.delete("dataset");
+    next.delete("stage");
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
+  const items = listState.status === "loaded" ? listState.data : [];
+  const runningAvailable = !isRealBuilderEnabled();
+  const kpi = useMemo(() => computeBuildKpi(items, LIST_LIMIT, runningAvailable), [items, runningAvailable]);
+
+  const visible = useMemo(
+    () => items.filter((item) => matchesSearch(item, query) && matchesStatusFilter(item, statusFilter)),
+    [items, query, statusFilter],
+  );
+
+  const selectedListItem = items.find((item) => item.id === selectedRunId) ?? null;
+  const outOfListScope = Boolean(selectedRunId) && listState.status === "loaded" && !selectedListItem;
+  const hiddenByFilter = Boolean(
+    selectedListItem && !visible.some((item) => item.id === selectedListItem.id),
+  );
+
+  const stagesState = useAsync<RunStagesResponse>(
+    (signal) => (selectedRunId ? listBuildStages(selectedRunId, signal) : Promise.reject(new Error("no run"))),
+    [selectedRunId],
+    "Stage 상태를 불러오지 못했습니다.",
+  );
+  const qualityState = useAsync<BuildQualityResponse>(
+    (signal) => (selectedRunId ? getBuildQuality(selectedRunId, signal) : Promise.reject(new Error("no run"))),
+    [selectedRunId],
+    "Quality 결과를 불러오지 못했습니다.",
+  );
+  const specState = useAsync<BuildSpecSnapshotResponse>(
+    (signal) => (selectedRunId ? getBuildSpecSnapshot(selectedRunId, signal) : Promise.reject(new Error("no run"))),
+    [selectedRunId],
+    "BuildSpec snapshot을 불러오지 못했습니다.",
+  );
+
+  // Selected Run live(job registry) polling은 실제로 상태가 불확실한 경우에만 켠다(#286 후속
+  // 보완 §1). mock mode는 builderApi.getBuildJob이 항상 실제 fetch를 시도하는 stub이라
+  // succeeded/failed 같은 historical run에서도 매번 실패해 불필요한 "실시간 상태 갱신 실패"
+  // 경고가 떴다 — mock mode에서는 목록의 deterministic mock status를 그대로 신뢰하고 live
+  // polling 자체를 하지 않는다. real mode에서는 `GET /builds` 목록에 이미 존재하는 run은
+  // 그 계약상 완료된(ok/failed) 이력만이므로 이미 terminal이 확정된 상태다 — 목록 로딩이
+  // 끝나 그게 확인될 때까지는 조회를 켜지 않는다(단 한 번의 낭비 호출도 만들지 않기 위해
+  // listState.status === "loaded"까지 기다린다). 목록 로딩이 끝났는데도 scope 밖(deep-link
+  // run)이면 실제로 running/queued/cancelling일 수 있으므로 기존과 동일하게 getBuildJob으로
+  // 확인한다.
+  const shouldPollLiveStatus =
+    Boolean(selectedRunId) && isRealBuilderEnabled() && listState.status === "loaded" && !selectedListItem;
+  const live = useSelectedRunPolling(shouldPollLiveStatus ? selectedRunId : null);
+
+  // event polling도 selected Run polling과 같은 "non-terminal이면 계속, terminal이면 멈춤"
+  // 정책을 따른다(#255 §3). listItem의 historical 상태는 표시에는 쓰되(RunDetailPanel의
+  // runStatus), interval polling을 켜는 판단에는 쓰지 않는다 — 확인된 live job이 실제로
+  // non-terminal일 때만 polling을 시작한다(useSelectedRunPolling과 동일한 원칙).
+  const eventsPollingEnabled = live.kind === "job" && !isTerminalBuilderStatus(live.job.status);
+  const eventsState = useRunEvents(selectedRunId, eventsPollingEnabled);
+
+  // Kubi Run context(#256)는 새 context store 없이, 기존 route resolver(features/kubi/context.ts)가
+  // 읽는 `?run=&dataset=&stage=` 쿼리 관례를 그대로 재사용한다(Quality/Dataset Detail과 동일).
+  // 이 화면에서 실제로 확인된 값만 반영한다 — failure message를 파싱해 stage를 추측하지 않고,
+  // 정확히 하나의 source만 실패했을 때만 그 failedStage를 안전한 문맥으로 취급한다(#255 §2).
+  useEffect(() => {
+    if (!selectedRunId) return;
+    const datasetId = specState.status === "loaded" ? extractDatasetId(specState.data.spec) : null;
+    const failureEvidence =
+      stagesState.status === "loaded" ? collectFailureEvidence(stagesState.data.sources) : [];
+    const stage = failureEvidence.length === 1 ? failureEvidence[0].failedStage : null;
+
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+    if (datasetId) {
+      if (next.get("dataset") !== datasetId) {
+        next.set("dataset", datasetId);
+        changed = true;
+      }
+    } else if (next.has("dataset")) {
+      next.delete("dataset");
+      changed = true;
+    }
+    if (stage) {
+      if (next.get("stage") !== stage) {
+        next.set("stage", stage);
+        changed = true;
+      }
+    } else if (next.has("stage")) {
+      next.delete("stage");
+      changed = true;
+    }
+    if (changed) setSearchParams(next, { replace: true });
+  }, [selectedRunId, specState, stagesState, searchParams, setSearchParams]);
+
+  // Run 자체가 존재하지 않는다고 판정하는 기준: 목록 scope 밖이고, stage 조회도 404다.
+  // (stage endpoint는 목록 limit과 무관하게 임의 run_id를 바로 조회할 수 있어 더 신뢰할 수 있는 신호)
+  const runNotFound =
+    Boolean(selectedRunId) &&
+    listState.status === "loaded" &&
+    !selectedListItem &&
+    stagesState.status === "error" &&
+    stagesState.notFound;
+
+  // 목록 scope 밖이라 존재 여부를 판단할 근거(listItem)가 없는데, 그 판단 근거로 쓰던
+  // stage 조회마저 403이면 "없다"가 아니라 "조회할 권한이 없다"로 구분한다(#255 P0).
+  // 404와 절대 뭉개지 않는다 — 둘 다 "정보를 못 봤다"는 같은 결과가 아니다.
+  const runPermissionDenied =
+    Boolean(selectedRunId) &&
+    listState.status === "loaded" &&
+    !selectedListItem &&
+    stagesState.status === "error" &&
+    stagesState.permissionDenied;
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
+      {/* App Shell topbar에 이미 전역 "새 빌드 만들기" CTA가 있다(#255 §1) — 여기서는 중복 action을
+          추가하지 않는다. */}
       <PageHeader
-        eyebrow="빌드"
-        title="빌드 목록"
-        description="전체 빌드와 대기·실행·완료 상태의 실행 이력을 확인하세요."
-        actions={<LinkButton to="/builds/new">새 빌드 만들기</LinkButton>}
+        eyebrow="Builds / Runs"
+        title="빌드 실행 이력"
+        description="Run 상태, Stage Progress, Quality, Failure evidence를 한 화면에서 확인합니다."
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="sm:max-w-xs sm:flex-1">
-          <label htmlFor="build-search" className="sr-only">
-            빌드 제목 검색
-          </label>
-          <TextInput
-            id="build-search"
-            placeholder="제목으로 검색…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => setNewestFirst((prev) => !prev)}>
-          시작 시각 {newestFirst ? "최신순 ↓" : "오래된순 ↑"}
-        </Button>
+      <KpiRow kpi={kpi} />
+
+      <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
+        <RunListPanel
+          listState={listState}
+          visible={visible}
+          query={query}
+          onQueryChange={setQuery}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          selectedRunId={selectedRunId}
+          onSelect={selectRun}
+          onRetry={loadList}
+          hiddenByFilter={hiddenByFilter}
+        />
+
+        {selectedRunId ? (
+          runNotFound ? (
+            <Card variant="error" role="alert">
+              <p className="font-semibold">Run을 찾을 수 없습니다: {selectedRunId}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                목록 조회 범위(최대 {LIST_LIMIT}건)에도 없고 stage 정보 조회도 404입니다. 삭제되었거나
+                존재한 적 없는 run_id일 수 있습니다.
+              </p>
+              <button
+                type="button"
+                className="mt-4 text-sm font-medium text-accent-subtle-foreground underline"
+                onClick={clearSelection}
+              >
+                선택 해제
+              </button>
+            </Card>
+          ) : runPermissionDenied ? (
+            <Card variant="error" role="alert">
+              <p className="font-semibold">이 Run을 조회할 권한이 없습니다: {selectedRunId}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                목록 조회 범위(최대 {LIST_LIMIT}건)에도 없어 존재 여부를 판단할 다른 근거가 없고, stage 정보
+                조회는 403(권한 없음)입니다. Run이 없는 것인지 접근 권한이 없는 것인지는 Studio가 추측하지
+                않습니다.
+              </p>
+              <button
+                type="button"
+                className="mt-4 text-sm font-medium text-accent-subtle-foreground underline"
+                onClick={clearSelection}
+              >
+                선택 해제
+              </button>
+            </Card>
+          ) : (
+            <RunDetailPanel
+              runId={selectedRunId}
+              listItem={selectedListItem}
+              outOfListScope={outOfListScope}
+              stagesState={stagesState}
+              qualityState={qualityState}
+              specState={specState}
+              eventsState={eventsState}
+              live={live}
+            />
+          )
+        ) : (
+          <Card className="flex min-h-64 items-center justify-center">
+            <EmptyState title="Run을 선택하세요" description="왼쪽 목록에서 확인할 Run을 선택하면 상세 정보가 표시됩니다." />
+          </Card>
+        )}
+      </div>
+    </main>
+  );
+}
+
+function KpiTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <Card className="p-4">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-bold tracking-tight">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+    </Card>
+  );
+}
+
+/**
+ * Running KPI는 running+queued(+cancelling) 합계를 값으로 유지하되(기존 정책), hint에는
+ * 실제 조회 scope에서 센 status별 breakdown만 보여준다 — 값을 추측하지 않는다(#286 후속 보완 §3).
+ */
+function runningBreakdownHint(kpi: ReturnType<typeof computeBuildKpi>): string {
+  if (kpi.running === 0) return "조회 범위 기준";
+  const parts: string[] = [];
+  if (kpi.runningOnly > 0) parts.push(`실행 중 ${kpi.runningOnly}`);
+  if (kpi.cancellingOnly > 0) parts.push(`취소 중 ${kpi.cancellingOnly}`);
+  if (kpi.queuedOnly > 0) parts.push(`대기 ${kpi.queuedOnly}`);
+  return parts.join(" · ");
+}
+
+function KpiRow({ kpi }: { kpi: ReturnType<typeof computeBuildKpi> }) {
+  const scopeHint = `조회된 ${kpi.scopeCount}건 · limit ${kpi.scopeLimit}${kpi.scopeCount >= kpi.scopeLimit ? " (더 있을 수 있음)" : ""}`;
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <KpiTile label="Builds (조회 범위)" value={String(kpi.scopeCount)} hint={scopeHint} />
+      <KpiTile label="Success" value={String(kpi.succeeded)} hint="조회 범위 기준" />
+      <KpiTile label="Failed" value={String(kpi.failed)} hint="조회 범위 기준" />
+      <KpiTile
+        label="Running"
+        value={kpi.runningAvailable ? String(kpi.running) : "N/A"}
+        hint={
+          kpi.runningAvailable
+            ? runningBreakdownHint(kpi)
+            : "Builder GET /builds는 완료된 이력만 반환합니다 (실행 중 job은 포함되지 않음)"
+        }
+      />
+    </div>
+  );
+}
+
+function RunListPanel({
+  listState,
+  visible,
+  query,
+  onQueryChange,
+  statusFilter,
+  onStatusFilterChange,
+  selectedRunId,
+  onSelect,
+  onRetry,
+  hiddenByFilter,
+}: {
+  listState: AsyncState<BuildListItem[]>;
+  visible: BuildListItem[];
+  query: string;
+  onQueryChange: (value: string) => void;
+  statusFilter: RunStatusFilter;
+  onStatusFilterChange: (value: RunStatusFilter) => void;
+  selectedRunId: string | null;
+  onSelect: (runId: string) => void;
+  onRetry: () => void;
+  hiddenByFilter: boolean;
+}) {
+  return (
+    <Card className="flex min-w-0 flex-col gap-3 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <TextInput
+          aria-label="Run 검색"
+          placeholder="run id 또는 제목 검색"
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          className="flex-1"
+        />
+        <Select
+          aria-label="상태 필터"
+          value={statusFilter}
+          onChange={(event) => onStatusFilterChange(event.target.value as RunStatusFilter)}
+          className="sm:w-36"
+        >
+          {STATUS_FILTERS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Select>
       </div>
 
-      <Card className="overflow-hidden p-0">
-        <div className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] gap-4 border-b border-border px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          <span>빌드</span>
-          <span>상태</span>
-          <span>마지막 실행</span>
-          <span>액션</span>
-        </div>
+      {hiddenByFilter ? (
+        <p className="rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+          선택한 Run은 현재 검색/필터 조건 밖에 있어 목록에는 보이지 않지만, 오른쪽 상세는 계속 표시됩니다.
+        </p>
+      ) : null}
 
-        {state.status === "loading" ? (
-          <SkeletonTable rows={5} className="w-full" />
-        ) : state.status === "error" ? (
-          <ErrorState
-            title="빌드 목록을 불러오지 못했습니다"
-            message={state.error}
-            onRetry={() => load()}
-          />
-        ) : visible.length === 0 ? (
-          <EmptyState
-            title={query ? "검색 결과가 없습니다" : "아직 생성된 빌드가 없습니다"}
-            description={
-              query
-                ? "다른 검색어로 시도해보세요."
-                : "첫 빌드를 만들면 여기에 상태와 실행 이력이 표시됩니다."
-            }
-            actionLabel="새 빌드 만들기"
-            actionHref="/builds/new"
-          />
-        ) : (
-          <ul>
-            {visible.map((run) => (
-              <li
-                key={run.id}
-                className="grid grid-cols-[1.4fr_0.7fr_0.9fr_0.7fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0 "
+      {listState.status === "loading" ? (
+        <SkeletonTable rows={6} />
+      ) : listState.status === "error" ? (
+        <ErrorState title="빌드 목록을 불러오지 못했습니다" message={listState.error} onRetry={onRetry} />
+      ) : visible.length === 0 ? (
+        <EmptyState title="표시할 Run이 없습니다" description="검색어나 상태 필터를 조정해 보세요." />
+      ) : (
+        <ul className="flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: "70vh" }}>
+          {visible.map((item) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(item.id)}
+                aria-current={item.id === selectedRunId ? "true" : undefined}
+                className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
+                  item.id === selectedRunId
+                    ? "border-accent bg-accent-subtle"
+                    : "border-transparent hover:border-border hover:bg-muted"
+                }`}
               >
-                <span className="font-medium">{run.title ?? run.id}</span>
-                <span>
-                  <StatusBadge status={run.status} />
-                </span>
-                <span className="text-muted-foreground">{formatTime(run.startedAt)}</span>
-                <span>
-                  <LinkButton variant="secondary" size="sm" to={`/builds/${run.id}`}>
-                    보기
-                  </LinkButton>
-                </span>
-              </li>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-medium">{item.title ?? item.id}</span>
+                  <StatusBadge status={item.status} />
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span className="truncate font-mono">{item.id}</span>
+                  <span>{formatDateTime(item.startedAt)}</span>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function RunDetailPanel({
+  runId,
+  listItem,
+  outOfListScope,
+  stagesState,
+  qualityState,
+  specState,
+  eventsState,
+  live,
+}: {
+  runId: string;
+  listItem: BuildListItem | null;
+  outOfListScope: boolean;
+  stagesState: AsyncState<RunStagesResponse>;
+  qualityState: AsyncState<BuildQualityResponse>;
+  specState: AsyncState<BuildSpecSnapshotResponse>;
+  eventsState: RunEventsState;
+  live: ReturnType<typeof useSelectedRunPolling>;
+}) {
+  const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
+  const seedKubiQuestion = useKubiStore((state) => state.seedQuestion);
+  const { isConfigured } = useAssistConfig();
+
+  // "이 Run 분석"은 더 이상 전역 Kubi drawer를 자동으로 열지 않는다(#255 §2) — 대신 이 Run summary
+  // 바로 아래에 inline card를 펼친다. Run을 바꾸면 카드를 닫아, 이전 Run의 분석 결과가 새 Run의
+  // context에서 유효한 것처럼 보이지 않게 한다(#256 stale-context guard와 같은 원칙).
+  const [showKubiAnalysis, setShowKubiAnalysis] = useState(false);
+  useEffect(() => {
+    setShowKubiAnalysis(false);
+  }, [runId]);
+
+  const sources = stagesState.status === "loaded" ? stagesState.data.sources : [];
+  const outcome = stagesState.status === "loaded" ? summarizeMultiSourceOutcome(sources) : "unavailable";
+  const failureEvidence = stagesState.status === "loaded" ? collectFailureEvidence(sources) : [];
+  const stageDetails = useStageDetails(runId, stagesState);
+
+  // Quality error(요청 실패)와 Builder semantic unavailable(정상 응답, 결과 없음)을 절대 하나로
+  // 합치지 않는다(#255 후속 보완 §5). overall state는 정상 응답이 있을 때만 계산하고, error는
+  // 아래 렌더링에서 qualityState.status === "error"로 완전히 분리해서 다룬다.
+  const qualityStatus = qualityState.status === "loaded" ? overallQualityState(qualityState.data) : undefined;
+  const qualityFails = qualityState.status === "loaded" ? failQualityResults(qualityState.data) : [];
+  const qualityScopedResults = qualityState.status === "loaded" ? flattenQualityResults(qualityState.data) : [];
+  const qualityChecksPassed = qualityState.status === "loaded" ? summarizeChecksPassed(qualityScopedResults) : null;
+  const qualityIssues = qualityState.status === "loaded" ? warnOrFailResults(qualityScopedResults) : [];
+  const qualityDrift = qualityState.status === "loaded" ? flattenSchemaDrift(qualityState.data) : [];
+  const qualityData = qualityState.status === "loaded" ? qualityState.data : null;
+  const qualitySourceBreakdown = qualityData
+    ? Object.keys(qualityData.quality_results).map((sourceKey) => ({
+        sourceKey,
+        summary: summarizeChecksPassed(flattenQualityResults(qualityData, sourceKey)),
+      }))
+    : [];
+  const events = eventsState.status === "loaded" ? eventsState.data.events : [];
+  const failedEvents = failedRunEvents(events);
+
+  // Quality Center(#254)로 넘어갈 때도 현재 dataset/run 문맥을 잃지 않도록 같은 쿼리 관례를 쓴다.
+  const datasetId = specState.status === "loaded" ? extractDatasetId(specState.data.spec) : null;
+  const qualityCenterHref = `/quality?${new URLSearchParams({
+    ...(datasetId ? { dataset: datasetId } : {}),
+    run: runId,
+  }).toString()}`;
+
+  // Run 전체 status: registry에 살아있는 job(live)이 있으면 그 값이 가장 최신이다.
+  // 없으면(historical) 목록 요약(listItem.status)을 신뢰한다 — 절대 stage 상태를 run status로
+  // 뭉개서 재계산하지 않는다(#255 §6 원칙).
+  const runStatus: BuildRunStatus | null = live.kind === "job" ? mapLiveStatus(live.job.status) : listItem?.status ?? null;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-5">
+      <Card className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">{listItem?.title ?? runId}</h2>
+          {runStatus ? <StatusBadge status={runStatus} /> : <span className="text-xs text-muted-foreground">상태 불명</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="font-mono text-xs text-muted-foreground">{runId}</span>
+          {live.kind === "job" && (live.job.status === "queued" || live.job.status === "running" || live.job.status === "cancelling") ? (
+            <span className="text-xs text-muted-foreground">실시간 갱신 중…</span>
+          ) : null}
+          {live.kind === "error" ? (
+            <span className="text-xs text-amber-700 dark:text-amber-400">
+              실시간 상태 갱신 실패(일시적) — 마지막 확인된 상태를 유지합니다.
+            </span>
+          ) : null}
+          {live.kind === "permission_denied" ? (
+            <span className="text-xs text-red-700 dark:text-red-400">
+              이 Run의 실시간 상태를 조회할 권한이 없습니다 — 목록에서 확인된 상태를 대신 표시합니다.
+            </span>
+          ) : null}
+          {outOfListScope ? (
+            <span className="text-xs text-muted-foreground">
+              이 Run은 현재 목록 조회 범위(limit) 밖입니다. stage/quality는 run_id로 직접 조회했습니다.
+            </span>
+          ) : null}
+          {listItem?.startedAt ? <span className="text-xs text-muted-foreground">시작: {formatDateTime(listItem.startedAt)}</span> : null}
+          {listItem?.finishedAt ? <span className="text-xs text-muted-foreground">완료: {formatDateTime(listItem.finishedAt)}</span> : null}
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Link className="text-xs font-medium text-accent-subtle-foreground underline" to={`/builds/${encodeURIComponent(runId)}/edit`}>
+            편집
+          </Link>
+          <Link className="text-xs font-medium text-accent-subtle-foreground underline" to={`/builds/${encodeURIComponent(runId)}/run`}>
+            실행
+          </Link>
+          <Link className="text-xs font-medium text-accent-subtle-foreground underline" to={`/builds/${encodeURIComponent(runId)}/artifacts`}>
+            결과물
+          </Link>
+          <Link className="text-xs font-medium text-accent-subtle-foreground underline" to={`/builds/${encodeURIComponent(runId)}/publish`}>
+            게시
+          </Link>
+          <Button
+            variant="secondary"
+            className="ml-auto"
+            onClick={() => {
+              // API Key가 없으면 seed하지 않는다 — pending seed는 항상 useKubiSession의
+              // 일반 ask()로 소비되고, ask()는 isConfigured가 아니면 no_key 에러를 만든다
+              // (#286 후속 보완). inline card는 그래도 열어 KubiRunAnalysis가 no-key 안내를
+              // 보여주게 한다.
+              if (isConfigured) {
+                seedKubiQuestion(`Run ${runId}의 상태와 실패 원인을 분석해줘.`);
+              }
+              setShowKubiAnalysis(true);
+            }}
+          >
+            이 Run 분석
+          </Button>
+        </div>
+      </Card>
+
+      {showKubiAnalysis ? (
+        <KubiRunAnalysis onClose={() => setShowKubiAnalysis(false)} onAskMore={openKubiDrawer} />
+      ) : null}
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Pipeline / Stage Progress</h3>
+          {stagesState.status === "loaded" ? <MultiSourceOutcomeBadge outcome={outcome} /> : null}
+        </div>
+        {stagesState.status === "loading" || stagesState.status === "idle" ? (
+          <Skeleton className="mt-4 h-24 w-full" />
+        ) : stagesState.status === "error" ? (
+          <p className="mt-3 text-sm text-red-700 dark:text-red-300">
+            {stagesState.permissionDenied
+              ? "이 Run의 Stage Progress를 조회할 권한이 없습니다."
+              : stagesState.error}
+          </p>
+        ) : sources.length === 0 ? (
+          <EmptyState title="Stage 정보가 없습니다" description="이 run에 알려진 source가 없습니다." />
+        ) : (
+          <div className="mt-4 flex flex-col gap-3">
+            {/* multi-source면 source별로 각자의 pipeline row를 보여준다 — 첫 source를 전체
+                대표로 뭉개지 않는다. */}
+            {sources.map((source) => (
+              <SourcePipelineRow key={source.source_key} source={source} details={stageDetails} />
             ))}
-          </ul>
+          </div>
+        )}
+        {qualityState.status === "loaded" && qualityChecksPassed ? (
+          // "별도 Validate stage"를 새로 만들지 않고, Silver/Gold 흐름과 이어지는 compact
+          // checkpoint로만 Quality를 언급한다(#255 후속 보완 §6). 실제 판정은 아래 Quality
+          // 카드가 정본이며, 여기서는 재계산 없이 그 값을 그대로 요약한다.
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Quality checkpoint</span>
+            <QualityStateBadge state={qualityStatus ?? "NOT_EVALUATED"} />
+            <span>
+              {qualityChecksPassed.evaluated === 0
+                ? "평가된 check 없음"
+                : `${qualityChecksPassed.pass}/${qualityChecksPassed.evaluated} PASS · WARN ${qualityChecksPassed.warn} · FAIL ${qualityChecksPassed.fail}`}
+            </span>
+          </div>
+        ) : null}
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Quality</h3>
+          <div className="flex items-center gap-2">
+            {qualityStatus ? <QualityStateBadge state={qualityStatus} /> : null}
+            {qualityState.status === "loaded" ? (
+              <span className="text-xs text-muted-foreground">availability: {qualityState.data.availability}</span>
+            ) : null}
+          </div>
+        </div>
+        {qualityState.status === "loading" || qualityState.status === "idle" ? (
+          <Skeleton className="mt-4 h-16 w-full" />
+        ) : qualityState.status === "error" ? (
+          // (B) 요청 실패 — Builder의 semantic unavailable(정상 응답)과 절대 같은 상태로 합치지
+          // 않는다(#255 후속 보완 §5). UNAVAILABLE badge를 표시하지 않고, 403/404/network·5xx에
+          // 맞는 오류 메시지만 보여준다.
+          <div className="mt-3">
+            <p className="text-sm font-semibold text-red-700 dark:text-red-300">Quality 조회 실패</p>
+            <p className="mt-1 text-sm text-red-700 dark:text-red-300">
+              {qualityState.permissionDenied
+                ? "이 Run의 Quality 결과를 조회할 권한이 없습니다(403)."
+                : qualityState.notFound
+                  ? "이 Run의 Quality 결과를 찾을 수 없습니다(404)."
+                  : `Quality를 불러오지 못했습니다: ${qualityState.error}`}
+            </p>
+          </div>
+        ) : qualityState.data.availability === "unavailable" ? (
+          // (A) 정상 응답 + availability=unavailable — Builder가 명시적으로 "결과 없음"이라고
+          // 답한 것이지 조회 실패가 아니다.
+          <EmptyState title="Quality 결과 없음 (unavailable)" description="legacy run이거나 quality가 계산되지 않았습니다(N/A ≠ PASS)." />
+        ) : qualityState.data.evaluated_checks === 0 ? (
+          <EmptyState title="평가된 check가 없습니다" description="availability는 available이지만 evaluated_checks=0입니다." />
+        ) : (
+          <div className="mt-3 flex flex-col gap-4">
+            {qualityChecksPassed ? (
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <span className="font-medium text-emerald-700 dark:text-emerald-400">{qualityChecksPassed.pass} PASS</span>
+                <span className="font-medium text-amber-700 dark:text-amber-400">{qualityChecksPassed.warn} WARN</span>
+                <span className="font-medium text-red-700 dark:text-red-400">{qualityChecksPassed.fail} FAIL</span>
+                <span className="text-xs text-muted-foreground">evaluated {qualityChecksPassed.evaluated}건</span>
+              </div>
+            ) : null}
+
+            {qualitySourceBreakdown.length > 1 ? (
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-semibold text-muted-foreground">Source별 평가 현황</p>
+                {qualitySourceBreakdown.map(({ sourceKey, summary }) => (
+                  <div key={sourceKey} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="font-mono">{sourceKey}</span>
+                    <span className="text-muted-foreground">
+                      {summary.evaluated === 0
+                        ? "평가된 결과 없음 (N/A)"
+                        : `${summary.pass}/${summary.evaluated} PASS · WARN ${summary.warn} · FAIL ${summary.fail}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {/* PASS 상세 전체 나열은 피하고, WARN/FAIL만 근거(source/category/rule/column/actual/threshold)와
+                함께 보여준다(#255 후속 보완 §1). */}
+            {qualityIssues.length > 0 ? (
+              <ul className="flex flex-col gap-2">
+                {qualityIssues.map((result, index) => (
+                  <li
+                    key={`${result.source_key}-${result.rule}-${index}`}
+                    className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2 text-xs last:border-0"
+                  >
+                    <span>
+                      {result.source_key} · {result.category}/{result.rule}
+                      {result.column ? ` · ${result.column}` : ""}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <QualityBadge status={result.status.toUpperCase() as "WARN" | "FAIL"} />
+                      <span className="font-mono text-muted-foreground">
+                        actual {formatQualityValue(result.rule, result.actual)} / threshold{" "}
+                        {formatQualityValue(result.rule, result.threshold)}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">WARN/FAIL 결과가 없습니다.</p>
+            )}
+
+            {qualityDrift.length > 0 ? (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Schema drift {qualityDrift.length}건: {qualityDrift.map((finding) => finding.kind).join(", ")}
+              </p>
+            ) : null}
+
+            <Link className="text-xs font-medium text-accent-subtle-foreground underline" to={qualityCenterHref}>
+              Quality Center에서 상세 보기
+            </Link>
+          </div>
         )}
       </Card>
-    </main>
+
+      {failureEvidence.length > 0 || qualityFails.length > 0 ? (
+        <Card variant="error">
+          <h3 className="text-sm font-semibold">Failure evidence</h3>
+          {failureEvidence.length > 0 ? (
+            <ul className="mt-3 flex flex-col gap-2 text-sm">
+              {failureEvidence.map((item) => (
+                <li key={item.sourceKey}>
+                  <strong>{item.sourceKey}</strong> — failed stage: {item.failedStage ?? "unknown"} · last completed stage:{" "}
+                  {item.lastCompletedStage ?? "none"}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {listItem?.status === "failed" && live.kind === "job" && live.job.error ? (
+            <p className="mt-2 text-sm">Builder error: {live.job.error}</p>
+          ) : null}
+          {qualityFails.length > 0 ? (
+            <ul className="mt-3 flex flex-col gap-1 text-sm">
+              {qualityFails.map((result, index) => (
+                <li key={`${result.source_key}-${result.rule}-${index}`}>
+                  FAIL · {result.source_key} · {result.category}/{result.rule}
+                  {result.column ? ` · column ${result.column}` : ""} · actual {JSON.stringify(result.actual)} vs threshold{" "}
+                  {JSON.stringify(result.threshold)}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <Card>
+        <Disclosure
+          title={
+            <span className="flex flex-1 flex-wrap items-center gap-2">
+              Run Events{eventsState.status === "loaded" ? ` (${events.length})` : ""}
+              {failedEvents.length > 0 ? (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950/50 dark:text-red-300">
+                  {failedEvents.length}건 실패
+                </span>
+              ) : null}
+            </span>
+          }
+        >
+          <p className="text-xs text-muted-foreground">
+            Stage Progress(#488)/Quality(#486)의 판정을 대체하지 않는 append-only evidence입니다.
+          </p>
+          {eventsState.status === "loading" || eventsState.status === "idle" ? (
+            <Skeleton className="mt-4 h-24 w-full" />
+          ) : eventsState.status === "error" ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              {eventsState.mockUnsupported
+                ? eventsState.error
+                : eventsState.notFound
+                  ? "이 Run의 event timeline을 찾을 수 없습니다(404)."
+                  : eventsState.permissionDenied
+                    ? "이 Run의 event timeline을 조회할 권한이 없습니다."
+                    : `Event timeline을 불러오지 못했습니다: ${eventsState.error}`}
+            </p>
+          ) : (
+            <EventTimeline events={events} />
+          )}
+        </Disclosure>
+      </Card>
+
+      <Card>
+        <Disclosure title="BuildSpec snapshot">
+          {specState.status === "loading" || specState.status === "idle" ? (
+            <Skeleton className="h-10 w-full" />
+          ) : null}
+          {specState.status === "error" ? (
+            <p className="text-sm text-muted-foreground">
+              {specState.permissionDenied
+                ? "이 Run의 BuildSpec snapshot을 조회할 권한이 없습니다."
+                : specState.error}
+            </p>
+          ) : specState.status === "loaded" ? (
+            <div className="text-sm">
+              <p className="text-xs text-muted-foreground">digest: {specState.data.spec_digest}</p>
+              {datasetId ? (
+                <Link
+                  className="mt-2 inline-block text-xs font-medium text-accent-subtle-foreground underline"
+                  to={`/datasets/${encodeURIComponent(datasetId)}`}
+                >
+                  Dataset 상세 보기 ({datasetId})
+                </Link>
+              ) : null}
+              <p className="mt-2 text-xs text-muted-foreground">
+                편집/재실행 연동은 Add Data Workbench(#250)가 main에 merge된 뒤 제공됩니다 — 현재는 snapshot
+                조회만 지원합니다.
+              </p>
+            </div>
+          ) : null}
+        </Disclosure>
+      </Card>
+    </div>
+  );
+}
+
+/** BuildSpec snapshot YAML에서 dataset_id만 안전하게 뽑는다. 파싱 실패는 조용히 null로 처리한다(추측 금지). */
+function extractDatasetId(specYaml: string): string | null {
+  try {
+    const parsed = parseYaml(specYaml) as unknown;
+    if (parsed && typeof parsed === "object" && "dataset_id" in parsed) {
+      const value = (parsed as Record<string, unknown>).dataset_id;
+      return typeof value === "string" && value.length > 0 ? value : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Builder job status를 그대로 화면 상태로 쓴다.
+ *
+ * 예전에는 cancelling을 running으로 합쳐서 보여줬지만, "취소 중"과 "실행 중"은 사용자가 취소
+ * 요청을 보냈는지 여부가 다른 별개 상태다 — Builder가 보낸 상태를 다른 상태로 재분류하지
+ * 않는다(#255 후속 보완). BuildRunStatus/StatusBadge가 cancelling을 직접 지원한다.
+ */
+function mapLiveStatus(status: "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled"): BuildRunStatus {
+  return status;
+}
+
+function MultiSourceOutcomeBadge({ outcome }: { outcome: ReturnType<typeof summarizeMultiSourceOutcome> }) {
+  if (outcome === "unavailable") return null;
+  const meta = {
+    all_succeeded: { label: "모든 source 성공", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" },
+    partial: { label: "부분 실패(partial)", className: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300" },
+    all_failed: { label: "모든 source 실패", className: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300" },
+  }[outcome];
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${meta.className}`}>{meta.label}</span>;
+}
+
+/**
+ * Pipeline / Stage Progress 시각화(#255 후속 보완 §6).
+ *
+ * Bronze/Silver/Gold만 정본 Stage로 취급한다 — Source/Output은 그 자체로는 Stage 상태가
+ * 아니라 문맥/endpoint 표현이며, Validate·Artifact 같은 새 Stage를 만들지 않는다.
+ */
+type StageName = (typeof DATASET_STAGES)[number];
+
+type StageDetailEntry =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "loaded"; data: StageDetailResponse }
+  | { status: "error" };
+
+function stageDetailKey(sourceKey: string, stage: StageName): string {
+  return `${sourceKey}:${stage}`;
+}
+
+/** entry가 실제로 요청한 stage의 detail을 담고 있을 때만 그 타입으로 좁혀서 돌려준다. */
+function pickStageDetail<S extends StageName>(
+  entry: StageDetailEntry | undefined,
+  stage: S,
+): Extract<StageDetailResponse, { stage: S }> | null {
+  if (!entry || entry.status !== "loaded" || entry.data.stage !== stage) return null;
+  return entry.data as Extract<StageDetailResponse, { stage: S }>;
+}
+
+/**
+ * completed && available인 source×stage에 대해서만 stage detail을 조회한다 — 모든
+ * source×stage를 무조건 eager-fetch해 요청을 폭증시키지 않는다. bounded concurrency(3)로
+ * 조회하고, run이 바뀌면 이전 요청은 abort한다.
+ */
+function useStageDetails(runId: string, stagesState: AsyncState<RunStagesResponse>): Record<string, StageDetailEntry> {
+  const [details, setDetails] = useState<Record<string, StageDetailEntry>>({});
+
+  useEffect(() => {
+    setDetails({});
+    if (stagesState.status !== "loaded") return;
+    const sources = stagesState.data.sources;
+    const targets: { sourceKey: string; stage: StageName }[] = [];
+    for (const source of sources) {
+      for (const stage of DATASET_STAGES) {
+        if (source[stage].status === "completed" && source[stage].available) {
+          targets.push({ sourceKey: source.source_key, stage });
+        }
+      }
+    }
+    if (targets.length === 0) return;
+
+    const controller = new AbortController();
+    const concurrency = Math.min(3, targets.length);
+    let nextIndex = 0;
+
+    async function worker() {
+      while (nextIndex < targets.length) {
+        const target = targets[nextIndex++];
+        const key = stageDetailKey(target.sourceKey, target.stage);
+        setDetails((prev) => ({ ...prev, [key]: { status: "loading" } }));
+        try {
+          const detail = await getBuildStageDetail(runId, target.stage, target.sourceKey, 5, controller.signal);
+          if (controller.signal.aborted) return;
+          setDetails((prev) => ({ ...prev, [key]: { status: "loaded", data: detail } }));
+        } catch {
+          if (controller.signal.aborted) return;
+          // detail은 compact 부가 정보일 뿐이다 — 실패해도 Stage summary(status/available)는
+          // 이미 확보되어 있으므로 badge 자체는 계속 정상 표시된다.
+          setDetails((prev) => ({ ...prev, [key]: { status: "error" } }));
+        }
+      }
+    }
+
+    void Promise.all(Array.from({ length: concurrency }, worker));
+    return () => controller.abort();
+  }, [runId, stagesState]);
+
+  return details;
+}
+
+/** source 안에서, 실제 failed로 기록된 stage 이후에 오는 not_run stage("아직 미도달"). 추측이 아니라 순서 비교다. */
+function isUnreachedStage(source: RunStageEntry, stage: StageName): boolean {
+  const failedAt = firstFailedStage(source);
+  if (!failedAt || source[stage].status !== "not_run") return false;
+  return DATASET_STAGES.indexOf(stage) > DATASET_STAGES.indexOf(failedAt);
+}
+
+function PipelineArrow() {
+  return (
+    <span aria-hidden="true" className="self-center px-1 text-muted-foreground">
+      →
+    </span>
+  );
+}
+
+function formatRecordCount(value: number | null): string {
+  return value === null ? "N/A" : `${value.toLocaleString("ko-KR")}행`;
+}
+
+function BronzeStageBox({ state, detail }: { state: RunStageEntry["bronze"]; detail: StageDetailEntry | undefined }) {
+  const data = pickStageDetail(detail, "bronze");
+  return (
+    <div className="flex min-w-32 flex-col gap-1 rounded-md border border-border p-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Bronze</span>
+      <StageBadge status={state.status} />
+      {data ? (
+        <span className="text-[11px] text-muted-foreground">
+          {formatRecordCount(data.record_count)}
+          {data.fetched_at ? ` · ${formatDateTime(data.fetched_at)}` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function SilverStageBox({ state, detail }: { state: RunStageEntry["silver"]; detail: StageDetailEntry | undefined }) {
+  const data = pickStageDetail(detail, "silver");
+  return (
+    <div className="flex min-w-32 flex-col gap-1 rounded-md border border-border p-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Silver</span>
+      <StageBadge status={state.status} />
+      {data ? (
+        <span className="text-[11px] text-muted-foreground">
+          {formatRecordCount(data.row_count)} · 컬럼 {data.schema.length}개
+          {data.validation ? ` · ${data.validation.ok ? "검증 통과" : `문제 ${data.validation.problems.length}건`}` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function GoldStageBox({ state, detail }: { state: RunStageEntry["gold"]; detail: StageDetailEntry | undefined }) {
+  const data = pickStageDetail(detail, "gold");
+  return (
+    <div className="flex min-w-32 flex-col gap-1 rounded-md border border-border p-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Gold</span>
+      <StageBadge status={state.status} />
+      {data ? (
+        <span className="text-[11px] text-muted-foreground">
+          {formatRecordCount(data.row_count)} · 컬럼 {data.columns.length}개
+          {data.splits ? ` · split ${Object.keys(data.splits).length}개` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Output은 Stage가 아니다 — Gold export가 실제로 확인될 때만 compact하게 보여주고,
+ * completed/failed 같은 Stage 상태로 표현하지 않는다.
+ */
+function OutputBox({ detail }: { detail: StageDetailEntry | undefined }) {
+  const data = pickStageDetail(detail, "gold");
+  const exports = data?.exports ?? [];
+  return (
+    <div className="flex min-w-32 flex-col gap-1 rounded-md border border-dashed border-border p-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Output</span>
+      <span className="text-xs text-muted-foreground">
+        {exports.length > 0 ? exports.map((item) => item.kind).join(" · ") : "—"}
+      </span>
+    </div>
+  );
+}
+
+function SourcePipelineRow({ source, details }: { source: RunStageEntry; details: Record<string, StageDetailEntry> }) {
+  const unreached: Record<StageName, boolean> = {
+    bronze: isUnreachedStage(source, "bronze"),
+    silver: isUnreachedStage(source, "silver"),
+    gold: isUnreachedStage(source, "gold"),
+  };
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Source</span>
+        <span className="font-mono text-xs">{source.source_key}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-start gap-1">
+        <div className={source.bronze.status === "failed" ? "rounded-md ring-2 ring-red-400 dark:ring-red-500" : undefined}>
+          <BronzeStageBox state={source.bronze} detail={details[stageDetailKey(source.source_key, "bronze")]} />
+          {unreached.bronze ? <p className="mt-1 text-[11px] text-muted-foreground">미도달</p> : null}
+        </div>
+        <PipelineArrow />
+        <div className={source.silver.status === "failed" ? "rounded-md ring-2 ring-red-400 dark:ring-red-500" : undefined}>
+          <SilverStageBox state={source.silver} detail={details[stageDetailKey(source.source_key, "silver")]} />
+          {unreached.silver ? <p className="mt-1 text-[11px] text-muted-foreground">미도달</p> : null}
+        </div>
+        <PipelineArrow />
+        <div className={source.gold.status === "failed" ? "rounded-md ring-2 ring-red-400 dark:ring-red-500" : undefined}>
+          <GoldStageBox state={source.gold} detail={details[stageDetailKey(source.source_key, "gold")]} />
+          {unreached.gold ? <p className="mt-1 text-[11px] text-muted-foreground">미도달</p> : null}
+        </div>
+        <PipelineArrow />
+        <OutputBox detail={details[stageDetailKey(source.source_key, "gold")]} />
+      </div>
+    </div>
   );
 }

@@ -33,12 +33,14 @@ const EXPECTED_OPERATIONS = [
   "getBuildQuality",
   "getDatasetQualityHistory",
   "query",
+  "getBuildSpecSnapshot",
+  "getBuildEvents",
   "testProviderConnection",
   "uploadFile",
 ] as const;
 
 describe("Builder API contract conformance (#36)", () => {
-  it("pins the last-reviewed contract version Studio targets (builder #209, #504, #480 async jobs, #490/#492/#497/#498 Add Data Workbench sources — Studio #250; still within the same 1.16.0 pin)", () => {
+  it("pins the last-reviewed contract version Studio targets (builder #209, #504, #480 async jobs, #487 spec snapshot, #488 stage summary, #486 quality, #496 structured events — Studio #255; #490/#492/#497/#498 Add Data Workbench sources — Studio #250; still within the same 1.16.0 pin; drift beyond this — e.g. provider credentials, monitoring — is Studio #259/#264 scope, not auto-synced)", () => {
     expect(API_CONTRACT_VERSION).toBe("1.16.0");
   });
 

@@ -355,6 +355,7 @@ export interface BuildsResponse {
 
 // --- 응답 타입 (Zod 스키마에서 추출) ---
 
+export type BuildJob = schemas.BuildJob;
 export type VersionResponse = schemas.VersionResponse;
 export type ValidateResponse = schemas.ValidateResponse;
 export type BuildOutcome = schemas.BuildOutcome;
@@ -391,6 +392,12 @@ export type QueryStage = schemas.QueryStage;
 export type QueryRequest = schemas.QueryRequest;
 export type QueryResponse = schemas.QueryResponse;
 export type QueryErrorCode = schemas.QueryErrorCode;
+export type BuildSpecSnapshotResponse = schemas.BuildSpecSnapshotResponse;
+export type BuildEventName = schemas.BuildEventName;
+export type BuildEventStatus = schemas.BuildEventStatus;
+export type BuildEventStageName = schemas.BuildEventStageName;
+export type BuildEvent = schemas.BuildEvent;
+export type BuildEventsResponse = schemas.BuildEventsResponse;
 
 /** Builder service 엔드포인트를 감싼 클라이언트. */
 export const builderApi = {
@@ -560,6 +567,40 @@ export const builderApi = {
       { method: "POST", signal, retries: 0 },
       schemas.providerTestResponseSchema,
     ),
+
+  /**
+   * GET /builds/{run_id}/spec — 실행에 사용한 canonical(redaction된) BuildSpec snapshot (#487).
+   *
+   * legacy run(snapshot 없음)은 404다 — Studio는 이를 "정보 없음"이 아니라
+   * "snapshot unavailable"로 구분해서 표시해야 한다.
+   */
+  getBuildSpecSnapshot: (runId: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/builds/${encodeURIComponent(runId)}/spec`,
+      { signal },
+      schemas.buildSpecSnapshotResponseSchema,
+    ),
+
+  /**
+   * GET /builds/{run_id}/events — append-only structured run event timeline (#496).
+   *
+   * `tail: true`면 최신 `limit`개를 고르되 반환은 항상 chronological ascending이다.
+   */
+  getBuildEvents: (
+    runId: string,
+    options?: { limit?: number; tail?: boolean },
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.tail !== undefined) params.set("tail", String(options.tail));
+    const query = params.toString();
+    return apiFetch(
+      `/builds/${encodeURIComponent(runId)}/events${query ? `?${query}` : ""}`,
+      { signal },
+      schemas.buildEventsResponseSchema,
+    );
+  },
 
   // uploadFile은 JSON이 아닌 raw body를 보내야 해서 apiFetch를 쓰지 않는 별도 함수로
   // 아래에 정의한다(함수 선언은 호이스팅되므로 여기서 참조할 수 있다).
