@@ -162,7 +162,17 @@ describe("builderApi client (#29)", () => {
           {
             name: "datago",
             datasets: [
-              { name: "air_quality", title: "대기오염", requires_service_key: true },
+              {
+                name: "air_quality",
+                title: "대기오염",
+                description: null,
+                tags: [],
+                source_url: null,
+                representation: "api_json",
+                operations: [],
+                query_support: null,
+                requires_service_key: true,
+              },
             ],
           },
         ],
@@ -181,6 +191,50 @@ describe("builderApi client (#29)", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain("/catalog");
     expect(init.method).toBe("GET");
+  });
+
+  it("getPublishReadiness() sends only target=huggingface and parses the exact Run", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {
+      run_id: "run-270",
+      target: "huggingface",
+      ready: true,
+      blockers: [],
+      warnings: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.getPublishReadiness("run-270", "huggingface");
+
+    expect(result.run_id).toBe("run-270");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/builds/run-270/publish/readiness?target=huggingface");
+    expect(String(url)).not.toContain("destination");
+    expect(String(url)).not.toContain("private");
+    expect(init.method).toBe("GET");
+  });
+
+  it("publishBuild() sends the Builder #547 body without credentials or invented fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {
+      run_id: "run-270",
+      target: "huggingface",
+      publisher: "huggingface",
+      destination: "owner/dataset",
+      reference: "https://huggingface.co/datasets/owner/dataset",
+      artifact_count: 1,
+      status: "ok",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const request = { target: "huggingface" as const, destination: "owner/dataset", options: { private: true } };
+
+    const result = await builderApi.publishBuild("run-270", request);
+
+    expect(result.reference).toContain("huggingface.co");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/builds/run-270/publish");
+    expect(JSON.parse(init.body)).toEqual(request);
+    expect(init.body).not.toContain("token");
+    expect(init.body).not.toContain("credential");
+    expect(init.body).not.toContain("version");
   });
 
   it("surfaces outcomes[].error on a 502 with no top-level error (#75)", async () => {
@@ -372,6 +426,14 @@ describe("Zod 스키마 런타임 검증 (#158, #103)", () => {
             ],
             sample: [{ date: "2024-04-01" }],
             total_rows: 30,
+            statistics: { row_count: 30, null_counts: { date: 0 }, duplicate_rate: 0 },
+            quality_results: [],
+            source_sample: [{ date: "2024-04-01" }],
+            sample_mode: "first",
+            diff_available: false,
+            diffs: [],
+            transform_summary: null,
+            diff_truncated: false,
           },
         ],
       }),

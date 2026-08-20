@@ -24,7 +24,7 @@ import type {
   RunStagesResponse,
   StageDetailResponse,
 } from "@/shared/lib/builderApi";
-import { Button, Card, EmptyState, ErrorState, PageHeader, Skeleton } from "@/shared/ui";
+import { Button, Card, EmptyState, ErrorState, LinkButton, PageHeader, Skeleton } from "@/shared/ui";
 
 type DetailTab = "overview" | "schema" | "preview" | "quality" | "builds" | "ai";
 
@@ -187,7 +187,7 @@ export function DatasetDetailPage() {
         eyebrow="Dataset"
         title={core.dataset.title}
         description={<><span className="block font-mono text-xs">{core.dataset.dataset_id}</span><span className="mt-1 block">{core.dataset.sources.map((source) => source.provider).join(", ")} · {selectedSource || "source 불러오는 중"} · Build {selectedRunId}{selectedRunId === core.dataset.latest_run_id ? " (latest)" : ""}</span></>}
-        actions={<><span className="inline-flex items-center gap-2 rounded-full bg-accent-subtle px-3 py-1 text-xs font-semibold capitalize text-accent-subtle-foreground"><span>{selectedStage}</span><span className="font-normal">{sourceStageEntry?.[selectedStage].status ?? "unavailable"}</span></span><QualityBadge status={validation} /></>}
+        actions={<><span className="inline-flex items-center gap-2 rounded-full bg-accent-subtle px-3 py-1 text-xs font-semibold capitalize text-accent-subtle-foreground"><span>{selectedStage}</span><span className="font-normal">{sourceStageEntry?.[selectedStage].status ?? "unavailable"}</span></span><QualityBadge status={validation} /><LinkButton size="sm" to={`/builds/${encodeURIComponent(selectedRunId)}/publish?dataset=${encodeURIComponent(core.dataset.dataset_id)}`}>이 Run 게시</LinkButton></>}
       />
 
       <Card className="flex flex-wrap items-end gap-3 p-3">

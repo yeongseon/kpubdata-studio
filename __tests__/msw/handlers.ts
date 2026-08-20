@@ -39,7 +39,17 @@ export const handlers = [
         {
           name: "datago",
           datasets: [
-            { name: "air_quality", title: "대기오염", requires_service_key: true },
+            {
+              name: "air_quality",
+              title: "대기오염",
+              description: null,
+              tags: [],
+              source_url: null,
+              representation: "api_json",
+              operations: [],
+              query_support: null,
+              requires_service_key: true,
+            },
           ],
         },
       ],
@@ -227,10 +237,40 @@ export const handlers = [
     });
   }),
 
+  /** Builder PR #547 publish readiness fixture. */
+  http.get<{ run_id: string }>(`${API_BASE}/builds/:run_id/publish/readiness`, ({ params }) =>
+    HttpResponse.json({
+      run_id: params.run_id,
+      target: "huggingface" as const,
+      ready: true,
+      blockers: [],
+      warnings: [],
+    }),
+  ),
+
+  /** Builder PR #547 publish response fixture — request의 exact Run/destination을 보존한다. */
+  http.post<{ run_id: string }>(`${API_BASE}/builds/:run_id/publish`, async ({ params, request }) => {
+    const body = await request.json() as { destination: string };
+    return HttpResponse.json({
+      run_id: params.run_id,
+      target: "huggingface" as const,
+      publisher: "huggingface",
+      destination: body.destination,
+      reference: `https://huggingface.co/datasets/${body.destination}`,
+      artifact_count: 1,
+      status: "ok",
+    });
+  }),
+
   /**
-   * POST /preview — 소스 스키마와 샘플 행 산출 (파일 미기록)
+   * POST /preview — 소스 스키마와 샘플 행 산출 (파일 미기록). #497로 statistics/
+   * quality_results/diff 필드가 필수가 됐다.
    */
   http.post(`${API_BASE}/preview`, async () => {
+    const sample = [
+      { date: "2024-04-01", temp: 15.5 },
+      { date: "2024-04-02", temp: 16.0 },
+    ];
     return HttpResponse.json({
       dataset_id: "weather_report",
       previews: [
@@ -242,11 +282,16 @@ export const handlers = [
             { name: "date", dtype: "Utf8", nullable: false, unique_count: 30 },
             { name: "temp", dtype: "Float64", nullable: true, unique_count: 25 },
           ],
-          sample: [
-            { date: "2024-04-01", temp: 15.5 },
-            { date: "2024-04-02", temp: 16.0 },
-          ],
+          sample,
           total_rows: 30,
+          statistics: { row_count: 30, null_counts: { date: 0, temp: 1 }, duplicate_rate: 0 },
+          quality_results: [],
+          source_sample: sample,
+          sample_mode: "first" as const,
+          diff_available: false,
+          diffs: [],
+          transform_summary: null,
+          diff_truncated: false,
         },
       ],
     });

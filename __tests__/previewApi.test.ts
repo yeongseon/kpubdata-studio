@@ -16,6 +16,20 @@ function mockResponse(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+/** #497로 SourcePreview에 추가된 필수 필드의 최소 기본값(테스트 fixture 축약용). */
+function requiredPreviewFields(sample: Record<string, unknown>[] = []) {
+  return {
+    statistics: { row_count: sample.length, null_counts: {}, duplicate_rate: 0 },
+    quality_results: [],
+    source_sample: sample,
+    sample_mode: "first" as const,
+    diff_available: false,
+    diffs: [],
+    transform_summary: null,
+    diff_truncated: false,
+  };
+}
+
 const SPEC: BuildSpec = {
   datasetId: "air-quality",
   title: "대기오염 정보",
@@ -50,6 +64,17 @@ describe("previewBuild (#93)", () => {
               { region: "부산", value: 37 },
             ],
             total_rows: 2,
+            statistics: { row_count: 2, null_counts: { region: 0, value: 0 }, duplicate_rate: 0 },
+            quality_results: [],
+            source_sample: [
+              { region: "서울", value: 42 },
+              { region: "부산", value: 37 },
+            ],
+            sample_mode: "first",
+            diff_available: false,
+            diffs: [],
+            transform_summary: null,
+            diff_truncated: false,
           },
         ],
       }),
@@ -75,7 +100,15 @@ describe("previewBuild (#93)", () => {
         mockResponse(200, {
           dataset_id: "multi",
           previews: [
-            { source_key: "a", status: "failed", error: "boom", schema: [], sample: [], total_rows: 0 },
+            {
+              source_key: "a",
+              status: "failed",
+              error: "boom",
+              schema: [],
+              sample: [],
+              total_rows: 0,
+              ...requiredPreviewFields(),
+            },
             {
               source_key: "b",
               status: "ok",
@@ -83,6 +116,7 @@ describe("previewBuild (#93)", () => {
               schema: [{ name: "id", dtype: "string", nullable: false, unique_count: 1 }],
               sample: [{ id: "x" }],
               total_rows: 1,
+              ...requiredPreviewFields([{ id: "x" }]),
             },
           ],
         }),
@@ -103,8 +137,24 @@ describe("previewBuild (#93)", () => {
         mockResponse(200, {
           dataset_id: "multi",
           previews: [
-            { source_key: "datago.air", status: "failed", error: "인증 실패", schema: [], sample: [], total_rows: 0 },
-            { source_key: "kosis.pop", status: "failed", error: "조회 실패", schema: [], sample: [], total_rows: 0 },
+            {
+              source_key: "datago.air",
+              status: "failed",
+              error: "인증 실패",
+              schema: [],
+              sample: [],
+              total_rows: 0,
+              ...requiredPreviewFields(),
+            },
+            {
+              source_key: "kosis.pop",
+              status: "failed",
+              error: "조회 실패",
+              schema: [],
+              sample: [],
+              total_rows: 0,
+              ...requiredPreviewFields(),
+            },
           ],
         }),
       ),
@@ -130,7 +180,15 @@ describe("previewBuild (#93)", () => {
         mockResponse(200, {
           dataset_id: "multi",
           previews: [
-            { source_key: "datago.air", status: "failed", error: "인증 실패", schema: [], sample: [], total_rows: 0 },
+            {
+              source_key: "datago.air",
+              status: "failed",
+              error: "인증 실패",
+              schema: [],
+              sample: [],
+              total_rows: 0,
+              ...requiredPreviewFields(),
+            },
             {
               source_key: "kosis.pop",
               status: "ok",
@@ -138,6 +196,7 @@ describe("previewBuild (#93)", () => {
               schema: [{ name: "id", dtype: "string", nullable: false, unique_count: 1 }],
               sample: [{ id: "x" }],
               total_rows: 1,
+              ...requiredPreviewFields([{ id: "x" }]),
             },
           ],
         }),
