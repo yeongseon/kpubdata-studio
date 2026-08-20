@@ -41,6 +41,7 @@ export function useBuildJob(): BuildJob {
   const controllerRef = useRef<AbortController | null>(null);
 
   const start = useCallback(async (spec: BuildSpec) => {
+    if (controllerRef.current) return;
     const controller = new AbortController();
     controllerRef.current = controller;
     setStatus("running");

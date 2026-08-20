@@ -36,6 +36,14 @@ export const handlers = [
           schema: [{ name: "id", dtype: "str", nullable: false, unique_count: 3 }],
           sample: [{ id: "1" }, { id: "2" }, { id: "3" }],
           total_rows: 3,
+          statistics: { row_count: 3, null_counts: { id: 0 }, duplicate_rate: 0 },
+          quality_results: [],
+          source_sample: [{ id: "1" }, { id: "2" }, { id: "3" }],
+          sample_mode: "first",
+          diff_available: false,
+          diffs: [],
+          transform_summary: null,
+          diff_truncated: false,
         },
       ],
     }),
@@ -67,4 +75,27 @@ export const handlers = [
       files: ["manifest.json", "sample.parquet"],
     }),
   ),
+
+  http.get(`${BASE}/builds/:runId/publish/readiness`, ({ params }) =>
+    HttpResponse.json({
+      run_id: String(params.runId),
+      target: "huggingface",
+      ready: true,
+      blockers: [],
+      warnings: [],
+    }),
+  ),
+
+  http.post(`${BASE}/builds/:runId/publish`, async ({ params, request }) => {
+    const body = await request.json() as { destination: string };
+    return HttpResponse.json({
+      run_id: String(params.runId),
+      target: "huggingface",
+      publisher: "huggingface",
+      destination: body.destination,
+      reference: `https://huggingface.co/datasets/${body.destination}`,
+      artifact_count: 1,
+      status: "ok",
+    });
+  }),
 ];

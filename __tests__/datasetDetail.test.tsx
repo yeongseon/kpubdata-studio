@@ -29,12 +29,20 @@ describe("Dataset Detail P0 (#253)", () => {
     renderDetail();
     expect(await screen.findByLabelText("Run 선택")).toHaveValue("air-2026-08-14");
     await waitFor(() => expect(screen.getByRole("button", { name: /gold completed/ })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByRole("link", { name: "이 Run 게시" })).toHaveAttribute(
+      "href",
+      "/builds/air-2026-08-14/publish?dataset=air-quality",
+    );
   });
 
   it("selects an accessible historical run from the URL", async () => {
     renderDetail("/datasets/air-quality?run=air-2026-08-13");
     expect(await screen.findByLabelText("Run 선택")).toHaveValue("air-2026-08-13");
     expect(screen.getByTestId("location")).toHaveTextContent("run=air-2026-08-13");
+    expect(screen.getByRole("link", { name: "이 Run 게시" })).toHaveAttribute(
+      "href",
+      "/builds/air-2026-08-13/publish?dataset=air-quality",
+    );
   });
 
   it("does not silently replace an invalid run with latest", async () => {
@@ -42,6 +50,7 @@ describe("Dataset Detail P0 (#253)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("선택한 run에 접근할 수 없습니다");
     expect(screen.getByTestId("location")).toHaveTextContent("run=missing-run");
     expect(screen.queryByLabelText("Run 선택")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "이 Run 게시" })).not.toBeInTheDocument();
   });
 
   it("keeps an invalid source visible in the select with a recovery path", async () => {

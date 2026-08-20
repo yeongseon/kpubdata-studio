@@ -15,6 +15,7 @@ export type StatusValue =
   | "invalid"
   | "queued"
   | "running"
+  | "cancelling"
   | "succeeded"
   | "failed"
   | "cancelled"
@@ -36,6 +37,7 @@ const STATUS_META: Record<StatusValue, StatusMeta> = {
   invalid: { label: "오류 있음", className: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300" },
   queued: { label: "대기 중", className: "bg-muted text-muted-foreground" },
   running: { label: "실행 중", className: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300" },
+  cancelling: { label: "취소 중", className: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300" },
   succeeded: { label: "성공", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" },
   failed: { label: "실패", className: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300" },
   cancelled: { label: "취소됨", className: "bg-muted text-muted-foreground" },
@@ -72,7 +74,7 @@ export interface StatusBadgeProps {
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const known = STATUS_META[status as StatusValue] as StatusMeta | undefined;
   const meta = known ?? { ...FALLBACK_META, label: status };
-  const isLive = status === "running" || status === "publishing";
+  const isLive = status === "running" || status === "publishing" || status === "cancelling";
 
   return (
     <span

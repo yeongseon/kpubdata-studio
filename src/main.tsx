@@ -7,6 +7,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "@/app/App";
+import { initAuth } from "@/features/auth/init";
 import "./globals.css";
 
 const container = document.getElementById("root");
@@ -14,6 +15,8 @@ const container = document.getElementById("root");
 if (!container) {
   throw new Error("Root container not found");
 }
+
+initAuth();
 
 createRoot(container).render(
   <StrictMode>
