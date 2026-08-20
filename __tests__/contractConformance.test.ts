@@ -31,13 +31,19 @@ const EXPECTED_OPERATIONS = [
   "listBuildStages",
   "getBuildStageDetail",
   "getBuildQuality",
+  "getPublishReadiness",
+  "publishBuild",
   "getDatasetQualityHistory",
   "query",
+  "getBuildSpecSnapshot",
+  "getBuildEvents",
+  "testProviderConnection",
+  "uploadFile",
 ] as const;
 
 describe("Builder API contract conformance (#36)", () => {
-  it("pins the last-reviewed contract version Studio targets (builder #209, #504, #480 async jobs; drift beyond this — e.g. provider credentials, monitoring — is Studio #259/#264 scope, not auto-synced)", () => {
-    expect(API_CONTRACT_VERSION).toBe("1.16.0");
+  it("pins Builder PR #547's reviewed 1.17.0 contract including publish; unrelated provider/monitoring operations are not implied", () => {
+    expect(API_CONTRACT_VERSION).toBe("1.17.0");
   });
 
   it("exposes exactly the expected client operations", () => {

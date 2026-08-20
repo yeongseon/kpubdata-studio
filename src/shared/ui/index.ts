@@ -19,4 +19,5 @@ export { Select, type SelectProps } from "./Select";
 export { ErrorMessage, type ErrorMessageProps } from "./ErrorMessage";
 export { ErrorState, type ErrorStateProps } from "./ErrorState";
 export { Skeleton, SkeletonTable, type SkeletonProps, type SkeletonTableProps } from "./Skeleton";
+export { Disclosure, type DisclosureProps } from "./Disclosure";
 export { cn, type ClassValue } from "./cn";

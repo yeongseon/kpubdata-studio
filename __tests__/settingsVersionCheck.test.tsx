@@ -5,6 +5,7 @@
  * 경고가 표면화되는지, 일치하면 경고가 없는지를 검증한다.
  */
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const version = vi.fn();
@@ -32,7 +33,11 @@ afterEach(() => {
 describe("SettingsPage version check", () => {
   it("surfaces a warning when builder api_version mismatches the studio contract", async () => {
     version.mockResolvedValue({ service: "builder", api_version: "2.0.0" });
-    render(<SettingsPage />);
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    );
 
     const warning = await screen.findByRole("alert");
     expect(warning.textContent).toContain("계약 버전 불일치");
@@ -41,7 +46,11 @@ describe("SettingsPage version check", () => {
 
   it("shows no mismatch warning when versions agree", async () => {
     version.mockResolvedValue({ service: "builder", api_version: API_CONTRACT_VERSION });
-    render(<SettingsPage />);
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    );
 
     await waitFor(() =>
       expect(screen.getByText(new RegExp(`Builder API 버전 ${API_CONTRACT_VERSION}`))).toBeInTheDocument(),
