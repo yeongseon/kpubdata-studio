@@ -16,6 +16,7 @@ import { useBuild } from "@/features/runs/useBuild";
 import { useBuildJob } from "@/features/runs/useBuildJob";
 import { validateSpec } from "@/features/validation/api";
 import { builderApi, type CatalogDataset, type CatalogProvider } from "@/shared/lib/builderApi";
+import { providerLabel } from "@/shared/lib/providerLabels";
 import { buildFormValuesSchema, buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
 import type { BuildSpec } from "@/shared/lib/types";
 import {
@@ -33,19 +34,6 @@ import {
 } from "@/shared/ui";
 
 const exportFormats = exportFormatSchema.options;
-
-const PROVIDER_LABELS: Readonly<Record<string, string>> = {
-  bok: "한국은행 ECOS (BOK)",
-  datago: "공공데이터포털 (data.go.kr)",
-  kosis: "통계청 KOSIS",
-  krx: "한국거래소 (KRX)",
-  law: "국가법령정보센터",
-  localdata: "지역정보포털 (LocalData)",
-  lofin: "지방재정365 (LOFIN)",
-  semas: "소상공인시장진흥공단 (SEMAS)",
-  seoul: "서울 열린데이터광장",
-  sgis: "통계지리정보서비스 (SGIS)",
-};
 
 interface BuildFormValues {
   datasetId: string;
@@ -239,10 +227,6 @@ type CatalogState =
   | { readonly status: "loading"; readonly providers: readonly CatalogProvider[]; readonly error?: undefined }
   | { readonly status: "loaded"; readonly providers: readonly CatalogProvider[]; readonly error?: undefined }
   | { readonly status: "error"; readonly providers: readonly CatalogProvider[]; readonly error: string };
-
-function providerLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider;
-}
 
 function catalogProvider(providers: readonly CatalogProvider[], provider: string): CatalogProvider | undefined {
   return providers.find((entry) => entry.name === provider);

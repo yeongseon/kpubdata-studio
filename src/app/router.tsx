@@ -72,8 +72,8 @@ export const router = createBrowserRouter([
         index: true,
         element: withFeatureBoundary("홈", <HomePage />),
       },
-      // 새 IA(#247)의 WORKSPACE 그룹. Discover/Workspace는 아직 placeholder이며
-      // #249/#260에서 실제 화면으로 교체된다.
+      // 새 IA(#247)의 WORKSPACE 그룹. Discover는 #249에서 구현됨. Workspace는 아직
+      // placeholder이며 #260에서 실제 화면으로 교체된다.
       {
         path: "discover",
         element: withFeatureBoundary("Discover", <DiscoverPage />),
