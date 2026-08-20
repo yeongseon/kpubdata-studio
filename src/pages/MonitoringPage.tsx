@@ -27,6 +27,8 @@ import {
   Skeleton,
   PageHeader,
   Button,
+  LinkButton,
+  type StatusValue,
 } from "@/shared/ui";
 import type { BuildRunStatus } from "@/shared/lib/types";
 
@@ -86,7 +88,6 @@ interface MonitoringData {
   };
 }
 
-type TabType = "system" | "builds";
 type LoadingState = "idle" | "loading" | "success" | "error";
 
 export function MonitoringPage() {
@@ -99,7 +100,7 @@ export function MonitoringPage() {
   const [isPageVisible, setIsPageVisible] = useState(true);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const previousHealthRef = string | null>(null);
+  const previousHealthRef = useRef<string | null>(null);
 
   const fetchMonitoringData = useCallback(async () => {
     if (!isPageVisible) return;
@@ -767,9 +768,9 @@ function RecentRunsTab({
               {run.duration !== null ? `${run.duration}초` : "—"}
             </div>
             <div className="text-right">
-              <Button variant="secondary" size="sm" asChild>
-                <a href={`/builds/${run.id}`}>보기</a>
-              </Button>
+              <LinkButton variant="secondary" size="sm" to={`/builds/${run.id}`}>
+                보기
+              </LinkButton>
             </div>
           </li>
         ))}
