@@ -37,7 +37,8 @@ const EXPECTED_OPERATIONS = [
   "query",
   "getBuildSpecSnapshot",
   "getBuildEvents",
-  "getMonitoring",
+  "getMonitoringSummary",
+  "getMonitoringBuilds",
   "testProviderConnection",
   "uploadFile",
 ] as const;
