@@ -26,8 +26,12 @@ function flatten(spec: BuildSpec): Map<string, string> {
   map.set("title", spec.title);
   map.set("description", spec.description);
   spec.sources.forEach((source, i) => {
-    map.set(`sources[${i}].provider`, source.provider);
-    map.set(`sources[${i}].dataset`, source.dataset);
+    if (source.kind && source.kind !== "public_api") map.set(`sources[${i}].kind`, source.kind);
+    if (source.provider !== undefined) map.set(`sources[${i}].provider`, source.provider);
+    if (source.dataset !== undefined) map.set(`sources[${i}].dataset`, source.dataset);
+    if (source.uploadId) map.set(`sources[${i}].uploadId`, source.uploadId);
+    if (source.format) map.set(`sources[${i}].format`, source.format);
+    if (source.endpoint) map.set(`sources[${i}].endpoint`, source.endpoint);
     if (source.alias) map.set(`sources[${i}].alias`, source.alias);
     for (const [key, value] of Object.entries(source.params)) {
       map.set(`sources[${i}].params.${key}`, String(value));

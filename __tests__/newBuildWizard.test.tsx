@@ -27,6 +27,21 @@ function skipTemplateStep() {
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
 }
 
+/** #490로 CatalogDataset에 추가된 필수 탐색 metadata의 최소 기본값(fixture 축약용). */
+function catalogDataset(name: string, title: string, requiresServiceKey: boolean) {
+  return {
+    name,
+    title,
+    description: null,
+    tags: [],
+    source_url: null,
+    representation: "api_json" as const,
+    operations: [],
+    query_support: null,
+    requires_service_key: requiresServiceKey,
+  };
+}
+
 function useCatalogFixture() {
   mswServer.use(
     http.get(`${API_BASE}/catalog`, () =>
@@ -34,15 +49,11 @@ function useCatalogFixture() {
         providers: [
           {
             name: "datago",
-            datasets: [
-              { name: "air_quality", title: "대기오염", requires_service_key: true },
-            ],
+            datasets: [catalogDataset("air_quality", "대기오염", true)],
           },
           {
             name: "bok",
-            datasets: [
-              { name: "base_rate", title: "기준금리", requires_service_key: false },
-            ],
+            datasets: [catalogDataset("base_rate", "기준금리", false)],
           },
         ],
       }),

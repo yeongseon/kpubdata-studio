@@ -8,13 +8,17 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
+import { parseSourceParams } from "@/features/build-spec/paramsInput";
 import { previewBuild } from "@/features/preview/api";
 import { useBuild } from "@/features/runs/useBuild";
 import { useBuildJob } from "@/features/runs/useBuildJob";
 import { validateSpec } from "@/features/validation/api";
+import { createSavedSpec, getSavedSpec } from "@/features/workspace/savedSpecs";
+import type { SavedSpecValidation } from "@/features/workspace/types";
 import { builderApi, type CatalogDataset, type CatalogProvider } from "@/shared/lib/builderApi";
+import { providerLabel } from "@/shared/lib/providerLabels";
 import { buildFormValuesSchema, buildSpecSchema, exportFormatSchema } from "@/shared/lib/schemas";
 import type { BuildSpec } from "@/shared/lib/types";
 import {
@@ -32,19 +36,6 @@ import {
 } from "@/shared/ui";
 
 const exportFormats = exportFormatSchema.options;
-
-const PROVIDER_LABELS: Readonly<Record<string, string>> = {
-  bok: "한국은행 ECOS (BOK)",
-  datago: "공공데이터포털 (data.go.kr)",
-  kosis: "통계청 KOSIS",
-  krx: "한국거래소 (KRX)",
-  law: "국가법령정보센터",
-  localdata: "지역정보포털 (LocalData)",
-  lofin: "지방재정365 (LOFIN)",
-  semas: "소상공인시장진흥공단 (SEMAS)",
-  seoul: "서울 열린데이터광장",
-  sgis: "통계지리정보서비스 (SGIS)",
-};
 
 interface BuildFormValues {
   datasetId: string;
@@ -152,26 +143,6 @@ const STEP_FIELDS: Array<Array<keyof BuildFormValues>> = [
 ];
 
 /**
- * textarea의 JSON 파라미터 문자열을 `Record<string, string>`으로 정규화한다.
- *
- * @param sourceParams - 사용자가 입력한 JSON 문자열.
- * @returns 파싱된 객체 또는 한국어 오류 메시지.
- */
-function parseSourceParams(sourceParams: string) {
-  try {
-    const parsed = JSON.parse(sourceParams) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { error: "파라미터는 JSON 객체여야 합니다. 예: {\"region\": \"seoul\"}" };
-    }
-    const entries = Object.entries(parsed);
-    const values = Object.fromEntries(entries.map(([key, value]) => [key, String(value)]));
-    return { data: values };
-  } catch {
-    return { error: "파라미터가 올바른 JSON이 아닙니다. 형식을 확인하세요." };
-  }
-}
-
-/**
  * 폼 입력값으로 BuildSpec 후보를 만들고 zod로 검증한다.
  *
  * 폼은 소스 하나와 outputPath만 다루지만, 편집 대상 스펙은 소스를 여럿 갖거나 폼에
@@ -228,13 +199,15 @@ function toFormValues(spec: BuildSpec): BuildFormValues {
     datasetId: spec.datasetId,
     title: spec.title,
     description: spec.description,
-    provider: firstSource.provider,
-    sourceDataset: firstSource.dataset,
+    // New Build Wizard는 kind="public_api" source만 편집한다(file/url은 #250 Add Data
+    // Workbench 전용) — provider/dataset이 없는 소스를 불러오면 빈 문자열로 대체한다.
+    provider: firstSource.provider ?? "",
+    sourceDataset: firstSource.dataset ?? "",
     sourceParams: Object.keys(firstSource.params).length > 0
       ? JSON.stringify(firstSource.params, null, 2)
       : "{}",
     exportFormats: spec.exports.map((e) => e.format),
-    outputPath: spec.metadata.outputPath ?? "",
+    outputPath: typeof spec.metadata.outputPath === "string" ? spec.metadata.outputPath : "",
   };
 }
 
@@ -256,10 +229,6 @@ type CatalogState =
   | { readonly status: "loading"; readonly providers: readonly CatalogProvider[]; readonly error?: undefined }
   | { readonly status: "loaded"; readonly providers: readonly CatalogProvider[]; readonly error?: undefined }
   | { readonly status: "error"; readonly providers: readonly CatalogProvider[]; readonly error: string };
-
-function providerLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider;
-}
 
 function catalogProvider(providers: readonly CatalogProvider[], provider: string): CatalogProvider | undefined {
   return providers.find((entry) => entry.name === provider);
@@ -286,6 +255,7 @@ function isTemplateAvailable(template: BuildTemplate, catalog: CatalogState): bo
 export function NewBuildPage() {
   // /builds/:buildId/edit 로 진입한 경우(편집 모드). buildId가 있으면 기존 스펙을 로드한다.
   const { buildId } = useParams();
+  const [searchParams] = useSearchParams();
   const { build, isLoading: buildLoading } = useBuild(buildId || "");
   const isEditMode = !!buildId && build !== null;
 
@@ -303,6 +273,10 @@ export function NewBuildPage() {
   const [draftAvailable, setDraftAvailable] = useState(() => !buildId && hasDraft());
   const [draftSaved, setDraftSaved] = useState(false);
   const [catalog, setCatalog] = useState<CatalogState>({ status: "loading", providers: [] });
+  // Workspace(#260)에서 "?savedSpecId=" 로 열었을 때 어떤 Saved BuildSpec을 불러왔는지.
+  // 열었다고 곧바로 원본을 덮어쓰지 않는다 — 아래 "이 스펙 저장"을 눌러야만 반영된다.
+  const [openedSavedSpecName, setOpenedSavedSpecName] = useState<string | null>(null);
+  const [saveSpecMessage, setSaveSpecMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const job = useBuildJob();
 
   const {
@@ -381,6 +355,25 @@ export function NewBuildPage() {
     validatedSnapshotRef.current = null;
     setStep(1); // 템플릿 단계를 건너뛰고 기본 정보부터 시작
   }, [isEditMode, build, buildLoading, reset]);
+
+  // Workspace(#260)에서 "Saved BuildSpec 열기"로 진입한 경우(`?savedSpecId=`). 마운트 시
+  // 한 번만 반영한다 — 열자마자 원본을 덮어쓰지 않고 폼만 채운다(#260 review §3).
+  const savedSpecPrefillApplied = useRef(false);
+  useEffect(() => {
+    if (savedSpecPrefillApplied.current || buildId) return;
+    const savedSpecId = searchParams.get("savedSpecId");
+    if (!savedSpecId) return;
+    savedSpecPrefillApplied.current = true;
+    const entry = getSavedSpec(savedSpecId);
+    if (!entry) return;
+    setBaseSpec(entry.spec);
+    reset(toFormValues(entry.spec));
+    setPreview({ status: "idle", rows: [], schema: {}, warnings: [] });
+    setValidation({ status: "idle", isValid: false, errors: [] });
+    validatedSnapshotRef.current = null;
+    setOpenedSavedSpecName(entry.name);
+    setStep(1);
+  }, [buildId, searchParams, reset]);
 
   const draftStatus = validation.isValid ? "validated" : isDirty ? "dirty" : "new";
 
@@ -487,6 +480,26 @@ export function NewBuildPage() {
     }
   }
 
+  // 현재 스펙을 Workspace(#260)의 Saved BuildSpec으로 저장한다. 저장 시점의 검증 상태를
+  // 그대로 함께 기록한다 — 검증 안 한 스펙을 "통과"로 보여주지 않기 위함이다.
+  function saveAsSavedSpec() {
+    if (!specPreview.spec) return;
+    const name = window.prompt("저장할 이름을 입력하세요", specPreview.spec.title || "이름 없는 BuildSpec");
+    if (!name) return;
+
+    const validationSummary: SavedSpecValidation =
+      validation.status === "validated"
+        ? { status: validation.isValid ? "validated_pass" : "validated_fail", errors: validation.errors }
+        : { status: "not_validated", errors: [] };
+
+    const { result } = createSavedSpec({ name, spec: specPreview.spec, validation: validationSummary });
+    setSaveSpecMessage(
+      result.ok
+        ? { type: "success", text: `"${name}" 이름으로 Workspace에 저장했습니다.` }
+        : { type: "error", text: result.reason },
+    );
+  }
+
   return (
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
       <PageHeader
@@ -521,6 +534,16 @@ export function NewBuildPage() {
           <p className="text-sm text-foreground">
             빌드 <span className="font-medium">{buildId}</span>의 스펙을 편집하고 있습니다. Builder는
             기존 실행을 덮어쓰지 않으므로, 실행하면 수정된 스펙으로 새 빌드가 기록됩니다.
+          </p>
+        </Card>
+      ) : null}
+
+      {openedSavedSpecName ? (
+        <Card variant="dashed" className="p-4">
+          <p className="text-sm text-foreground">
+            Saved BuildSpec <span className="font-medium">{openedSavedSpecName}</span>을(를) 불러왔습니다.
+            수정 후 "이 스펙 저장"을 다시 눌러야 Workspace에 반영됩니다 — 지금 열기만 한 것으로는 원본이
+            바뀌지 않습니다.
           </p>
         </Card>
       ) : null}
@@ -880,6 +903,23 @@ export function NewBuildPage() {
                   <span className="text-sm text-muted-foreground">실행이 취소되었습니다.</span>
                 ) : null}
               </div>
+
+              <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+                <Button variant="secondary" disabled={!specPreview.spec} onClick={saveAsSavedSpec}>
+                  이 스펙 저장 (Workspace)
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  이름을 붙여 이 브라우저에 저장합니다 — Builder에는 전송되지 않습니다.
+                </span>
+              </div>
+              {saveSpecMessage ? (
+                <p
+                  role={saveSpecMessage.type === "error" ? "alert" : undefined}
+                  className={`text-sm ${saveSpecMessage.type === "error" ? "text-red-700 dark:text-red-300" : "text-accent-subtle-foreground"}`}
+                >
+                  {saveSpecMessage.text}
+                </p>
+              ) : null}
             </div>
           ) : null}
 

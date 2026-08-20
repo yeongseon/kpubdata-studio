@@ -1,4 +1,4 @@
-import type { BuildQualityResponse, QualityCheckResult, SchemaDriftFinding } from "@/shared/lib/builderApi";
+import type { BuildQualityResponse, PreviewSource, QualityCheckResult, SchemaDriftFinding } from "@/shared/lib/builderApi";
 
 export type ValidationStatus = "PASS" | "WARN" | "FAIL" | "N/A";
 
@@ -144,6 +144,14 @@ export function summarizeByCategory(
 export const isMissingCategory = (category: string): boolean => /missing|null/i.test(category);
 export const isDuplicateCategory = (category: string): boolean => /duplicate/i.test(category);
 export const isSchemaCategory = (category: string): boolean => /schema/i.test(category);
+/** category === "range"(Builder rule 목록: min_rows/range/compare_columns 등, #497). */
+export const isRangeCategory = (category: string): boolean => /range/i.test(category);
+/**
+ * rule === "dtype"(Add Data Preview & Validation의 "Type" 버킷, #250). Builder는 별도
+ * "type" category를 두지 않고 schema category 안의 dtype rule로 표현하므로, category가
+ * 아닌 rule 이름으로 매칭한다.
+ */
+export const isTypeRule = (rule: string): boolean => rule === "dtype";
 
 /** 결과를 최초 등장 순서를 유지한 채 실제 category 값별로 묶는다(고정 목록을 가정하지 않음). */
 export function groupByCategory(results: QualityCheckResult[]): { category: string; results: QualityCheckResult[] }[] {
@@ -163,3 +171,56 @@ export function groupByCategory(results: QualityCheckResult[]): { category: stri
 export function warnOrFailResults(results: QualityCheckResult[]): QualityCheckResult[] {
   return results.filter((result) => result.status !== "pass");
 }
+
+/**
+ * PreviewResponse.previews[]가 여러 source를 반환할 때(#250 §3), 각 source를
+ * Studio가 임의로 하나의 PASS/FAIL로 뭉개지 않고 그대로 구분해 보여주기 위한 상태.
+ *
+ * Builder가 준 값 그대로를 분류만 한다 — 어떤 status도 새로 지어내지 않는다.
+ *   - "failed": source.status === "failed" (fetch/조회 실패)
+ *   - "zero_rows": 정상 응답이지만 total_rows === 0 (0-row는 fetch 실패와 다르다)
+ *   - "not_evaluated": 정상 응답이고 행도 있지만 quality_results가 비어 있음(N/A)
+ *   - "ok": 위 셋에 해당하지 않는 정상 평가 결과
+ */
+export type PreviewSourceState = "ok" | "failed" | "zero_rows" | "not_evaluated";
+
+export function previewSourceState(source: PreviewSource): PreviewSourceState {
+  if (source.status === "failed") return "failed";
+  if (source.total_rows === 0) return "zero_rows";
+  if (source.quality_results.length === 0) return "not_evaluated";
+  return "ok";
+}
+
+export interface PreviewSourceSummary {
+  source: PreviewSource;
+  state: PreviewSourceState;
+  quality: ChecksPassedSummary;
+}
+
+export interface PreviewSourcesSummary {
+  /** source가 2개 이상이고 상태(state)가 서로 다를 때만 true(#250 §3, "mixed"). */
+  mixed: boolean;
+  perSource: PreviewSourceSummary[];
+}
+
+/**
+ * source별 상태/quality 요약과, 전체가 "mixed"(일부 성공 + 일부 실패/미평가)인지를 계산한다.
+ * 여러 source의 quality_results를 합쳐 하나의 PASS로 추정하지 않는다 — source별 결과를
+ * 그대로 나열할 뿐이다.
+ */
+export function summarizePreviewSources(previews: readonly PreviewSource[]): PreviewSourcesSummary {
+  const perSource = previews.map((source) => ({
+    source,
+    state: previewSourceState(source),
+    quality: summarizeChecksPassed(source.quality_results),
+  }));
+  const states = new Set(perSource.map((p) => p.state));
+  return { mixed: previews.length > 1 && states.size > 1, perSource };
+}
+
+export const PREVIEW_SOURCE_STATE_LABEL: Record<PreviewSourceState, string> = {
+  ok: "정상",
+  failed: "조회 실패",
+  zero_rows: "0건",
+  not_evaluated: "미평가",
+};

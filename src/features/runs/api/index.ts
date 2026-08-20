@@ -77,9 +77,14 @@ export async function executeBuild(
   return result;
 }
 
-const POLL_INTERVAL_MS = 800;
+export const POLL_INTERVAL_MS = 800;
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+/** terminal(#245): 이 상태에 도달하면 더 이상 polling하지 않는다. */
+export function isTerminalBuilderStatus(status: BuilderJobStatus): boolean {
+  return status === "succeeded" || status === "failed" || status === "cancelled";
+}
+
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new DOMException("aborted", "AbortError"));
@@ -97,6 +102,29 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/**
+ * 이미 조회한 `initialJob`에서 시작해 terminal 상태(succeeded/failed/cancelled)까지
+ * `GET /builds/{run_id}`를 polling한다 (#245 polling state machine 재사용).
+ *
+ * 새로 제출한 build(runAsyncBuild)와, 이미 존재하는 run을 선택해 지켜보는 경우
+ * (Builds/Runs master-detail, #255) 양쪽에서 이 하나의 loop을 공유한다 — 두 번째
+ * polling state machine을 새로 만들지 않는다.
+ */
+export async function pollBuildJobUntilTerminal(
+  runId: string,
+  initialJob: Awaited<ReturnType<typeof builderApi.getBuildJob>>,
+  signal: AbortSignal | undefined,
+  onJobStatus?: (job: Awaited<ReturnType<typeof builderApi.getBuildJob>>) => void,
+): Promise<Awaited<ReturnType<typeof builderApi.getBuildJob>>> {
+  let job = initialJob;
+  while (!isTerminalBuilderStatus(job.status)) {
+    await sleep(POLL_INTERVAL_MS, signal);
+    job = await builderApi.getBuildJob(runId, signal);
+    onJobStatus?.(job);
+  }
+  return job;
+}
+
 async function runAsyncBuild(
   spec: BuildSpec,
   runId: string,
@@ -108,12 +136,9 @@ async function runAsyncBuild(
   onJobStatus?.(submitted.status);
 
   // 제출 직후 이미 terminal인 경우(동일 run_id 재제출 등) 폴링 없이 바로 판정한다.
-  let job = submitted;
-  while (job.status !== "succeeded" && job.status !== "failed" && job.status !== "cancelled") {
-    await sleep(POLL_INTERVAL_MS, signal);
-    job = await builderApi.getBuildJob(runId, signal);
-    onJobStatus?.(job.status);
-  }
+  const job = await pollBuildJobUntilTerminal(runId, submitted, signal, (polled) =>
+    onJobStatus?.(polled.status),
+  );
 
   const finishedAt = job.updated_at;
   // run_id는 서버 응답이 정본이다(제출값과 동일이지만 응답 기준으로 통일).
