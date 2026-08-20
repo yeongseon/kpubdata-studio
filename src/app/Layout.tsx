@@ -8,6 +8,7 @@
 import { useEffect, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/features/auth/store";
+import { LoginGate } from "@/features/auth/LoginGate";
 import { KubiDrawer } from "@/features/kubi/KubiDrawer";
 import { KubiSearchInput } from "@/features/kubi/KubiSearchInput";
 import { useUIStore } from "@/shared/hooks/useUIStore";
@@ -502,7 +503,9 @@ export function Layout() {
             </div>
           </header>
 
-          <Outlet />
+          <LoginGate>
+            <Outlet />
+          </LoginGate>
         </div>
       </div>
 
