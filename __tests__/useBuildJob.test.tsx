@@ -168,4 +168,42 @@ describe("useBuildJob (#39)", () => {
     expect(capturedSignal?.aborted).toBe(true);
     executeBuildMock.mockRestore();
   });
+
+  it("start()를 즉시 2회 호출해도 executeBuild는 1회만 호출된다(controllerRef guard, #283 9-G)", async () => {
+    let callCount = 0;
+    let resolveExecute: ((run: import("@/shared/lib/types").BuildRun) => void) | undefined;
+    const executeBuildMock = vi
+      .spyOn(await import("@/features/runs/api"), "executeBuild")
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            callCount += 1;
+            resolveExecute = resolve;
+          }),
+      );
+
+    const { result } = renderHook(() => useBuildJob());
+
+    // start를 연달아 2회 호출 — 두 번째 호출은 controllerRef.current가 이미 세팅돼
+    // 있으므로 즉시 no-op으로 반환해야 한다(실제 executeBuild/POST /builds 호출은 1회).
+    act(() => {
+      void result.current.start(spec);
+      void result.current.start(spec);
+    });
+
+    expect(callCount).toBe(1);
+
+    await act(async () => {
+      resolveExecute?.({
+        id: "mock-run",
+        spec,
+        status: "succeeded",
+        startedAt: "1970-01-01T00:00:00.000Z",
+        finishedAt: "1970-01-01T00:00:00.000Z",
+      });
+    });
+
+    expect(result.current.status).toBe("succeeded");
+    executeBuildMock.mockRestore();
+  });
 });
