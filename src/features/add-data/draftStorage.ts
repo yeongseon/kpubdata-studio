@@ -19,11 +19,14 @@
  * 재입력을 요구한다 — placeholder를 실제 값처럼 복원/제출하지 않는다.
  */
 import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
+import { ownedStorageKey } from "@/features/auth/storageOwner";
 import { sanitizeUrlEndpointForStorage } from "@/features/add-data/urlRedaction";
 import { redactSourceParamsObject, redactSourceParamsText } from "@/features/add-data/paramsRedaction";
 import type { AddDataDraft } from "@/features/add-data/model";
 
-const ADD_DATA_DRAFT_KEY = "kpubdata-studio:add-data-draft";
+// 호출 시점 소유자 키로 네임스페이싱한다(#293) — 모듈 로드 시점이 아니라
+// 저장/복원 함수가 불릴 때의 로그인 상태를 반영해야 한다.
+const ADD_DATA_DRAFT_KEY = () => ownedStorageKey("kpubdata-studio:add-data-draft");
 
 export function saveAddDataDraft(draft: AddDataDraft): void {
   const canonicalBase = draft.canonicalBase
@@ -47,19 +50,19 @@ export function saveAddDataDraft(draft: AddDataDraft): void {
       ? { ...draft.publicApi, sourceParams: redactSourceParamsText(draft.publicApi.sourceParams).text }
       : draft.publicApi,
   };
-  saveDraft(safeDraft, ADD_DATA_DRAFT_KEY);
+  saveDraft(safeDraft, ADD_DATA_DRAFT_KEY());
 }
 
 export function loadAddDataDraft(): AddDataDraft | null {
   // draft 형태는 자유롭게 진화할 수 있어(초기 버전) zod 스키마 없이 버전 봉투만 확인한다 —
   // 손상되거나 형태가 크게 다르면 loadDraft가 이미 null로 정리한다.
-  return loadDraft<AddDataDraft>(undefined, ADD_DATA_DRAFT_KEY);
+  return loadDraft<AddDataDraft>(undefined, ADD_DATA_DRAFT_KEY());
 }
 
 export function clearAddDataDraft(): void {
-  clearDraft(ADD_DATA_DRAFT_KEY);
+  clearDraft(ADD_DATA_DRAFT_KEY());
 }
 
 export function hasAddDataDraft(): boolean {
-  return hasDraft(ADD_DATA_DRAFT_KEY);
+  return hasDraft(ADD_DATA_DRAFT_KEY());
 }
