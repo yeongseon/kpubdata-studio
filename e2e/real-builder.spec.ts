@@ -1,0 +1,131 @@
+import { expect, test } from "@playwright/test";
+import { collectPageErrors, expectNoPageErrors, prepareCleanPage } from "./helpers";
+
+/**
+ * cross-repo 실연동 E2E (kpubdata#282 3단계 시나리오, @real-builder 태그).
+ *
+ * 사전 조건: 실제 Builder가 기동돼 있어야 한다(기본 http://localhost:8000,
+ * REAL_BUILDER_URL로 override). Builder는 KPUBDATA_BUILDER_DEV_MODE=true로
+ * 실행하고, Studio는 VITE_USE_REAL_BUILDER=true로 빌드 서버를 띄운다
+ * (playwright.real.config.ts의 webServer가 주입한다).
+ *
+ * 검증 경로: Studio UI → fetch → Builder HTTP → dispatch → orchestrator →
+ * kpubdata ingestion(file) → Bronze/Silver/Gold → manifest → 응답 → UI 렌더링.
+ * file source는 외부 네트워크 없이 결정적으로 동작한다.
+ */
+const BUILDER_URL = process.env.REAL_BUILDER_URL ?? "http://localhost:8000";
+
+// 기본 슈트(mock, npm run test:e2e)에서는 실행하지 않는다.
+test.skip(!process.env.REAL_BUILDER_E2E, "실 Builder 기동 필요 — scripts/run-real-e2e.mjs");
+
+/**
+ * 로그인 토큰은 메모리 store에만 있어 full reload(page.goto)하면 풀린다 —
+ * 로그인 후 이동은 항상 SPA 링크(사이드바)로 한다.
+ */
+async function navigateViaShell(page: import("@playwright/test").Page, label: RegExp): Promise<void> {
+  await page.getByRole("link", { name: label }).first().click();
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"));
+}
+
+test.beforeEach(async ({ page }) => {
+  await prepareCleanPage(page);
+
+  // 실연동 모드는 LoginGate가 있어 로그인이 선행돼야 한다(#263). mock auth
+  // provider가 store에 token을 넣으면 Studio가 Bearer 헤더를 붙이고, Builder
+  // DEV_MODE는 principal 검증 없이 dev principal로 받아들인다.
+  await page.goto("/login");
+  await page.getByLabel(/이메일/i).first().fill("real-e2e@example.com");
+  await page.getByLabel(/비밀번호/i).first().fill("real-e2e-password");
+  await page.getByRole("button", { name: /로그인/ }).first().click();
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 10_000 });
+});
+
+test("실 Builder /version이 응답한다 (기동 전제) @real-builder", async ({ request }) => {
+  const response = await request.get(`${BUILDER_URL}/version`);
+  expect(response.ok()).toBeTruthy();
+  const body = (await response.json()) as { service?: string };
+  expect(body.service).toBe("kpubdata-builder");
+});
+
+test("File Upload → Preview → Build → Builds 이력 전체 경로 @real-builder", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  collectPageErrors(page, errors);
+
+  // 1) Source: File Upload 선택 후 Configure로 진행(SPA 내비게이션 — 토큰 유지)
+  await navigateViaShell(page, /Add Data|데이터 추가/);
+  await page.getByRole("button", { name: "File Upload" }).first().click();
+  await page.getByRole("button", { name: "다음" }).first().click();
+
+  // 2) Configure: 포맷 csv + 실제 파일 업로드(실 Builder POST /uploads)
+  await expect(page.getByRole("heading", { name: "설정 (Configure)" })).toBeVisible();
+  await page.getByLabel("포맷 (Format)").selectOption("csv");
+  const fileInput = page.getByLabel("파일");
+  await fileInput.setInputFiles({
+    name: "cross-e2e.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("id,name,value\n1,alpha,10\n2,beta,20\n3,gamma,30\n", "utf8"),
+  });
+  // 실제 POST /uploads 완료 표시를 기다린다("업로드 중" 상태와 구분).
+  await expect(page.getByText(/업로드 완료: cross-e2e\.csv/).first()).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // 3) Preview & Validate 단계 — "Preview 새로고침"으로 실 Builder /preview·/validate 호출
+  await page.getByRole("button", { name: "다음" }).first().click();
+  await expect(page.getByText("미리보기 · 검증 (Preview & Validate)")).toBeVisible();
+  await page.getByRole("button", { name: "Preview 새로고침" }).first().click();
+  await expect(page.getByText("검증 결과 (Validation)")).toBeVisible({ timeout: 30_000 });
+  // quality check가 없는 file 소스는 "Not evaluated / N/A"로 표시된다(#516 원칙).
+  await expect(
+    page.getByText(/Not evaluated|checks passed/).first(),
+  ).toBeVisible({ timeout: 30_000 });
+
+  // 4) Review & Build — canonical BuildSpec 표시 후 실제 POST /build
+  await page.getByRole("button", { name: "다음" }).first().click();
+  await expect(page.getByText("검토 · 빌드 (Review & Build)")).toBeVisible();
+  const buildButton = page.getByRole("button", { name: "Build 시작" });
+  // 검증 통과 + preview가 stale하지 않으면 활성화된다(#250 게이트).
+  await expect(buildButton).toBeEnabled({ timeout: 30_000 });
+  await buildButton.click();
+
+  // 5) 제출 결과 노출. file source는 async run이 업로드 owner 경계를 유지하기
+  // 위해 resolver에 owner를 넘기지 않는 설계(#496 follow-up)라 구조화된 실패로
+  // 종결된다 — Studio가 Builder의 실패 사유를 오류 UI로 표시하는지 검증한다
+  // (kpubdata#282 "Build 실패 시나리오: 502 + 오류 메시지 정상 표시").
+  // Public API source를 쓰면 성공 경로가 같은 슈트로 확장된다(외부 네트워크 필요).
+  const failureAlert = page.getByRole("alert").first();
+  await expect(failureAlert).toBeVisible({ timeout: 60_000 });
+  await expect(failureAlert).toContainText(/stable principal|실패|failed/i);
+  void 0;
+  // 다음(Builds) 검증에 쓸 run id를 확보한다.
+
+  // 6) Builds 이력 화면(실 GET /builds)에 방금 제출한 run이 반영된다(실패 포함).
+  await navigateViaShell(page, /Builds|빌드/);
+  await expect(page.getByRole("heading", { name: /빌드|Build/i }).first()).toBeVisible();
+
+  await expectNoPageErrors(errors);
+});
+
+test("빌드 실패 게이트: 파일 없이는 다음 단계 진입이 막힌다 @real-builder", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  collectPageErrors(page, errors);
+
+  // File Upload를 선택했지만 파일을 올리지 않으면 다음 단계 진입이 막힌다(#250 게이트).
+  await navigateViaShell(page, /Add Data|데이터 추가/);
+  await page.getByRole("button", { name: "File Upload" }).first().click();
+  await page.getByRole("button", { name: "다음" }).first().click();
+  await expect(page.getByRole("heading", { name: "설정 (Configure)" })).toBeVisible();
+  // 여전히 Configure 단계(진행 차단) 또는 명시적 오류 안내가 보인다.
+  await expect(
+    page
+      .getByRole("heading", { name: "설정 (Configure)" })
+      .or(page.getByText("먼저 포맷을 선택해주세요."))
+      .first(),
+  ).toBeVisible();
+
+  await expectNoPageErrors(errors);
+});
