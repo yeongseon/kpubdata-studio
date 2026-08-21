@@ -22,6 +22,8 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
+  // @real-builder 스펙(실 Builder 기동 필요)은 기본 슈트에서 제외한다.
+  grep: /^(?!.*@real-builder).*$/,
   projects: [
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
