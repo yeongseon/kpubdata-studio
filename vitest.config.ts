@@ -8,6 +8,8 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
+    // e2e/는 Playwright 슈트다(#268) — vitest 수집/변환 대상에서 제외한다.
+    exclude: ["node_modules/**", "dist/**", "e2e/**"],
   },
   resolve: {
     alias: {

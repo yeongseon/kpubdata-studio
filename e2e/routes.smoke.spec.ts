@@ -1,0 +1,49 @@
+import { expect, test } from "@playwright/test";
+import { collectPageErrors, expectNoPageErrors, prepareCleanPage } from "./helpers";
+
+/**
+ * 핵심 route smoke (#268 체크리스트: 핵심 route smoke tests).
+ * mock 모드에서 모든 주요 화면이 제목을 렌더링하고 console error가 없음을 확인한다.
+ */
+test.beforeEach(async ({ page }) => {
+  await prepareCleanPage(page);
+});
+
+const ROUTES: Array<{ path: string; heading: RegExp | string }> = [
+  { path: "/", heading: /KPubData|데이터/ },
+  { path: "/discover", heading: "데이터 탐색" },
+  { path: "/builds/new", heading: /템플릿 선택|기본 정보/ },
+  { path: "/builds", heading: /빌드|Build/ },
+  { path: "/workspace", heading: "작업대" },
+  { path: "/provider", heading: "데이터 제공 기관 연결" },
+  { path: "/monitoring", heading: "시스템 모니터링" },
+  { path: "/settings", heading: "환경 설정" },
+  { path: "/login", heading: /로그인/ },
+];
+
+test("핵심 route가 제목을 렌더링하고 console error가 없다", async ({ page }) => {
+  const errors: string[] = [];
+  collectPageErrors(page, errors);
+
+  for (const route of ROUTES) {
+    await page.goto(route.path);
+    await expect(page.getByRole("heading", { name: route.heading }).first()).toBeVisible({
+      timeout: 10_000,
+    });
+  }
+
+  await expectNoPageErrors(errors);
+});
+
+test("Settings에 Provider 자격 증명과 Kubi BYOK가 분리된 영역으로 존재한다 (#301 회귀)", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  collectPageErrors(page, errors);
+
+  await page.goto("/settings");
+  await expect(page.getByTestId("settings-provider-credentials")).toBeVisible();
+  await expect(page.getByTestId("settings-kubi-byok")).toBeVisible();
+
+  await expectNoPageErrors(errors);
+});

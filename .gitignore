@@ -43,3 +43,7 @@ yarn-error.log*
 
 # local npm config
 .npmrc
+
+# Playwright E2E (#268)
+/test-results/
+/playwright-report/
