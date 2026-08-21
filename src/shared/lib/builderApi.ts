@@ -614,6 +614,17 @@ export const builderApi = {
    * 버튼이 호출한다. credential 값 자체는 Studio가 주고받지 않는다 — Builder가
    * 서버에 저장된 credential(또는 무인증 provider)로 직접 검사한다.
    */
+  /**
+   * GET /providers — 런타임 Provider 목록과 현재 principal의 configured 상태(#492).
+   * 응답은 부울 요약만 담는다 — credential 원문은 어디에도 존재하지 않는다.
+   */
+  listProviders: (signal?: AbortSignal) =>
+    apiFetch(
+      "/providers",
+      { signal },
+      schemas.providersResponseSchema,
+    ),
+
   testProviderConnection: (provider: string, signal?: AbortSignal) =>
     apiFetch(
       `/providers/${encodeURIComponent(provider)}/test`,
