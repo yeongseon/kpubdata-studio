@@ -264,6 +264,18 @@ export type CatalogResponse = z.infer<typeof catalogResponseSchema>;
  * ============================================
  */
 
+/** GET /providers — 런타임 Provider 목록과 현재 principal의 configured 상태(#492).
+ *  credential 원문은 포함하지 않는다(서버가 부울만 내려준다). */
+export const providerSummarySchema = z.object({
+  provider: z.string(),
+  requires_credential: z.boolean(),
+  configured: z.boolean(),
+});
+
+export const providersResponseSchema = z.object({
+  providers: z.array(providerSummarySchema),
+});
+
 /** POST /providers/{provider}/test, GET /providers/{provider}/status 공통 응답. */
 export const providerTestResponseSchema = z.object({
   provider: z.string(),
@@ -285,6 +297,8 @@ export const uploadMetadataSchema = z.object({
   created_at: z.string(),
 });
 
+export type ProviderSummary = z.infer<typeof providerSummarySchema>;
+export type ProvidersResponse = z.infer<typeof providersResponseSchema>;
 export type ProviderTestResponse = z.infer<typeof providerTestResponseSchema>;
 export type UploadMetadata = z.infer<typeof uploadMetadataSchema>;
 
