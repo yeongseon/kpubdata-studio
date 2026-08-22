@@ -13,19 +13,13 @@ import { Button, Card } from "@/shared/ui";
 import { describeAction } from "./actions";
 import { relatedCatalogDatasets } from "./relatedDatasets";
 import type { KubiAction } from "./schema";
+import { SUGGESTED_QUESTIONS } from "./suggestedQuestions";
 import { summarizeKubiQuality } from "./types";
 import type { KubiActionRunState, KubiContext, KubiErrorState, KubiQueryState, KubiTurn } from "./types";
 import { useKubiSession } from "./useKubiSession";
 
 /** 데모 CTA와 onboarding 예시 질문이 함께 쓰는 기본 질문(mock evidence만으로도 답이 나온다). */
 const DEMO_QUESTION = "이 데이터셋 품질 어때?";
-
-const SUGGESTED_QUESTIONS = [
-  "현재 화면 문맥을 요약해줘.",
-  "지금 확인된 Quality 이슈의 원인과 우선순위를 알려줘.",
-  "이 Build가 실패했다면 원인을 분석해줘.",
-  "이 데이터로 어떤 걸 SQL로 확인할 수 있을지 제안해줘.",
-];
 
 /**
  * 프로토타입 구조(DATASET/BUILD(RUN)/STAGE/QUALITY 4칸)를 따르는 context bar (#256 review).
