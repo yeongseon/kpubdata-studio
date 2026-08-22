@@ -62,6 +62,13 @@ function Definition({ label, children }: { label: string; children: ReactNode })
   return <div><dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</dt><dd className="mt-1 break-words text-sm text-foreground">{children}</dd></div>;
 }
 
+/** Bronze/Silver/Gold의 일반적인 stage 역할(이 데이터셋의 실제 이력을 서술하는 것이 아니다). */
+const STAGE_EXPLAINER: Record<DatasetStage, string> = {
+  bronze: "원본 보존 수집 단계",
+  silver: "정규화·변환·검증 단계",
+  gold: "분석·배포를 위한 최종 가공 단계",
+};
+
 export function DatasetDetailPage() {
   const { datasetId = "" } = useParams<{ datasetId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -148,6 +155,16 @@ export function DatasetDetailPage() {
       else next.delete(key);
     }
     setSearchParams(next);
+  }
+
+  // AI 탭은 Kubi(KubiContent)가 route의 ?run=&stage=로만 문맥을 판단한다(추측 금지 원칙,
+  // context.ts 참고) — 그래서 여기서 화면에 이미 계산되어 보이는 selectedRunId/selectedStage를
+  // URL에 명시적으로 반영해줘야, 처음 AI 탭을 열었을 때도 Kubi RUN context bar가 실제로는
+  // 알고 있는 latest run을 "—"로 보여주거나 Generated SQL/Result Preview가 비어 보이지
+  // 않는다(UI audit #5). 탭 바(button onClick)와 Overview 탭의 Kubi discoverability CTA 모두
+  // 이 helper 하나를 공유해 같은 규칙을 두 번 구현하지 않는다.
+  function goToTab(tab: DetailTab) {
+    updateContext(tab === "ai" ? { tab: "ai", run: selectedRunId, stage: selectedStage } : { tab: tab === "overview" ? null : tab });
   }
 
   const tabParam = searchParams.get("tab") as DetailTab | null;
@@ -238,15 +255,7 @@ export function DatasetDetailPage() {
               type="button"
               role="tab"
               aria-selected={selectedTab === tab.id}
-              // AI 탭은 Kubi(KubiContent)가 route의 ?run=&stage=로만 문맥을 판단한다(추측 금지
-              // 원칙, context.ts 참고) — 그래서 여기서 화면에 이미 계산되어 보이는
-              // selectedRunId/selectedStage를 URL에 명시적으로 반영해줘야, 처음 AI 탭을 열었을
-              // 때도 Kubi RUN context bar가 실제로는 알고 있는 latest run을 "—"로 보여주거나
-              // Generated SQL/Result Preview가 비어 보이지 않는다(UI audit #5). latest run이라
-              // ?run=이 URL에 없을 수도 있으므로(다른 select onChange와 동일 관례) 값을 항상
-              // 명시적으로 채운다 — 없는 값을 지어내는 게 아니라 이미 화면에 보이는 값을 그대로
-              // 전달하는 것이다.
-              onClick={() => updateContext(tab.id === "ai" ? { tab: "ai", run: selectedRunId, stage: selectedStage } : { tab: tab.id === "overview" ? null : tab.id })}
+              onClick={() => goToTab(tab.id)}
               className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium ${selectedTab === tab.id ? "border-accent text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
             >
               {tab.label}
@@ -256,7 +265,7 @@ export function DatasetDetailPage() {
       </div>
 
       <section role="tabpanel" aria-label={TABS.find((tab) => tab.id === selectedTab)?.label}>
-        {selectedTab === "overview" ? <OverviewTab dataset={core.dataset} selectedRun={selectedRun} selectedSource={selectedSource} selectedStage={selectedStage} sourceStages={sourceStageEntry} stageDetail={stageDetailState.data} stageError={stageDetailState.error} rowCount={summaryRowCount} validation={validation} onSelectStage={(stageName) => updateContext({ stage: stageName })} onSelectTab={(tab) => updateContext({ tab })} /> : null}
+        {selectedTab === "overview" ? <OverviewTab dataset={core.dataset} selectedRun={selectedRun} runStatus={runStatus} selectedSource={selectedSource} selectedStage={selectedStage} sourceStages={sourceStageEntry} stageDetail={stageDetailState.data} stageError={stageDetailState.error} rowCount={summaryRowCount} validation={validation} onSelectStage={(stageName) => updateContext({ stage: stageName })} onSelectTab={goToTab} /> : null}
         {selectedTab === "schema" ? <SchemaTab state={stageDetailState} drift={selectedDrift} /> : null}
         {selectedTab === "preview" ? <PreviewTab state={stageDetailState} qualityState={qualityState} qualityStatus={validation} qualityResults={selectedQualityResults} onOpenQuality={() => updateContext({ tab: "quality" })} /> : null}
         {selectedTab === "quality" ? <QualityTab state={qualityState} status={validation} results={selectedQualityResults} drift={selectedDrift} datasetId={datasetId} runId={selectedRunId} source={selectedSource} stage={selectedStage} /> : null}
@@ -271,9 +280,51 @@ function MetricCard({ label, value, sub }: { label: string; value: ReactNode; su
   return <Card className="p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p><div className="mt-2 text-2xl font-bold tracking-tight">{value}</div><div className="mt-1 text-xs text-muted-foreground">{sub}</div></Card>;
 }
 
-function OverviewTab({ dataset, selectedRun, selectedSource, selectedStage, sourceStages, stageDetail, stageError, rowCount, validation, onSelectStage, onSelectTab }: { dataset: DatasetDetailResponse; selectedRun?: DatasetRunSummary; selectedSource: string; selectedStage: DatasetStage; sourceStages?: RunStagesResponse["sources"][number]; stageDetail?: StageDetailResponse; stageError?: string; rowCount: number | null; validation: ReturnType<typeof summarizeQuality>; onSelectStage: (stage: DatasetStage) => void; onSelectTab: (tab: DetailTab) => void }) {
+function OverviewTab({ dataset, selectedRun, runStatus, selectedSource, selectedStage, sourceStages, stageDetail, stageError, rowCount, validation, onSelectStage, onSelectTab }: { dataset: DatasetDetailResponse; selectedRun?: DatasetRunSummary; runStatus?: string; selectedSource: string; selectedStage: DatasetStage; sourceStages?: RunStagesResponse["sources"][number]; stageDetail?: StageDetailResponse; stageError?: string; rowCount: number | null; validation: ReturnType<typeof summarizeQuality>; onSelectStage: (stage: DatasetStage) => void; onSelectTab: (tab: DetailTab) => void }) {
   const columnCount = stageDetail?.stage === "silver" ? stageDetail.schema.length : stageDetail?.stage === "gold" ? stageDetail.columns.length : null;
-  return <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Rows" value={rowCount === null ? "—" : rowCount.toLocaleString("ko-KR")} sub={selectedStage} /><MetricCard label="Columns" value={columnCount ?? "—"} sub="Builder stage response" /><MetricCard label="Validation" value={<QualityBadge status={validation} />} sub={selectedSource || "선택된 source 없음"} /><MetricCard label="Updated" value={<span className="text-lg">{formatDateTime(selectedRun?.finished_at ?? selectedRun?.started_at ?? dataset.updated_at)}</span>} sub={`Build ${selectedRun?.run_id ?? dataset.latest_run_id}`} /></div><div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]"><Card><h3 className="text-sm font-semibold">Lineage</h3>{sourceStages ? <div className="mt-4 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center"><div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-center text-sm font-semibold">Source<span className="mt-1 block text-xs font-normal text-muted-foreground">{selectedSource}</span></div>{DATASET_STAGES.map((stageName) => <div key={stageName} className="contents"><span aria-hidden="true" className="text-center text-muted-foreground">→</span><button type="button" aria-label={`${stageName} ${sourceStages[stageName].status}`} aria-pressed={selectedStage === stageName} onClick={() => onSelectStage(stageName)} className={`rounded-lg border px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selectedStage === stageName ? "border-accent bg-accent-subtle" : "border-border bg-card hover:bg-muted"}`}><span className="block text-sm font-semibold capitalize">{stageName}</span><span className="mt-1 block"><StageBadge status={sourceStages[stageName].status} /></span></button></div>)}</div> : <Skeleton className="mt-4 h-24 w-full" />}</Card><Card><h3 className="text-sm font-semibold">Stage Detail · <span className="capitalize">{selectedStage}</span></h3>{stageError ? <p className="mt-3 text-sm text-red-700 dark:text-red-300">{stageError}</p> : !stageDetail ? <Skeleton className="mt-4 h-24 w-full" /> : <><dl className="mt-4 space-y-3"><Definition label="Status"><StageBadge status={stageDetail.status} /></Definition><Definition label="Available">{stageDetail.available ? "yes" : "no"}</Definition><Definition label="Provider / Source">{dataset.sources.map((source) => `${source.provider}.${source.dataset}`).join(", ")} · {selectedSource}</Definition><Definition label="Output">{stageDetail.stage === "gold" ? (stageDetail.exports.map((item) => item.kind).join(", ") || "없음") : "이 stage 응답에서 제공하지 않음"}</Definition></dl><div className="mt-4 flex gap-2"><Button variant="secondary" size="sm" onClick={() => onSelectTab("preview")}>Preview</Button><Button variant="secondary" size="sm" onClick={() => onSelectTab("quality")}>Quality 보기</Button></div></>}</Card></div></div>;
+  const artifactSummary = stageDetail?.stage === "gold" ? stageDetail.exports.map((item) => item.kind).join(", ") || "미게시" : "gold stage 아님";
+  return <div className="space-y-4">
+    <DataPassport dataset={dataset} selectedRun={selectedRun} runStatus={runStatus} selectedSource={selectedSource} selectedStage={selectedStage} sourceStages={sourceStages} columnCount={columnCount} artifactSummary={artifactSummary} validation={validation} onSelectTab={onSelectTab} />
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Rows" value={rowCount === null ? "—" : rowCount.toLocaleString("ko-KR")} sub={selectedStage} /><MetricCard label="Columns" value={columnCount ?? "—"} sub="Builder stage response" /><MetricCard label="Validation" value={<QualityBadge status={validation} />} sub={selectedSource || "선택된 source 없음"} /><MetricCard label="Updated" value={<span className="text-lg">{formatDateTime(selectedRun?.finished_at ?? selectedRun?.started_at ?? dataset.updated_at)}</span>} sub={`Build ${selectedRun?.run_id ?? dataset.latest_run_id}`} /></div>
+    <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]"><Card><h3 className="text-sm font-semibold">Lineage</h3>{sourceStages ? <div className="mt-4 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center"><div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-center text-sm font-semibold">Source<span className="mt-1 block text-xs font-normal text-muted-foreground">{selectedSource}</span></div>{DATASET_STAGES.map((stageName) => <div key={stageName} className="contents"><span aria-hidden="true" className="text-center text-muted-foreground">→</span><button type="button" aria-label={`${stageName} ${sourceStages[stageName].status}`} aria-pressed={selectedStage === stageName} onClick={() => onSelectStage(stageName)} className={`rounded-lg border px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selectedStage === stageName ? "border-accent bg-accent-subtle" : "border-border bg-card hover:bg-muted"}`}><span className="block text-sm font-semibold capitalize">{stageName}</span><span className="mt-1 block"><StageBadge status={sourceStages[stageName].status} /></span><span className="mt-1 block text-[11px] font-normal text-muted-foreground">{STAGE_EXPLAINER[stageName]}</span></button></div>)}</div> : <Skeleton className="mt-4 h-24 w-full" />}</Card><Card><h3 className="text-sm font-semibold">Stage Detail · <span className="capitalize">{selectedStage}</span></h3>{stageError ? <p className="mt-3 text-sm text-red-700 dark:text-red-300">{stageError}</p> : !stageDetail ? <Skeleton className="mt-4 h-24 w-full" /> : <><dl className="mt-4 space-y-3"><Definition label="Status"><StageBadge status={stageDetail.status} /></Definition><Definition label="Available">{stageDetail.available ? "yes" : "no"}</Definition><Definition label="Provider / Source">{dataset.sources.map((source) => `${source.provider}.${source.dataset}`).join(", ")} · {selectedSource}</Definition><Definition label="Output">{stageDetail.stage === "gold" ? (stageDetail.exports.map((item) => item.kind).join(", ") || "없음") : "이 stage 응답에서 제공하지 않음"}</Definition></dl><div className="mt-4 flex gap-2"><Button variant="secondary" size="sm" onClick={() => onSelectTab("preview")}>Preview</Button><Button variant="secondary" size="sm" onClick={() => onSelectTab("quality")}>Quality 보기</Button></div></>}</Card></div>
+  </div>;
+}
+
+/**
+ * Data Passport — "이 dataset이 무엇이고 어디서 왔으며 신뢰 가능한지"를 한눈에 보여주는
+ * trust summary(#Phase2 UI polish). 새 backend 데이터를 요구하지 않는다 — 이미 이 페이지가
+ * fetch한 값만 재사용한다. 값이 없는 필드는 지어내지 않고 "확인 불가"/"제공되지 않음" 등으로
+ * 명확히 표기하거나 생략한다(License는 이 스키마 어디에도 실제 dataset 속성으로 존재하지
+ * 않아 — Publish 화면에서 사용자가 입력하는 값일 뿐이므로 — 아예 생략한다).
+ *
+ * "Run 상태(전체)"와 "선택된 Source·Stage 상태"는 서로 다른 vocabulary(run 전체 집계 vs
+ * source/stage 단위)라 값이 갈릴 수 있다(:174-178의 runFailedButSelectedStageOk 참고) — 두
+ * 필드를 하나로 합치지 않고 라벨을 분리해 그 scope 차이를 다시 흐리지 않는다.
+ */
+function DataPassport({ dataset, selectedRun, runStatus, selectedSource, selectedStage, sourceStages, columnCount, artifactSummary, validation, onSelectTab }: { dataset: DatasetDetailResponse; selectedRun?: DatasetRunSummary; runStatus?: string; selectedSource: string; selectedStage: DatasetStage; sourceStages?: RunStagesResponse["sources"][number]; columnCount: number | null; artifactSummary: string; validation: ReturnType<typeof summarizeQuality>; onSelectTab: (tab: DetailTab) => void }) {
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Data Passport</h3>
+        <button type="button" className="text-xs font-medium text-accent-subtle-foreground underline" onClick={() => onSelectTab("ai")}>
+          Kubi가 이 dataset의 BuildSpec 수정안을 제안할 수 있습니다
+        </button>
+      </div>
+      <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Definition label="Provider / Source">{dataset.sources.map((source) => `${source.provider}.${source.dataset}`).join(", ") || "확인 불가"}</Definition>
+        <Definition label="Dataset">{dataset.title}<span className="block font-mono text-xs text-muted-foreground">{dataset.dataset_id}</span></Definition>
+        <Definition label="Run 상태(전체)">{runStatus ?? "확인 불가"}</Definition>
+        <Definition label="선택된 Source·Stage 상태">{sourceStages ? <StageBadge status={sourceStages[selectedStage].status} /> : "확인 불가"}</Definition>
+        <Definition label="Quality"><QualityBadge status={validation} /></Definition>
+        <Definition label="Schema">{columnCount === null ? "제공되지 않음" : `${columnCount} columns`}</Definition>
+        <Definition label="BuildSpec digest">{selectedRun?.spec_digest ? <span className="break-all font-mono text-xs">{selectedRun.spec_digest}</span> : "확인 불가"}</Definition>
+        <Definition label="Artifact">{artifactSummary}</Definition>
+      </dl>
+      <p className="mt-4 text-xs text-muted-foreground">
+        Source: {selectedSource || "선택된 source 없음"} · Lineage/Schema/Quality 상세는 각 탭에서 확인할 수 있습니다.
+      </p>
+    </Card>
+  );
 }
 
 function SchemaTab({ state, drift }: { state: AsyncState<StageDetailResponse>; drift: BuildQualityResponse["schema_drift"][string] }) {
