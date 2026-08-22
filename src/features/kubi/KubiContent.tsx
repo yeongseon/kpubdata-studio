@@ -244,6 +244,11 @@ function ActionCard({
 
   return (
     <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs">
+      {action.type === "PATCH_BUILDSPEC" ? (
+        <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
+          BuildSpec 변경 제안
+        </span>
+      ) : null}
       <p className="font-medium text-foreground">{describeAction(action)}</p>
       <p className="mt-0.5 text-muted-foreground">{action.reason}</p>
 
