@@ -24,7 +24,7 @@
 - ✅ Build Run / Publish 페이지
 - ✅ Spec 매핑 계층
 
-## v0.4 🔧 진행 중
+## v0.4 ✅ 완료
 
 - ✅ 인증 S1-S10 (apiFetch → Google GIS → 토큰 → 게이트 → 에러)
 - ✅ BuildSpec 어시스턴트 ST-A1-A10 (BYOK → 스크러빙 → 채팅 → 생성 → 테스트)
@@ -32,10 +32,22 @@
 - ✅ zod 런타임 검증
 - ✅ API 1.2.0 동기화
 
+## v0.5 ✅ 완료 — UI vNext (#246)
+
+- ✅ 신규 IA 전면 구현 — Home/Discover/Add Data/Workspace/Auth/LoginGate(#248-#250, #263, #289, #294)
+- ✅ Builds/Runs master-detail + Event Timeline(#255, #286)
+- ✅ Monitoring — 실제 Builder wire 계약 정합 후 모듈화(#264, #302, #303)
+- ✅ Provider Connection/Credential(#259, #300) + Settings 통합(#301)
+- ✅ Dataset Detail publish 흐름(#270, #296) — 계약 1.17.0 pin
+- ✅ 사용자별 로컬 저장 격리(#293), Evidence 기반 Reports(#258)
+- ✅ Playwright E2E 34개(route smoke·happy path·실패 빌드·Kubi·viewport/a11y, #268)
+
 ## v1.0 기준
 
 - ✅ 전체 빌드 워크플로우 UI
 - ✅ Builder API 모든 오퍼레이션 클라이언트
 - ✅ 인증 (Google OIDC BYOK)
 - ✅ BuildSpec 어시스턴트 (설명 + 생성)
-- 🔲 Studio↔Builder 실 HTTP E2E (실배포 환경)
+- 🔲 Studio↔Builder 실 HTTP E2E CI (실배포 환경) — 러너는 PR #310으로 마련,
+  cross-repo CI 자동화는 kpubdata#282(워크플로 권한 필요)
+- 🔲 Keycloak provider(ADR 0015 전환) — builder #515 후속
