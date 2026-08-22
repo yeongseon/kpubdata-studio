@@ -188,3 +188,81 @@ describe("Dataset Detail P0 (#253)", () => {
     expect(within(panel).getByText("123")).toBeInTheDocument();
   });
 });
+
+async function findPassport() {
+  const heading = await screen.findByRole("heading", { name: "Data Passport" });
+  return heading.closest("[class*='rounded-xl']") as HTMLElement;
+}
+
+describe("Data Passport (#Phase2 UI polish)", () => {
+  it("shows Provider/Source, dataset identity, run status, selected source·stage status, quality, schema, spec digest and artifact from the fetched fixture", async () => {
+    renderDetail();
+    await waitFor(() => expect(screen.getByRole("button", { name: /gold completed/ })).toHaveAttribute("aria-pressed", "true"));
+
+    const passport = await findPassport();
+    expect(within(passport).getByText("data.go.kr.air, kma.weather")).toBeInTheDocument();
+    expect(within(passport).getByText("대기질 통합 데이터")).toBeInTheDocument();
+    expect(within(passport).getByText("air-quality")).toBeInTheDocument();
+    expect(within(passport).getByText("sha256:air14")).toBeInTheDocument();
+    // Schema/Artifact는 selected stage detail의 별도 비동기 조회(getBuildStageDetail) 결과라 좀 더 늦게 반영된다.
+    expect(await within(passport).findByText("2 columns")).toBeInTheDocument();
+    expect(await within(passport).findByText("parquet")).toBeInTheDocument();
+    expect(within(passport).getByText("PASS")).toBeInTheDocument();
+  });
+
+  it("labels run-level status and selected source/stage status separately, without collapsing them into one generic status (audit #2)", async () => {
+    renderDetail();
+    await waitFor(() => expect(screen.getByRole("button", { name: /gold completed/ })).toHaveAttribute("aria-pressed", "true"));
+
+    const passport = await findPassport();
+    const runRow = within(passport).getByText("Run 상태(전체)").closest("div")!;
+    expect(runRow).toHaveTextContent("failed");
+
+    const stageRow = within(passport).getByText("선택된 Source·Stage 상태").closest("div")!;
+    expect(within(stageRow).getByText("completed")).toBeInTheDocument();
+    // 같은 값으로 뭉개지지 않는다 — run은 failed, 선택된 stage는 completed.
+    expect(within(stageRow).queryByText("failed")).not.toBeInTheDocument();
+  });
+
+  it("labels the spec value as a digest/fingerprint, not a version string", async () => {
+    renderDetail();
+    const passport = await findPassport();
+    expect(await within(passport).findByText("sha256:air14")).toBeInTheDocument();
+    expect(within(passport).getByText("BuildSpec digest")).toBeInTheDocument();
+    expect(within(passport).queryByText(/^v\d/)).not.toBeInTheDocument();
+  });
+
+  it("does not crash and uses the defined fallback ('확인 불가') for a run with no spec digest, instead of inventing one", async () => {
+    renderDetail("/datasets/population");
+    await screen.findByLabelText("Run 선택");
+    const passport = await findPassport();
+    const digestRow = within(passport).getByText("BuildSpec digest").closest("div")!;
+    expect(within(digestRow).getByText("확인 불가")).toBeInTheDocument();
+  });
+
+  it("shows the defined '제공되지 않음' fallback for schema when the selected stage carries no schema (bronze), without crashing", async () => {
+    renderDetail("/datasets/air-quality?stage=bronze");
+    await screen.findByLabelText("Run 선택");
+    const passport = await findPassport();
+    const schemaRow = within(passport).getByText("Schema").closest("div")!;
+    expect(await within(schemaRow).findByText("제공되지 않음")).toBeInTheDocument();
+  });
+
+  it("does not present fields absent from the schema, like license/freshness/verified score", async () => {
+    renderDetail();
+    const passport = await findPassport();
+    expect(within(passport).queryByText(/license/i)).not.toBeInTheDocument();
+    expect(within(passport).queryByText(/freshness/i)).not.toBeInTheDocument();
+    expect(within(passport).queryByText(/verified/i)).not.toBeInTheDocument();
+    expect(within(passport).queryByText(/인증/)).not.toBeInTheDocument();
+  });
+
+  it("navigates to the AI tab from the Passport's Kubi entry point", async () => {
+    renderDetail();
+    const passport = await findPassport();
+    fireEvent.click(within(passport).getByRole("button", { name: /Kubi가 이 dataset의 BuildSpec 수정안을 제안할 수 있습니다/ }));
+
+    const panel = await screen.findByRole("tabpanel", { name: "AI" });
+    expect(within(panel).getByText("air-quality")).toBeInTheDocument();
+  });
+});
