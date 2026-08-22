@@ -16,6 +16,11 @@ export default defineConfig({
     baseURL: "http://localhost:5173",
     trace: "retain-on-failure",
   },
+  // 파일 병렬 실행은 하지 않는다 — 여러 worker가 단일 vite dev 서버의
+  // 온디맨드 트랜스파일을 경합해 뒤쪽 route의 첫 로드가 expect 타임아웃을
+  // 넘긴다(#268 리뷰에서 확인 — 직렬로만 전 스펙이 100% 통과).
+  fullyParallel: false,
+  workers: 1,
   webServer: {
     command: "npm run dev -- --port 5173 --strictPort",
     url: "http://localhost:5173",
