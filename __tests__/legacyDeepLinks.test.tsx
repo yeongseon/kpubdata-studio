@@ -44,7 +44,7 @@ describe("router 딥링크 회귀 (#247)", () => {
     render(<RouterProvider router={router} />);
 
     await navigateTo("/builds/abc/run");
-    expect(screen.getByText("진행 단계")).toBeInTheDocument();
+    expect(await screen.findByText("상세 진행 정보 미지원")).toBeInTheDocument();
 
     await navigateTo("/builds/abc/artifacts");
     expect(await screen.findByText("Manifest 요약")).toBeInTheDocument();

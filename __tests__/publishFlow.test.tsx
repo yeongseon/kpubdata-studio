@@ -58,7 +58,13 @@ async function fillAndConfirm() {
   return screen.getByRole("button", { name: "게시 실행" });
 }
 
-beforeEach(() => vi.stubEnv("VITE_USE_REAL_BUILDER", "false"));
+// 이 스위트는 Builder HTTP 계약(POST body, 502/403/404/network 분류, 경합 방지)을 실제
+// fetch mock으로 직접 검증한다 — getPublishReadiness/publishBuild가 mock/real 스위치 없이
+// 항상 fetch를 거치던 시절 그대로였다. UI audit #4에서 다른 Builder 연동 엔드포인트와
+// 동일하게 mock/real 분기를 추가했으므로(features/publish/api/index.ts), 이 스위트가 계속
+// 실제 fetch 경로를 검증하도록 real 모드로 명시한다 — "false"였다면 이제 결정적 mock
+// fixture(features/publish/api/mockData.ts)를 타서 아래 fetch mock들이 전혀 호출되지 않는다.
+beforeEach(() => vi.stubEnv("VITE_USE_REAL_BUILDER", "true"));
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();

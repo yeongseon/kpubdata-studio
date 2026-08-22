@@ -43,6 +43,67 @@ test("키보드로 내비게이션 링크에 focus가 도달하고 focus가 보�
   await expectNoPageErrors(errors);
 });
 
+test("390x844에서 topbar subtitle이 Kubi/avatar 버튼과 겹치지 않는다 (UI audit #6-A)", async ({ page }) => {
+  const errors: string[] = [];
+  collectPageErrors(page, errors);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.getByRole("heading").first()).toBeVisible({ timeout: 10_000 });
+
+  const subtitle = page.locator("header h1");
+  const kubiButton = page.getByRole("button", { name: "Kubi 열기" });
+  await expect(subtitle).toBeVisible();
+  await expect(kubiButton).toBeVisible();
+
+  const subtitleBox = await subtitle.boundingBox();
+  const kubiBox = await kubiButton.boundingBox();
+  expect(subtitleBox).not.toBeNull();
+  expect(kubiBox).not.toBeNull();
+  // 두 사각형이 겹치면 안 된다 — 한쪽이 상대의 왼쪽에서 완전히 끝나거나(가로) 위에서
+  // 완전히 끝나야(세로, 줄바꿈된 경우) "겹치지 않음"이다.
+  if (subtitleBox && kubiBox) {
+    const overlapsHorizontally = subtitleBox.x < kubiBox.x + kubiBox.width && kubiBox.x < subtitleBox.x + subtitleBox.width;
+    const overlapsVertically = subtitleBox.y < kubiBox.y + kubiBox.height && kubiBox.y < subtitleBox.y + subtitleBox.height;
+    expect(overlapsHorizontally && overlapsVertically, "subtitle과 Kubi 버튼이 겹칩니다").toBe(false);
+  }
+
+  await expectNoPageErrors(errors);
+});
+
+test("390x844에서 Add Data sticky bottom actions가 마지막 content를 덮지 않는다 (UI audit #6-B)", async ({ page }) => {
+  const errors: string[] = [];
+  collectPageErrors(page, errors);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/add");
+  await expect(page.getByRole("heading", { name: "데이터 추가" })).toBeVisible({ timeout: 10_000 });
+
+  await page.getByText("Public API").click();
+  await page.getByRole("button", { name: "다음" }).click();
+  await page.locator("#add-data-provider").selectOption({ index: 1 });
+  await page.locator("#add-data-dataset").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "다음" }).click();
+  await page.getByRole("button", { name: /Preview 새로고침/ }).click();
+  await page.getByRole("button", { name: "다음" }).click();
+
+  const buildButton = page.getByRole("button", { name: "Build 시작" });
+  await buildButton.scrollIntoViewIfNeeded();
+  await expect(buildButton).toBeVisible();
+
+  const stickyBar = page.locator(".sticky.bottom-0");
+  const buildBox = await buildButton.boundingBox();
+  const stickyBox = await stickyBar.boundingBox();
+  expect(buildBox).not.toBeNull();
+  expect(stickyBox).not.toBeNull();
+  if (buildBox && stickyBox) {
+    // "Build 시작" 버튼의 아래쪽 절반이라도 sticky bar에 가려지면 안 된다.
+    expect(buildBox.y + buildBox.height, "Build 시작 버튼이 sticky bar에 가려집니다").toBeLessThanOrEqual(stickyBox.y);
+  }
+
+  await expectNoPageErrors(errors);
+});
+
 test("Login 폼이 라벨로 입력에 접근 가능하다 (접근성 기초)", async ({ page }) => {
   const errors: string[] = [];
   collectPageErrors(page, errors);

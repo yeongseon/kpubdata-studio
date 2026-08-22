@@ -125,11 +125,43 @@ describe("Dataset Detail P0 (#253)", () => {
     expect(within(panel).queryByText(/score/i)).not.toBeInTheDocument();
   });
 
+  it("explains a run-level failed status next to a completed/PASS selected stage instead of hiding the contradiction (audit #2)", async () => {
+    renderDetail();
+    // 기본 선택(latest run air-2026-08-14, source datago__air)은 gold stage가 completed/PASS이면서
+    // run 전체 상태는 kma__weather의 silver 실패로 인해 failed다 — 두 상태 semantics는 서로 다른
+    // scope(run 전체 vs 선택된 source/stage)이므로 값 자체를 숨기거나 조작하지 않는다.
+    await waitFor(() => expect(screen.getByRole("button", { name: /gold completed/ })).toHaveAttribute("aria-pressed", "true"));
+
+    const runStatusRow = screen.getByTitle("선택된 source/stage가 아니라 이 run 전체(모든 source)의 결과입니다");
+    expect(runStatusRow).toHaveTextContent("Run 상태");
+    expect(runStatusRow).toHaveTextContent("failed");
+
+    const stageBadge = screen.getByTitle("선택된 source(datago__air)의 gold stage 상태");
+    expect(stageBadge).toHaveTextContent("gold");
+    expect(stageBadge).toHaveTextContent("completed");
+
+    const explanation = await screen.findByRole("alert");
+    expect(explanation).toHaveTextContent(/run 상태는 failed이지만/i);
+    expect(explanation).toHaveTextContent("kma__weather");
+  });
+
   it("shows run history and links each run to build detail", async () => {
     renderDetail("/datasets/air-quality?tab=builds");
     const panel = await screen.findByRole("tabpanel", { name: "Builds" });
     expect(within(panel).getByText(/air-2026-08-13/)).toBeInTheDocument();
     expect(within(panel).getAllByRole("link", { name: "보기" })[0]).toHaveAttribute("href", "/builds/air-2026-08-14");
+  });
+
+  it("propagates the known latest-run context to Kubi when opening the AI tab, not '—' (audit #5)", async () => {
+    // 기본 진입(초기 URL에 ?run= 없음, latest run 암묵 선택)에서 AI 탭을 클릭한다 — stage와 달리
+    // run은 URL에 명시적으로 반영되지 않아 Kubi RUN context가 "—"로 보이던 문제를 재현한다.
+    renderDetail();
+    await screen.findByLabelText("Run 선택");
+    fireEvent.click(screen.getByRole("tab", { name: "AI" }));
+
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("run=air-2026-08-14"));
+    const panel = await screen.findByRole("tabpanel", { name: "AI" });
+    expect(within(panel).getByText("air-2026-08-14")).toBeInTheDocument();
   });
 
   it("renders Kubi inline on the AI tab with this dataset's context, not a drawer launcher (#256 review)", async () => {

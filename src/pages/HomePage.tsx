@@ -142,7 +142,7 @@ function NewUserHome() {
           <p className="mt-3 text-muted-foreground">
             Public API, 파일, URL에서 데이터를 직접 가져와 빌드하세요
           </p>
-          <LinkButton className="mt-6" variant="secondary" to="/add-data">
+          <LinkButton className="mt-6" variant="secondary" to="/add">
             데이터 추가하기
           </LinkButton>
         </Card>

@@ -2,12 +2,14 @@
 import {
   ApiError,
   builderApi,
+  isRealBuilderEnabled,
   type PublishErrorCode,
   type PublishReadinessResponse,
   type PublishRequest,
   type PublishResponse,
   type PublishTarget,
 } from "@/shared/lib/builderApi";
+import { MOCK_PUBLISH_READINESS, mockPublishResult } from "./mockData";
 
 export type {
   PublishIssue,
@@ -28,20 +30,42 @@ export function validatePublishDestination(destination: string): string | undefi
   return undefined;
 }
 
-export function getPublishReadiness(
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+}
+
+/**
+ * 다른 Builder 연동 엔드포인트(getDataset/listBuildStages 등, `features/datasets/api`)와
+ * 동일하게 mock/real을 분기한다 — 이전에는 이 분기가 없어 mock 모드에서도 항상 실제
+ * Builder 서버로 요청을 보냈고, 로컬/데모 환경(Builder 미기동)에서는 그 요청이 항상 실패해
+ * readiness 카드가 사실상 항상 비어 보였다(UI audit #4). Builder가 없는 mock run_id는
+ * 값을 지어내지 않고 404로 처리한다.
+ */
+export async function getPublishReadiness(
   runId: string,
   target: PublishTarget = "huggingface",
   signal?: AbortSignal,
 ): Promise<PublishReadinessResponse> {
-  return builderApi.getPublishReadiness(runId, target, signal);
+  if (isRealBuilderEnabled()) return builderApi.getPublishReadiness(runId, target, signal);
+  throwIfAborted(signal);
+  const mock = MOCK_PUBLISH_READINESS[runId];
+  if (!mock) throw new ApiError(404, "요청한 Run의 게시 준비 상태를 찾을 수 없습니다.");
+  return mock;
 }
 
-export function publishBuild(
+export async function publishBuild(
   runId: string,
   request: PublishRequest,
   signal?: AbortSignal,
 ): Promise<PublishResponse> {
-  return builderApi.publishBuild(runId, request, signal);
+  if (isRealBuilderEnabled()) return builderApi.publishBuild(runId, request, signal);
+  throwIfAborted(signal);
+  const readiness = MOCK_PUBLISH_READINESS[runId];
+  if (!readiness) throw new ApiError(404, "요청한 Run을 찾을 수 없습니다.");
+  if (!readiness.ready || readiness.blockers.length > 0) {
+    throw new ApiError(409, "게시 준비가 되지 않은 Run입니다.", { code: "publish_conflict" });
+  }
+  return mockPublishResult(runId, request.destination, request.options?.private ?? true);
 }
 
 export type PublishFailureKind = PublishErrorCode | "forbidden" | "not_found" | "network" | "invalid_request" | "readiness_changed" | "unknown";

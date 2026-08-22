@@ -157,6 +157,26 @@ export function DatasetDetailPage() {
   const selectedQualityResults = qualityResultsForSource(qualityState.data, selectedSource);
   const selectedDrift = qualityState.data?.schema_drift[selectedSource] ?? [];
 
+  // Run 전체 상태("ok"/"failed"/"cancelled")와 선택된 source·stage 상태("completed"/"failed"/
+  // "not_run"/"unavailable")는 서로 다른 vocabulary를 쓰는 별개 scope다 — 한 run에 여러 source가
+  // 있으면 선택된 source의 stage는 completed/PASS인데 run 전체는 다른 source의 실패로 failed일 수
+  // 있다. 이는 모순이 아니라 두 canonical source가 서로 다른 것을 나타내는 것이므로, 값을 숨기거나
+  // 억지로 맞추는 대신 두 상태가 갈릴 수 있는 이유를 실제 데이터(다른 source의 stage 실패)로
+  // 설명한다.
+  const otherFailingSources = useMemo(
+    () =>
+      sourceEntries
+        .filter((source) => source.source_key !== selectedSource)
+        .filter((source) => DATASET_STAGES.some((stage) => source[stage].status === "failed"))
+        .map((source) => source.source_key),
+    [sourceEntries, selectedSource],
+  );
+  const runStatus = selectedRun?.status ?? core.dataset?.status;
+  const runFailedButSelectedStageOk =
+    runStatus === "failed" &&
+    sourceStageEntry?.[selectedStage].status === "completed" &&
+    otherFailingSources.length > 0;
+
   const summaryRowCount = useMemo(() => {
     const detail = stageDetailState.data;
     if (detail?.stage === "bronze") return detail.record_count;
@@ -187,17 +207,28 @@ export function DatasetDetailPage() {
         eyebrow="Dataset"
         title={core.dataset.title}
         description={<><span className="block font-mono text-xs">{core.dataset.dataset_id}</span><span className="mt-1 block">{core.dataset.sources.map((source) => source.provider).join(", ")} · {selectedSource || "source 불러오는 중"} · Build {selectedRunId}{selectedRunId === core.dataset.latest_run_id ? " (latest)" : ""}</span></>}
-        actions={<><span className="inline-flex items-center gap-2 rounded-full bg-accent-subtle px-3 py-1 text-xs font-semibold capitalize text-accent-subtle-foreground"><span>{selectedStage}</span><span className="font-normal">{sourceStageEntry?.[selectedStage].status ?? "unavailable"}</span></span><QualityBadge status={validation} /><LinkButton size="sm" to={`/builds/${encodeURIComponent(selectedRunId)}/publish?dataset=${encodeURIComponent(core.dataset.dataset_id)}`}>이 Run 게시</LinkButton></>}
+        actions={<><span title={`선택된 source(${selectedSource || "—"})의 ${selectedStage} stage 상태`} className="inline-flex items-center gap-2 rounded-full bg-accent-subtle px-3 py-1 text-xs font-semibold capitalize text-accent-subtle-foreground"><span>{selectedStage}</span><span className="font-normal">{sourceStageEntry?.[selectedStage].status ?? "unavailable"}</span></span><QualityBadge status={validation} /><LinkButton size="sm" to={`/builds/${encodeURIComponent(selectedRunId)}/publish?dataset=${encodeURIComponent(core.dataset.dataset_id)}`}>이 Run 게시</LinkButton></>}
       />
 
       <Card className="flex flex-wrap items-end gap-3 p-3">
         <label className="min-w-52 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Run<select aria-label="Run 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedRunId} onChange={(event) => updateContext({ run: event.target.value === core.dataset?.latest_run_id ? null : event.target.value, source: null, stage: null })}>{core.runs.map((run) => <option key={run.run_id} value={run.run_id}>{run.run_id}{run.run_id === core.dataset?.latest_run_id ? " (latest)" : ""}</option>)}</select></label>
         <label className="min-w-52 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Source<select aria-label="Source 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedSource} disabled={stagesState.status !== "loaded"} onChange={(event) => updateContext({ source: event.target.value, stage: null })}>{invalidSource && requestedSource ? <option value={requestedSource}>{requestedSource} (존재하지 않는 source)</option> : null}{sourceEntries.map((source) => <option key={source.source_key} value={source.source_key}>{source.source_key}</option>)}</select></label>
         <label className="min-w-44 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Stage<select aria-label="Stage 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedStage} disabled={!sourceStageEntry} onChange={(event) => updateContext({ stage: event.target.value })}>{DATASET_STAGES.map((stageName) => <option key={stageName} value={stageName}>{stageName} · {sourceStageEntry?.[stageName].status ?? "unavailable"}</option>)}</select></label>
-        <div className="flex min-h-9 items-center gap-2 px-2 text-xs text-muted-foreground"><span>Status</span><strong className="text-foreground">{selectedRun?.status ?? core.dataset.status}</strong></div>
+        <div title="선택된 source/stage가 아니라 이 run 전체(모든 source)의 결과입니다" className="flex min-h-9 items-center gap-2 px-2 text-xs text-muted-foreground"><span>Run 상태</span><strong className="text-foreground">{runStatus}</strong></div>
       </Card>
 
       {stagesState.status === "error" ? <Card variant="error" role="alert">{stagesState.error}</Card> : invalidSource ? <Card variant="error" role="alert">URL의 source `{requestedSource}`는 선택한 run에 존재하지 않습니다.</Card> : null}
+      {runFailedButSelectedStageOk ? (
+        <Card variant="error" role="alert">
+          <p className="font-semibold">Run 상태는 failed이지만 선택한 source의 {selectedStage} stage는 completed입니다.</p>
+          <p className="mt-1 text-sm">
+            이 run에 포함된 다른 source(
+            {otherFailingSources.join(", ")}
+            )에서 stage 실패가 있어 run 전체 상태가 failed로 집계되었습니다. 모순이 아니라 run과
+            source/stage의 상태 범위가 다릅니다.
+          </p>
+        </Card>
+      ) : null}
 
       <div className="border-b border-border" role="tablist" aria-label="Dataset detail tabs">
         <div className="flex gap-1 overflow-x-auto">
@@ -207,11 +238,15 @@ export function DatasetDetailPage() {
               type="button"
               role="tab"
               aria-selected={selectedTab === tab.id}
-              // AI 탭은 Kubi(KubiContent)가 route의 ?stage=로만 stage를 판단한다(추측 금지 원칙,
-              // context.ts 참고) — 그래서 여기서 화면에 이미 계산되어 보이는 selectedStage를
-              // URL에 명시적으로 반영해줘야, 처음 AI 탭을 열었을 때도 Generated SQL/Result
-              // Preview가 비어 보이지 않는다.
-              onClick={() => updateContext(tab.id === "ai" ? { tab: "ai", stage: selectedStage } : { tab: tab.id === "overview" ? null : tab.id })}
+              // AI 탭은 Kubi(KubiContent)가 route의 ?run=&stage=로만 문맥을 판단한다(추측 금지
+              // 원칙, context.ts 참고) — 그래서 여기서 화면에 이미 계산되어 보이는
+              // selectedRunId/selectedStage를 URL에 명시적으로 반영해줘야, 처음 AI 탭을 열었을
+              // 때도 Kubi RUN context bar가 실제로는 알고 있는 latest run을 "—"로 보여주거나
+              // Generated SQL/Result Preview가 비어 보이지 않는다(UI audit #5). latest run이라
+              // ?run=이 URL에 없을 수도 있으므로(다른 select onChange와 동일 관례) 값을 항상
+              // 명시적으로 채운다 — 없는 값을 지어내는 게 아니라 이미 화면에 보이는 값을 그대로
+              // 전달하는 것이다.
+              onClick={() => updateContext(tab.id === "ai" ? { tab: "ai", run: selectedRunId, stage: selectedStage } : { tab: tab.id === "overview" ? null : tab.id })}
               className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium ${selectedTab === tab.id ? "border-accent text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
             >
               {tab.label}

@@ -380,7 +380,13 @@ export function AddDataPage() {
   }, [job.status, job.run, navigate]);
 
   return (
-    <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
+    // sticky bottom actions(이전/초안 저장/다음, 아래)는 sm 미만에서만 sticky이고, sticky로
+    // "고정"되는 동안에도 그 flow상 높이는 그대로 보존되어 뒤 이어지는 형제가 없어도 스크롤 중에는
+    // 화면에 떠서 마지막 content를 가릴 수 있다(390px 폭, UI audit #6-B) — 문서 전체 높이가
+    // 짧으면 마지막 필드/버튼이 그 sticky bar 뒤로 영영 가려질 수 있다. sm 미만에서만 sticky bar
+    // 높이(약 63px)보다 넉넉한 하단 여백을 둬서 항상 완전히 스크롤해서 벗어날 수 있게 한다 —
+    // sm 이상은 sticky가 static이 되므로(#6-B 대상 아님) 기존 desktop 여백을 그대로 유지한다.
+    <main className="flex flex-1 flex-col gap-6 px-5 pt-8 pb-28 sm:px-8 sm:pb-8 lg:px-10 lg:pt-10 lg:pb-10">
       <PageHeader
         eyebrow="Add Data"
         title="데이터 추가"
