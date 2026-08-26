@@ -469,7 +469,13 @@ export function Layout() {
                 </div>
               </div>
 
-              <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3">
+              {/* min-w-0가 여기 있으면 이 그룹의 최소너비 보호가 사라져 flex-shrink 계산에서
+                  이 그룹이 자기 컨텐츠(Kubi 버튼/avatar)보다 더 작게 줄어들 수 있다 — 그 안의
+                  버튼들은 title처럼 truncate로 줄어들 수 있는 요소가 아니라 overflow로 그대로
+                  삐져나와 왼쪽 subtitle과 겹쳤다(390px 폭, UI audit #6-A). min-w-0를 빼서 이
+                  그룹이 자기 컨텐츠의 min-content보다 작아지지 않게 하고, truncate가 적용된
+                  title 쪽(왼쪽 그룹)이 필요한 만큼 대신 줄어들게 한다. */}
+              <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
                 <KubiSearchInput />
 
                 <button

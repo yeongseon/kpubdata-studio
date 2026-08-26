@@ -141,7 +141,16 @@ export function BuildPublishPage() {
         {readiness.status === "error" ? <div className="mt-4" role="alert"><p className="text-sm text-red-700 dark:text-red-300">{readiness.message}</p></div> : null}
         {readiness.status === "loaded" ? (
           <div className="mt-4 space-y-4">
-            <p className="text-sm font-medium">{builderReady ? "Builder 게시 준비 완료" : "Builder blocker가 있어 게시할 수 없습니다."}</p>
+            <p className="text-sm font-medium">
+              {builderReady
+                ? "Builder 게시 준비 완료"
+                : readiness.data.blockers.length > 0
+                  ? "Builder blocker가 있어 게시할 수 없습니다."
+                  // ready: false인데 blockers가 비어 있으면("빈 카드") "blocker가 있다"고
+                  // 잘못 단정하지 않는다 — Builder가 사유를 제공하지 않은 것과 실제 blocker가
+                  // 있는 것은 다른 상태다(UI audit #4).
+                  : "Builder가 이 Run을 게시 준비되지 않음으로 판정했지만 구체적인 사유(blocker)를 제공하지 않았습니다."}
+            </p>
             {readiness.data.blockers.length > 0 ? <IssueList title="Blockers" issues={readiness.data.blockers} tone="error" /> : null}
             {readiness.data.warnings.length > 0 ? <IssueList title="Warnings" issues={readiness.data.warnings} tone="warning" /> : null}
             {readiness.data.blockers.some((issue) => issue.code === "credential_unavailable") ? <p className="text-xs text-muted-foreground">이 blocker는 source Provider credential이 아니라 Builder 서버의 Hugging Face publish credential을 뜻합니다. Studio는 token을 입력하거나 저장하지 않습니다.</p> : null}

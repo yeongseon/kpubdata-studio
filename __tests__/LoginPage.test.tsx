@@ -1,6 +1,7 @@
 /**
- * LoginPage (#263) — 이메일/비밀번호 입력, 로그인 버튼, 계정 만들기 링크, 실패 메시지를
- * 확인한다.
+ * LoginPage (#263 → #Phase2 UI polish) — 이메일/비밀번호 입력, 로그인 버튼, 계정 발급 안내
+ * 링크, 실패 메시지를 확인한다. mock/demo 환경(`VITE_USE_REAL_BUILDER` 미설정)을 가정한다 —
+ * 이때만 mock 폼이 보인다(LoginPage.tsx 주석 참고).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -29,12 +30,12 @@ afterEach(() => {
 });
 
 describe("LoginPage", () => {
-  it("renders email/password inputs, a login button, and a link to create an account", () => {
+  it("renders email/password inputs, a login button, and a link to the account-provisioning notice", () => {
     renderLogin();
     expect(screen.getByLabelText("이메일", { exact: false })).toBeInTheDocument();
     expect(screen.getByLabelText("비밀번호", { exact: false })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "로그인" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "계정 만들기" })).toHaveAttribute("href", "/signup");
+    expect(screen.getByRole("link", { name: "계정 발급 안내" })).toHaveAttribute("href", "/signup");
   });
 
   it("on success, sets the session and navigates home — the password never reaches the store", async () => {

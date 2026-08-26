@@ -4,13 +4,23 @@
  * Issue #248: Home을 신규 사용자·기존 사용자 상태로 구현한다.
  *
  * 신규 사용자 여부는 dataset/build 존재 여부로 판단한다.
- * - 신규 사용자: 환영 메시지, Kubi 검색 hero, 공공데이터 탐색, 데이터 바로 가져오기, 예시 데이터셋 둘러보기
+ * - 신규 사용자: 환영 메시지, Kubi 자연어 hero(topbar KubiSearchInput과 동일한 seed 흐름 재사용),
+ *   공공데이터 탐색, 데이터 바로 가져오기
  * - 기존 사용자: 실제 KPI (DATASETS, BUILD SUCCESS, VALIDATION WARN, RUNNING), 최근 데이터셋, 최근 Build stage 요약, 품질 경고/실패 Build
+ *
+ * Phase2 UI polish: "예시 데이터셋을 곧 만나보실 수 있습니다" placeholder 섹션은 제거했다 —
+ * 실제 예시 데이터셋이 없는 상태에서 서비스가 미완성인 인상을 줬다. 같은 CTA는 이미
+ * "공공데이터 탐색 → /discover" 카드가 담당한다.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useAssistConfig } from "@/features/assistant/config";
 import { listBuilds } from "@/features/runs/api";
+import { SUGGESTED_QUESTIONS } from "@/features/kubi/suggestedQuestions";
+import { useKubiStore } from "@/features/kubi/useKubiSession";
+import { useUIStore } from "@/shared/hooks/useUIStore";
 import type { BuildListItem, BuildRunStatus } from "@/shared/lib/types";
 import {
+  Button,
   Card,
   EmptyState,
   LinkButton,
@@ -123,43 +133,103 @@ function NewUserHome() {
       <PageHeader
         eyebrow="시작하기"
         title="공공데이터를 쉽게 수집하고 변환하세요"
-        description="Kubi가 도와드립니다. 예시 데이터셋을 둘러보거나 바로 시작하세요."
+        description="Kubi가 도와드립니다. 자연어로 물어보거나 원하는 방식으로 바로 시작하세요."
       />
 
+      <KubiHero />
+
       <section className="grid gap-6 lg:grid-cols-2">
-        <Card variant="elevated" className="flex flex-col items-center justify-center p-12 text-center">
-          <h2 className="text-2xl font-semibold tracking-tight">Kubi로 데이터 찾기</h2>
+        <Card variant="elevated" className="flex flex-col items-center justify-center p-10 text-center">
+          <h2 className="text-xl font-semibold tracking-tight">공공데이터 탐색</h2>
           <p className="mt-3 text-muted-foreground">
-            한국어로 질문하면 Kubi가 적합한 공공데이터를 찾아드립니다
+            어떤 공공데이터를 다룰 수 있는지 카탈로그에서 둘러보세요
           </p>
-          <LinkButton className="mt-6" to="/kubi">
-            Kubi 열기
+          <LinkButton className="mt-6" variant="secondary" to="/discover">
+            탐색하기
           </LinkButton>
         </Card>
 
-        <Card variant="elevated" className="flex flex-col items-center justify-center p-12 text-center">
-          <h2 className="text-2xl font-semibold tracking-tight">데이터 바로 가져오기</h2>
+        <Card variant="elevated" className="flex flex-col items-center justify-center p-10 text-center">
+          <h2 className="text-xl font-semibold tracking-tight">데이터 바로 가져오기</h2>
           <p className="mt-3 text-muted-foreground">
             Public API, 파일, URL에서 데이터를 직접 가져와 빌드하세요
           </p>
-          <LinkButton className="mt-6" variant="secondary" to="/add-data">
+          <LinkButton className="mt-6" variant="secondary" to="/add">
             데이터 추가하기
           </LinkButton>
         </Card>
       </section>
-
-      <section>
-        <PageHeader eyebrow="둘러보기" title="예시 데이터셋" className="mb-4" />
-        <Card className="p-0">
-          <EmptyState
-            title="예시 데이터셋을 곧 만나보실 수 있습니다"
-            description="자주 사용하는 공공데이터 템플릿을 준비 중입니다"
-            actionLabel="공공데이터 탐색"
-            actionHref="/discover"
-          />
-        </Card>
-      </section>
     </>
+  );
+}
+
+/**
+ * Home의 Kubi 자연어 hero (#Phase2 UI polish).
+ *
+ * 새 assistant system이 아니라 topbar `KubiSearchInput`과 동일한 seed 흐름
+ * (`useKubiStore().seedQuestion` + `useUIStore().openKubiDrawer`)을 재사용한다. 여기서
+ * evidence 조회/LLM 호출을 직접 하지 않는다 — drawer가 열리면 `useKubiSession`이 이어받는다.
+ *
+ * `ask()`(useKubiSession.ts)는 seed를 받는 즉시 실행하고, API Key 미설정 시 `no_key` 에러
+ * turn을 만든다. 여기서 원치 않는 에러 turn을 일부러 만들지 않기 위해, seed는
+ * `isConfigured`일 때만 남기고 아니면 drawer만 열어 기존 API Key 설정 안내를 보여준다.
+ */
+function KubiHero() {
+  const [query, setQuery] = useState("");
+  const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
+  const seedQuestion = useKubiStore((state) => state.seedQuestion);
+  const { isConfigured } = useAssistConfig();
+
+  function ask(question: string) {
+    const trimmed = question.trim();
+    if (trimmed && isConfigured) seedQuestion(trimmed);
+    openKubiDrawer();
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    ask(query);
+    setQuery("");
+  }
+
+  return (
+    <Card variant="elevated" className="p-8">
+      <h2 className="text-xl font-semibold tracking-tight">Kubi에게 필요한 데이터를 물어보세요</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        한국어로 질문하면 Kubi가 적합한 공공데이터를 찾고 BuildSpec까지 제안합니다.
+      </p>
+      <form className="mt-4 flex flex-col gap-2 sm:flex-row" onSubmit={handleSubmit}>
+        <label className="sr-only" htmlFor="home-kubi-hero">
+          Kubi에게 자연어로 데이터 물어보기
+        </label>
+        <input
+          className="h-11 flex-1 rounded-lg border border-input bg-card px-4 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          id="home-kubi-hero"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="예: 서울 대기오염 데이터로 뭘 할 수 있어?"
+          type="search"
+          value={query}
+        />
+        <Button type="submit">Kubi에게 물어보기</Button>
+      </form>
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {SUGGESTED_QUESTIONS.map((question) => (
+          <button
+            key={question}
+            type="button"
+            className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-accent hover:text-foreground"
+            onClick={() => ask(question)}
+          >
+            {question}
+          </button>
+        ))}
+      </div>
+      {!isConfigured ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          아직 API Key가 설정되지 않았습니다. Kubi를 열면 설정 방법을 안내합니다.
+        </p>
+      ) : null}
+    </Card>
   );
 }
 
