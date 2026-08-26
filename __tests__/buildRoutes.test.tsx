@@ -42,10 +42,12 @@ describe("build-centric routes", () => {
     expect(await screen.findByText(/Run을 찾을 수 없습니다/)).toBeInTheDocument();
   });
 
-  it("renders the run page with progress steps", () => {
-    renderAt("/builds/abc/run", <BuildRunPage />);
-    expect(screen.getByText("진행 단계")).toBeInTheDocument();
-    expect(screen.getByText("수집")).toBeInTheDocument();
+  it("renders the run page with the build's actual canonical status, not fake progress steps (UI audit #3)", async () => {
+    // 이전에는 buildId와 무관하게 항상 "대기"·가짜 stepper였다 — 실제 mock 이력에 존재하는
+    // run(dur-pregnancy-taboo-20260621, status: running)으로 canonical 상태를 확인한다.
+    renderAt("/builds/dur-pregnancy-taboo-20260621/run", <BuildRunPage />);
+    expect(await screen.findByText("실행 중")).toBeInTheDocument();
+    expect(screen.getByText("상세 진행 정보 미지원")).toBeInTheDocument();
   });
 
   it("renders the artifacts page with a manifest section", async () => {

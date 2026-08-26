@@ -1,7 +1,11 @@
 import { render, screen } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { HomePage } from "@/pages/HomePage";
+import { mswServer } from "../vitest.setup";
+
+const BUILDER_BASE = "http://localhost:8000";
 
 describe("HomePage", () => {
   it("renders the existing-user dashboard heading and KPI summary once builds load (#248)", async () => {
@@ -36,5 +40,21 @@ describe("HomePage", () => {
     expect(
       screen.getAllByRole("link", { name: "보기" }).length,
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("points the new-user '데이터 추가하기' CTA at the canonical /add route, not /add-data (#regression)", async () => {
+    // 신규 사용자 분기를 재현하기 위해 빌드 목록을 빈 배열로 오버라이드한다.
+    mswServer.use(
+      http.get(`${BUILDER_BASE}/builds`, () => HttpResponse.json({ builds: [] })),
+    );
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    const cta = await screen.findByRole("link", { name: "데이터 추가하기" });
+    expect(cta).toHaveAttribute("href", "/add");
   });
 });
