@@ -11,6 +11,7 @@ export { PageHeader, type PageHeaderProps } from "./PageHeader";
 export { PlaceholderPage, type PlaceholderPageProps } from "./PlaceholderPage";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { StatusBadge, type StatusBadgeProps, type StatusValue } from "./StatusBadge";
+export { DemoBadge, type DemoBadgeProps } from "./DemoBadge";
 export { Stepper, type StepperProps, type StepItem, type StepState } from "./Stepper";
 export { FormField, type FormFieldProps, type FormFieldRenderProps } from "./FormField";
 export { TextInput, type TextInputProps } from "./TextInput";

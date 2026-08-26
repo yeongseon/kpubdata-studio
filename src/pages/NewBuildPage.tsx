@@ -70,7 +70,7 @@ interface BuildTemplate {
 const TEMPLATES: BuildTemplate[] = [
   {
     id: "blank",
-    name: "빈 빌드",
+    name: "직접 구성",
     description: "아무 값 없이 처음부터 직접 설정합니다.",
     values: initialValues,
   },
@@ -245,6 +245,30 @@ function catalogDataset(
 function isTemplateAvailable(template: BuildTemplate, catalog: CatalogState): boolean {
   if (!template.values.provider || !template.values.sourceDataset || catalog.status !== "loaded") return true;
   return catalogDataset(catalog.providers, template.values.provider, template.values.sourceDataset) !== undefined;
+}
+
+/** 템플릿 선택 버튼 — 사용 가능/준비 중 두 그리드가 이 렌더링 하나를 공유한다(#Phase2 UI polish). */
+function TemplateButton({ template, catalog, onSelect }: { template: BuildTemplate; catalog: CatalogState; onSelect: (template: BuildTemplate) => void }) {
+  const available = isTemplateAvailable(template, catalog);
+  const resolvedDataset = catalogDataset(catalog.providers, template.values.provider, template.values.sourceDataset);
+  return (
+    <button
+      type="button"
+      disabled={!available}
+      onClick={() => onSelect(template)}
+      className="rounded-2xl border border-border bg-card p-4 text-left transition enabled:hover:border-accent/50 enabled:hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <p className="text-base font-semibold tracking-tight">{template.name}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{template.description}</p>
+      {template.values.provider && template.values.sourceDataset ? (
+        <p className="mt-3 text-xs font-medium text-muted-foreground">
+          {resolvedDataset
+            ? `${providerLabel(template.values.provider)} / ${resolvedDataset.title}`
+            : "현재 Builder catalog에 없는 source입니다."}
+        </p>
+      ) : null}
+    </button>
+  );
 }
 
 /**
@@ -574,47 +598,52 @@ export function NewBuildPage() {
             <div className="space-y-4">
               <h3 className="text-xl font-semibold tracking-tight">템플릿 선택</h3>
               <p className="text-sm text-muted-foreground">
-                자주 쓰는 공공데이터 조합으로 시작하거나 빈 빌드로 처음부터 설정하세요.
+                자주 쓰는 공공데이터 조합으로 시작하거나 직접 구성으로 처음부터 설정하세요.
               </p>
               {catalog.status === "loading" ? (
                 <p className="text-sm text-muted-foreground">Builder catalog를 불러오는 중입니다...</p>
               ) : null}
               {catalog.status === "error" ? (
                 <p role="alert" className="text-sm text-red-700 dark:text-red-300">
-                  {catalog.error}
+                  Builder catalog 조회 실패: {catalog.error}
                 </p>
               ) : null}
-              <div className="grid gap-3 sm:grid-cols-2">
-                {TEMPLATES.map((template) => {
-                  const available = isTemplateAvailable(template, catalog);
-                  const resolvedDataset = catalogDataset(
-                    catalog.providers,
-                    template.values.provider,
-                    template.values.sourceDataset,
-                  );
+              {catalog.status === "loaded" ? (
+                (() => {
+                  const available = TEMPLATES.filter((template) => isTemplateAvailable(template, catalog));
+                  const unavailable = TEMPLATES.filter((template) => !isTemplateAvailable(template, catalog));
                   return (
-                    <button
-                      key={template.id}
-                      type="button"
-                      disabled={!available}
-                      onClick={() => selectTemplate(template)}
-                      className="rounded-2xl border border-border bg-card p-4 text-left transition enabled:hover:border-accent/50 enabled:hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <p className="text-base font-semibold tracking-tight">{template.name}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {template.description}
-                      </p>
-                      {template.values.provider && template.values.sourceDataset ? (
-                        <p className="mt-3 text-xs font-medium text-muted-foreground">
-                          {resolvedDataset
-                            ? `${providerLabel(template.values.provider)} / ${resolvedDataset.title}`
-                            : "현재 Builder catalog에 없는 source입니다."}
-                        </p>
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {available.map((template) => (
+                          <TemplateButton key={template.id} template={template} catalog={catalog} onSelect={selectTemplate} />
+                        ))}
+                      </div>
+                      {unavailable.length > 0 ? (
+                        <div className="rounded-2xl border border-dashed border-border p-4">
+                          <p className="text-sm font-medium text-muted-foreground">
+                            준비 중인 템플릿 {unavailable.length}개
+                          </p>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            {unavailable.map((template) => (
+                              <TemplateButton key={template.id} template={template} catalog={catalog} onSelect={selectTemplate} />
+                            ))}
+                          </div>
+                        </div>
                       ) : null}
-                    </button>
+                    </>
                   );
-                })}
-              </div>
+                })()
+              ) : (
+                // catalog가 아직 loading/error인 동안은 가용성을 판정할 수 없으므로(isTemplateAvailable도
+                // 이 경우 항상 true를 반환) 원본 grid를 그대로 보여준다 — "대부분 disabled"처럼
+                // 보이는 깜빡임을 만들지 않는다.
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {TEMPLATES.map((template) => (
+                    <TemplateButton key={template.id} template={template} catalog={catalog} onSelect={selectTemplate} />
+                  ))}
+                </div>
+              )}
             </div>
           ) : null}
 
