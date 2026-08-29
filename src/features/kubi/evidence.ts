@@ -34,12 +34,13 @@ async function settle<T>(promise: Promise<T>): Promise<{ ok: true; value: T } | 
  *
  * @param context - evidence를 구성할 대상 문맥(요청 시작 시점 값으로 고정해서 넘겨야 한다).
  * @param signal - 취소 signal.
- * @returns secret이 제거된 evidence 번들과, 응답 hallucination 검사를 위한 알려진 id 집합.
+ * @returns secret이 제거된 evidence 번들, 응답 hallucination 검사를 위한 알려진 id 집합,
+ *   그리고 LLM egress 엔트로피 오탐에서만 면제할 "Builder가 존재를 확인한" run id 집합.
  */
 export async function loadKubiEvidence(
   context: KubiContext,
   signal?: AbortSignal,
-): Promise<{ evidence: KubiEvidence; knownRefs: KubiKnownRefs }> {
+): Promise<{ evidence: KubiEvidence; knownRefs: KubiKnownRefs; safeRunIds: Set<string> }> {
   const unavailable: KubiEvidenceSource[] = [];
   const evidence: KubiEvidence = {
     fetchedAt: new Date().toISOString(),
@@ -54,7 +55,22 @@ export async function loadKubiEvidence(
     providers: new Set(),
     qualityResultIds: new Set(),
     schemaDriftIds: new Set(),
+    sourceKeys: new Set(),
   };
+
+  // knownRefs.runIds 와 safeRunIds 는 역할이 다르지만(전자는 crossCheck 의 hallucination
+  // 대조, 후자는 LLM egress/redaction 엔트로피 오탐 면제) provenance 계약은 같다: 둘 다
+  // "이번 evidence 로딩에서 Builder 응답으로 실제 존재가 확인된 run id" 만 담는다. route/
+  // context.runId 는 evidence.context / deepLink / Builder 조회 target 으로만 쓰고, 존재가
+  // 확인되기 전에는 어느 trust set 에도 넣지 않는다. 두 Set 이 다시 어긋나지 않도록 확인된
+  // run 은 반드시 이 helper 를 통해 등록한다.
+  const safeRunIds = new Set<string>();
+
+  function confirmRunId(id: string | null | undefined): void {
+    if (!id) return;
+    knownRefs.runIds.add(id);
+    safeRunIds.add(id);
+  }
 
   const catalogResult = await settle(builderApi.catalog(signal));
   if (catalogResult.ok) {
@@ -89,7 +105,9 @@ export async function loadKubiEvidence(
         updatedAt: dataset.updated_at,
         totalRowCount: dataset.total_row_count,
       };
-      knownRefs.runIds.add(dataset.latest_run_id);
+      // getDataset 성공 응답의 latest_run_id — Builder 가 확인한 값이다(schema 상 string 이나
+      // 방어적으로 falsy 를 거른다).
+      confirmRunId(dataset.latest_run_id);
       evidence.deepLinks.datasetDetail = `/datasets/${encodeURIComponent(dataset.dataset_id)}`;
       evidence.deepLinks.qualityCenter = `/quality?dataset=${encodeURIComponent(dataset.dataset_id)}`;
       runId = runId ?? dataset.latest_run_id;
@@ -104,14 +122,18 @@ export async function loadKubiEvidence(
         startedAt: run.started_at,
         finishedAt: run.finished_at,
       }));
-      for (const run of runsResult.value.runs) knownRefs.runIds.add(run.run_id);
+      // listDatasetRuns 성공 응답의 run_id — Builder 가 직접 반환한 실제 run 이다.
+      for (const run of runsResult.value.runs) confirmRunId(run.run_id);
     } else {
       unavailable.push("runs");
     }
   }
 
   if (runId) {
-    knownRefs.runIds.add(runId);
+    // runId 가 route/context 에서 왔다면(dataset.latest_run_id 로 이미 confirm 된 경우가 아니면)
+    // 아직 존재가 확인되지 않았다. deepLink 계산과 Builder 조회 target 으로는 쓰되, knownRefs/
+    // safeRunIds 에는 넣지 않는다 — 아래 getBuildQuality / listBuildStages 는 nonexistent run 에
+    // 404 를 주므로(Builder OpenAPI SSOT), 그 요청이 정상 응답할 때만 confirmRunId 로 등록한다.
     evidence.deepLinks.buildDetail = `/builds/${encodeURIComponent(runId)}`;
 
     const storedSpec = loadBuildSpec(runId);
@@ -132,6 +154,8 @@ export async function loadKubiEvidence(
 
     const qualityResult = await settle(getBuildQuality(runId, signal));
     if (qualityResult.ok) {
+      // GET /builds/{run_id}/quality 는 nonexistent run 에 404 를 준다 — 200 이면 실제 run 이다.
+      confirmRunId(runId);
       const quality = qualityResult.value;
       const results = Object.values(quality.quality_results).flat();
       const drift = Object.values(quality.schema_drift).flat();
@@ -141,6 +165,7 @@ export async function loadKubiEvidence(
         results: results.map((result) => {
           const id = qualityResultRefId(result);
           knownRefs.qualityResultIds.add(id);
+          knownRefs.sourceKeys.add(result.source_key);
           return {
             id,
             sourceKey: result.source_key,
@@ -167,6 +192,11 @@ export async function loadKubiEvidence(
     if (context.stage) {
       const stagesResult = await settle(listBuildStages(runId, signal));
       if (stagesResult.ok) {
+        // GET /builds/{run_id}/stages 도 nonexistent run 에 404 를 준다 — 200 이면 실제 run 이다.
+        confirmRunId(runId);
+        // stage 목록의 모든 source_key는 이 run의 실제 canonical source다 — Generated SQL의
+        // source 검증에 쓸 수 있게 전부 모은다(quality evidence가 없어도 검증 가능).
+        for (const source of stagesResult.value.sources) knownRefs.sourceKeys.add(source.source_key);
         const firstSource = stagesResult.value.sources[0];
         if (firstSource) {
           const detailResult = await settle(
@@ -175,6 +205,7 @@ export async function loadKubiEvidence(
           if (detailResult.ok) {
             const detail = detailResult.value;
             const rowCount = detail.stage === "bronze" ? detail.record_count : detail.row_count;
+            knownRefs.sourceKeys.add(firstSource.source_key);
             evidence.stage = {
               stage: context.stage,
               sourceKey: firstSource.source_key,
@@ -196,6 +227,9 @@ export async function loadKubiEvidence(
   evidence.partial = unavailable.length > 0;
 
   // 방어적 마지막 관문: Builder 응답에 예상치 못한 credential성 필드가 섞여 있어도 여기서 걸러낸다.
-  const redacted = redactSecrets(evidence) as KubiEvidence;
-  return { evidence: redacted, knownRefs };
+  // 엔트로피 오탐 면제는 safeRunIds(= Builder 가 존재를 확인한 exact run id) 로만 한다. 아직
+  // 확인되지 않은 route context.runId(예: `?run=` / `/builds/:id`)는 여기에도 knownRefs.runIds
+  // 에도 들어 있지 않으므로 evidence 에서 그대로 새어 나가지 않는다.
+  const redacted = redactSecrets(evidence, safeRunIds) as KubiEvidence;
+  return { evidence: redacted, knownRefs, safeRunIds };
 }

@@ -111,6 +111,12 @@ export interface KubiKnownRefs {
   providers: Set<string>;
   qualityResultIds: Set<string>;
   schemaDriftIds: Set<string>;
+  /**
+   * evidence에 실제로 등장한 Builder canonical source_key("provider.dataset") 집합.
+   * quality 결과·stage evidence에서 모은다. Generated SQL의 `source`가 이 집합에 없으면
+   * 검증되지 않은 값이므로 Builder `/query`로 그대로 보내지 않는다(crossCheck).
+   */
+  sourceKeys: Set<string>;
 }
 
 /** LLM 구조화 응답이 근거로 인용한 evidence 조각. */

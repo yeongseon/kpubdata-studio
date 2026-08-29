@@ -33,7 +33,7 @@ const RESPONSE_CONTRACT = `다음 JSON 형태로만 응답하세요. 다른 텍�
 - evidenceRefs, generatedSql, suggestedActions에 등장하는 모든 id(dataset/run/provider/quality 결과 등)는 반드시 아래 evidence 블록에 실제로 존재하는 값이어야 합니다. evidence에 없는 값을 만들어내지 마세요.
 - evidence가 부분적으로만 제공된 경우(partial=true, unavailable 목록 참고) 확인하지 못한 부분은 모른다고 답하세요. 전체를 확인한 것처럼 말하지 마세요.
 - generatedSql은 evidence.context.stage가 "silver" 또는 "gold"일 때만, 그리고 실제로 조회가 필요한 질문일 때만 제안하세요. 그 외에는 null로 두세요. generatedSql은 절대 자동 실행되지 않으며 사용자가 직접 실행 버튼을 눌러야 Builder /query로 전달됩니다.
-- generatedSql.sql의 FROM 절은 반드시 logical relation "dataset" 하나만 조회해야 합니다(Builder #504 contract). evidence에 있는 실제 source_key(예: "datago__air")를 FROM의 테이블명으로 쓰지 마세요 — source_key는 오직 generatedSql.source 필드로만 전달하고, Builder가 이를 이용해 실제 소스를 해석합니다. multi-source 질문이라도 SQL 본문에는 개별 소스 테이블명을 등장시키지 말고, source 필드로만 어떤 소스를 조회할지 표현하세요.
+- generatedSql.sql의 FROM 절은 반드시 logical relation "dataset" 하나만 조회해야 합니다(Builder #504 contract). evidence에 있는 실제 source_key(Builder canonical 형식은 "provider.dataset", 예: "datago.air_quality")를 FROM의 테이블명으로 쓰지 마세요 — source_key는 오직 generatedSql.source 필드로만 전달하고, Builder가 이를 이용해 실제 소스를 해석합니다. generatedSql.source에는 evidence에 그대로 등장한 source_key 문자열만 쓰고, 형식을 임의로 바꾸지 마세요. 확실하지 않으면 source를 생략하세요(단일 소스 run이면 Builder가 자동으로 선택합니다). multi-source 질문이라도 SQL 본문에는 개별 소스 테이블명을 등장시키지 말고, source 필드로만 어떤 소스를 조회할지 표현하세요.
 - suggestedActions는 issue #256이 정의한 6종(OPEN_PROVIDER/OPEN_BUILD/OPEN_QUALITY/PATCH_BUILDSPEC/CREATE_BUILD_DRAFT/ADD_REPORT_BLOCK) 외에는 절대 만들지 마세요. 다른 종류의 action이나 자유 형식 함수 호출을 제안하지 마세요.
 - Build 실행, Publish, Credential 변경, SQL 자동 실행, 기존 BuildSpec 덮어쓰기는 어떤 action으로도 제안하지 마세요. 이 시스템에는 그런 action이 존재하지 않습니다.`;
 

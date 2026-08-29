@@ -10,6 +10,15 @@ import { createSecretScrubber, type SecretScrubber } from "./scrub";
 
 import { checkLlmBaseUrl, redactApiKey, DEFAULT_LLM_BASE_URL } from "./baseUrl";
 
+export interface AssistExchangeOptions {
+  /**
+   * generic 엔트로피 오탐에서만 면제할 exact 값 집합(현재는 Kubi가 evidence에서 확인한
+   * run id). LLM egress 스크러버(prepareMessages → scrubText/scrub)까지 그대로 전달돼
+   * canonical run id가 `[REDACTED]`되지 않게 한다. 넘기지 않으면 기존과 동일 동작.
+   */
+  safeRunIds?: ReadonlySet<string>;
+}
+
 export interface AssistMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -27,8 +36,8 @@ const SAFE_PROVIDER: unique symbol = Symbol("safe-assist-provider");
 
 export interface AssistProvider {
   readonly [SAFE_PROVIDER]: true;
-  exchange(messages: AssistMessage[], signal?: AbortSignal): AssistExchange;
-  stream(messages: AssistMessage[], signal?: AbortSignal): AsyncIterable<string>;
+  exchange(messages: AssistMessage[], signal?: AbortSignal, options?: AssistExchangeOptions): AssistExchange;
+  stream(messages: AssistMessage[], signal?: AbortSignal, options?: AssistExchangeOptions): AsyncIterable<string>;
   readonly isConfigured: boolean;
 }
 
@@ -192,8 +201,8 @@ class SafeAssistProvider implements AssistProvider {
     return this.transport.isConfigured;
   }
 
-  exchange(messages: AssistMessage[], signal?: AbortSignal): AssistExchange {
-    const scrubber = createSecretScrubber();
+  exchange(messages: AssistMessage[], signal?: AbortSignal, options?: AssistExchangeOptions): AssistExchange {
+    const scrubber = createSecretScrubber(undefined, { safeRunIds: options?.safeRunIds });
     const safeMessages = prepareMessages(messages, scrubber);
     const output = this.transport.stream(safeMessages, signal);
     return {
@@ -204,8 +213,8 @@ class SafeAssistProvider implements AssistProvider {
     };
   }
 
-  async *stream(messages: AssistMessage[], signal?: AbortSignal): AsyncIterable<string> {
-    yield* this.exchange(messages, signal).displayOutput;
+  async *stream(messages: AssistMessage[], signal?: AbortSignal, options?: AssistExchangeOptions): AsyncIterable<string> {
+    yield* this.exchange(messages, signal, options).displayOutput;
   }
 }
 

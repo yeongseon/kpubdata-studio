@@ -123,9 +123,21 @@ export function crossCheckKubiResponse(
     if (evidence.context.stage !== generatedSql.stage) {
       rejectedSqlReason = `현재 화면 stage(${evidence.context.stage ?? "없음"})와 제안된 SQL의 stage(${generatedSql.stage})가 일치하지 않아 실행 대상에서 제외했습니다.`;
       generatedSql = null;
-    } else if (generatedSql.source && evidence.stage && generatedSql.source !== evidence.stage.sourceKey) {
-      rejectedSqlReason = `evidence에 없는 source "${generatedSql.source}"를 참조해 실행 대상에서 제외했습니다.`;
-      generatedSql = null;
+    } else if (generatedSql.source && !knownRefs.sourceKeys.has(generatedSql.source)) {
+      // 모델이 만든 source 문자열이 evidence의 canonical source_key와 정확히 일치하지 않는다.
+      // "__"→"." 같은 추측성 정규화는 하지 않는다 — canonical evidence와 대조만 한다.
+      // (evidence.stage가 없어도 quality 결과·stage 목록에서 모은 knownRefs.sourceKeys로 검증한다.)
+      const singleSource = knownRefs.sourceKeys.size === 1 || evidence.dataset?.sources.length === 1;
+      if (singleSource) {
+        // 단일 소스 run이고 다른 ambiguity가 없으므로, 미검증 source는 버리고 Builder가
+        // 유일 source를 자동 선택하게 한다(SQL 본문 자체는 살린다).
+        rejectedSqlReason = `제안된 source "${generatedSql.source}"를 evidence에서 확인할 수 없어 제거했습니다. 단일 소스 run이라 Builder가 자동으로 소스를 선택합니다.`;
+        generatedSql = { ...generatedSql, source: undefined };
+      } else {
+        // multi-source에서 미검증 source는 어떤 소스를 조회할지 결정할 수 없다 — fail-closed.
+        rejectedSqlReason = `evidence에 없는 source "${generatedSql.source}"를 참조해 실행 대상에서 제외했습니다.`;
+        generatedSql = null;
+      }
     }
   }
 

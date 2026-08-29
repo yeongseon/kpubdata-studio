@@ -162,13 +162,19 @@ export function useKubiSession(): UseKubiSessionResult {
       controllersRef.current.set(turnId, controller);
 
       try {
-        const { evidence, knownRefs } = await loadKubiEvidence(context, controller.signal);
+        const { evidence, knownRefs, safeRunIds } = await loadKubiEvidence(context, controller.signal);
         updateTurn(turnId, (t) => ({ ...t, evidence }));
 
         const provider = createProvider({ apiKey, model, baseUrl });
         const messages = buildKubiMessages(trimmed, evidence);
         let rawOutput = "";
-        for await (const chunk of provider.stream(messages, controller.signal)) {
+        // Builder 응답으로 존재가 확인된 exact run id(safeRunIds)만 LLM egress 스크러버에서
+        // 보존한다 — knownRefs.runIds 가 아니다. 그래야 모델이 실제 run id를 그대로 echo 하고
+        // crossCheck(knownRefs.runIds)·suggestedAction.runId 와 일치해 정상 action 이 제거되지
+        // 않으면서, 아직 확인되지 않은 route runId 는 엔트로피 스크럽 대상으로 남는다.
+        for await (const chunk of provider.stream(messages, controller.signal, {
+          safeRunIds,
+        })) {
           rawOutput += chunk;
         }
 
@@ -189,8 +195,15 @@ export function useKubiSession(): UseKubiSessionResult {
           actionStates[index] = { status: "pending_approval" };
         });
 
+        // parse 단계에서 형식이 잘못돼 떼어낸 evidenceRef(예: 허용 목록 밖 kind)도
+        // cross-check가 제거한 근거와 같은 자리에 함께 보여준다 — answer는 살린다.
+        const malformedRefs = parsed.malformedEvidenceRefs;
+        const rejectedRefs = [
+          ...malformedRefs.map((ref) => `형식 오류로 제외: ${ref}`),
+          ...checked.rejectedRefs,
+        ];
         const hasRejections =
-          checked.rejectedRefs.length > 0 || checked.rejectedActions.length > 0 || Boolean(checked.rejectedSqlReason);
+          rejectedRefs.length > 0 || checked.rejectedActions.length > 0 || Boolean(checked.rejectedSqlReason);
 
         updateTurn(turnId, (t) => ({
           ...t,
@@ -203,12 +216,12 @@ export function useKubiSession(): UseKubiSessionResult {
                 kind: "hallucinated_refs",
                 message: [
                   checked.rejectedSqlReason,
-                  checked.rejectedRefs.length ? `제외된 근거: ${checked.rejectedRefs.join(", ")}` : null,
+                  rejectedRefs.length ? `제외된 근거: ${rejectedRefs.join(", ")}` : null,
                   checked.rejectedActions.length ? `제외된 action: ${checked.rejectedActions.join(", ")}` : null,
                 ]
                   .filter(Boolean)
                   .join(" "),
-                rejectedRefs: checked.rejectedRefs,
+                rejectedRefs,
                 rejectedActions: checked.rejectedActions,
               }
             : undefined,

@@ -26,6 +26,7 @@ import {
   isMissingCategory,
   isSchemaCategory,
   overallQualityState,
+  qualityKubiSeedQuestion,
   summarizeByCategory,
   summarizeChecksPassed,
   warnOrFailResults,
@@ -286,7 +287,7 @@ export function QualityPage() {
           <Button
             variant="secondary"
             onClick={() => {
-              seedKubiQuestion("현재 Quality WARN/FAIL의 원인과 우선 조치 방법을 분석해줘.");
+              seedKubiQuestion(qualityKubiSeedQuestion(checksPassed));
               openKubiDrawer();
             }}
           >
