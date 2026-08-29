@@ -363,11 +363,24 @@ export function evidenceDetailEntries(turn: KubiTurn, ref: KubiEvidenceRef): [st
     .map(([key, value]) => [key, String(value ?? "—")]);
 }
 
-function evidenceHref(turn: KubiTurn, ref: KubiEvidenceRef): string | null {
+export function evidenceHref(turn: KubiTurn, ref: KubiEvidenceRef): string | null {
   const detail = evidenceDetail(turn, ref);
   if (!detail) return null;
   if (ref.kind === "dataset") return turn.evidence?.deepLinks.datasetDetail ?? null;
-  if (ref.kind === "run" || ref.kind === "stage") {
+  if (ref.kind === "run") {
+    if (!("runId" in detail) || typeof detail.runId !== "string") return null;
+    const targetRunId = detail.runId;
+    const params = new URLSearchParams({ run: targetRunId });
+    if (turn.context.datasetId) params.set("dataset", turn.context.datasetId);
+    // source/stage는 해당 run에서 검증된 문맥일 때만 유효하다. 다른 recent run으로 이동할
+    // 때 현재 run의 선택을 carry하면 존재하지 않는 조합이 되므로 함께 넘기지 않는다.
+    if (targetRunId === turn.context.runId) {
+      if (turn.context.source) params.set("source", turn.context.source);
+      if (turn.context.stage) params.set("stage", turn.context.stage);
+    }
+    return `/builds?${params}`;
+  }
+  if (ref.kind === "stage") {
     if (!turn.context.runId) return null;
     const params = new URLSearchParams({ run: turn.context.runId });
     if (turn.context.datasetId) params.set("dataset", turn.context.datasetId);
@@ -427,6 +440,7 @@ function TurnCard({ turn, session, collapsed = false, onToggle }: { turn: KubiTu
 
   return (
     <div className="space-y-2">
+      {onToggle ? <div className="flex justify-end"><button type="button" aria-expanded="true" onClick={onToggle} className="text-[11px] font-medium text-muted-foreground hover:text-foreground">대화 접기</button></div> : null}
       <div className="ml-auto max-w-[88%] rounded-lg bg-accent px-3 py-2 text-xs text-accent-foreground">
         {turn.question}
       </div>

@@ -5,7 +5,7 @@
  * 내용이 보이는지 확인한다. null/primitive는 기존 표시 방식을 그대로 유지해야 한다.
  */
 import { describe, expect, it } from "vitest";
-import { evidenceDetail, evidenceDetailEntries, formatQueryValue } from "./KubiContent";
+import { evidenceDetail, evidenceDetailEntries, evidenceHref, formatQueryValue } from "./KubiContent";
 import type { KubiTurn } from "./types";
 
 describe("formatQueryValue (#256 리뷰 §1)", () => {
@@ -78,5 +78,47 @@ describe("stage evidence detail", () => {
       ["Rows", "40"],
       ["Columns", "23"],
     ]);
+  });
+});
+
+describe("evidenceHref run navigation", () => {
+  const turn = {
+    id: "turn-links",
+    question: "근거 링크",
+    context: { page: "quality", datasetId: "dataset-1", runId: "run-current", source: "provider.dataset", stage: "gold" },
+    createdAt: "2026-08-30T00:00:00Z",
+    status: "ok",
+    query: { status: "idle" },
+    actionStates: {},
+    evidence: {
+      fetchedAt: "2026-08-30T00:00:00Z",
+      context: { page: "quality", datasetId: "dataset-1", runId: "run-current", source: "provider.dataset", stage: "gold" },
+      recentRuns: [
+        { runId: "run-current", status: "completed", startedAt: null, finishedAt: null },
+        { runId: "run-previous", status: "completed", startedAt: null, finishedAt: null },
+      ],
+      stage: { refId: "run-current::provider.dataset::gold", stage: "gold", source: "provider.dataset", status: "completed", available: true, rowCount: 40 },
+      deepLinks: {},
+      partial: false,
+      unavailable: [],
+    },
+  } satisfies KubiTurn;
+
+  it("uses the verified current run detail and retains its source/stage context", () => {
+    expect(evidenceHref(turn, { kind: "run", id: "run-current", label: "현재 Run" })).toBe(
+      "/builds?run=run-current&dataset=dataset-1&source=provider.dataset&stage=gold",
+    );
+  });
+
+  it("uses a verified different recent run and does not carry current source/stage", () => {
+    expect(evidenceHref(turn, { kind: "run", id: "run-previous", label: "이전 Run" })).toBe(
+      "/builds?run=run-previous&dataset=dataset-1",
+    );
+  });
+
+  it("keeps the verified stage ref navigation on its current run/source/stage", () => {
+    expect(evidenceHref(turn, { kind: "stage", id: "run-current::provider.dataset::gold", label: "Gold" })).toBe(
+      "/builds?run=run-current&dataset=dataset-1&source=provider.dataset&stage=gold",
+    );
   });
 });
