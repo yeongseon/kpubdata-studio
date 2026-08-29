@@ -1,0 +1,102 @@
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as datasetsApi from "@/features/datasets/api";
+import { KubiPage } from "@/pages/KubiPage";
+import { useKubiStore } from "./useKubiSession";
+import type { RunStagesResponse } from "@/shared/lib/builderApi";
+
+function stages(runId: string, sourceKeys: string[]): RunStagesResponse {
+  return {
+    run_id: runId,
+    sources: sourceKeys.map((source_key) => ({
+      source_key,
+      bronze: { status: "completed", available: true },
+      silver: { status: "completed", available: true },
+      gold: { status: "completed", available: true },
+    })),
+  };
+}
+
+function Harness({ initialPath = "/kubi?run=run-a" }: { initialPath?: string }) {
+  return (
+    <MemoryRouter initialEntries={[initialPath]}>
+      <KubiPage />
+      <LocationHarness />
+    </MemoryRouter>
+  );
+}
+
+function LocationHarness() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="location">{location.pathname}{location.search}</output>
+      <button type="button" onClick={() => navigate("/kubi?run=run-b")}>Run B로 이동</button>
+    </>
+  );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+beforeEach(() => {
+  useKubiStore.setState({ turns: [], onboarded: false, pendingSeed: null });
+  vi.restoreAllMocks();
+});
+
+describe("Kubi live Builder-confirmed source picker", () => {
+  it("shows a multi-source picker before the first question, without quality evidence", async () => {
+    vi.spyOn(datasetsApi, "listBuildStages").mockResolvedValue(stages("run-a", ["provider.a", "provider.b"]));
+    render(<Harness />);
+    const picker = await screen.findByLabelText("Kubi 분석 Source");
+    expect(useKubiStore.getState().turns).toHaveLength(0);
+    expect(picker).toHaveTextContent("provider.a");
+    expect(picker).toHaveTextContent("provider.b");
+  });
+
+  it("does not expose stale Run A sources after changing to Run B", async () => {
+    const runA = deferred<RunStagesResponse>();
+    const runB = deferred<RunStagesResponse>();
+    vi.spyOn(datasetsApi, "listBuildStages").mockImplementation((runId) => runId === "run-a" ? runA.promise : runB.promise);
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "Run B로 이동" }));
+    await act(async () => { runB.resolve(stages("run-b", ["provider.b1", "provider.b2"])); });
+    expect(await screen.findByText("provider.b1", { selector: "option" })).toBeInTheDocument();
+    await act(async () => { runA.resolve(stages("run-a", ["provider.a1", "provider.a2"])); });
+    expect(screen.queryByText("provider.a1", { selector: "option" })).not.toBeInTheDocument();
+  });
+
+  it("shows no fake source option when the Builder source fetch fails", async () => {
+    vi.spyOn(datasetsApi, "listBuildStages").mockRejectedValue(new Error("network"));
+    render(<Harness />);
+    await waitFor(() => expect(datasetsApi.listBuildStages).toHaveBeenCalled());
+    expect(screen.queryByLabelText("Kubi 분석 Source")).not.toBeInTheDocument();
+  });
+
+  it("keeps single-source behavior without presenting an unnecessary picker", async () => {
+    vi.spyOn(datasetsApi, "listBuildStages").mockResolvedValue(stages("run-a", ["provider.only"]));
+    render(<Harness />);
+    await waitFor(() => expect(datasetsApi.listBuildStages).toHaveBeenCalled());
+    expect(screen.queryByLabelText("Kubi 분석 Source")).not.toBeInTheDocument();
+  });
+
+  it("writes a selected confirmed source into URL context", async () => {
+    vi.spyOn(datasetsApi, "listBuildStages").mockResolvedValue(stages("run-a", ["provider.a", "provider.b"]));
+    render(<Harness initialPath="/kubi?run=run-a&stage=gold" />);
+    fireEvent.change(await screen.findByLabelText("Kubi 분석 Source"), { target: { value: "provider.b" } });
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/kubi?run=run-a&source=provider.b"));
+  });
+
+  it("remains fail-closed when a multi-source Run has no selected source", async () => {
+    vi.spyOn(datasetsApi, "listBuildStages").mockResolvedValue(stages("run-a", ["provider.a", "provider.b"]));
+    render(<Harness initialPath="/kubi?run=run-a&stage=gold" />);
+    expect(await screen.findByText("이 Run에는 source가 여러 개 있습니다. 분석할 source를 먼저 선택하세요.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Kubi 분석 Source")).toHaveValue("");
+  });
+});

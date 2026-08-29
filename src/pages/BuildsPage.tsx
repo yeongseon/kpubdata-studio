@@ -70,7 +70,7 @@ import {
 /** `/builds` 요청 scope. Builder에 전체 count가 없으므로 KPI는 반드시 이 값 안에서만 계산한다. */
 const LIST_LIMIT = 100;
 
-type AsyncState<T> =
+export type AsyncState<T> =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "loaded"; data: T }
@@ -113,6 +113,50 @@ function useAsync<T>(
   }, deps);
 
   return state;
+}
+
+/** Builder 응답이 loaded인 surface만 사용해 Builds의 Kubi context query를 정규화한다. */
+export function normalizeBuildContextSearch(
+  searchParams: URLSearchParams,
+  specState: AsyncState<BuildSpecSnapshotResponse>,
+  stagesState: AsyncState<RunStagesResponse>,
+): URLSearchParams {
+  const next = new URLSearchParams(searchParams);
+
+  if (specState.status === "loaded") {
+    const datasetId = extractDatasetId(specState.data.spec);
+    if (datasetId) next.set("dataset", datasetId);
+    else next.delete("dataset");
+  }
+
+  if (stagesState.status === "loaded") {
+    const sources = stagesState.data.sources;
+    const failureEvidence = collectFailureEvidence(sources);
+    const requestedStage = next.get("stage");
+    const selectedSource = next.get("source");
+    const selectedSourceEntry = selectedSource
+      ? sources.find((source) => source.source_key === selectedSource)
+      : sources.length === 1
+        ? sources[0]
+        : undefined;
+    const requestedStageAvailable =
+      (requestedStage === "bronze" || requestedStage === "silver" || requestedStage === "gold") &&
+      Boolean(selectedSourceEntry && selectedSourceEntry[requestedStage].status !== "not_run");
+    const stage = requestedStageAvailable
+      ? requestedStage
+      : failureEvidence.length === 1
+        ? failureEvidence[0].failedStage
+        : null;
+
+    if (stage) next.set("stage", stage);
+    else next.delete("stage");
+
+    const sourceKeys = sources.map((source) => source.source_key);
+    if (stage && sourceKeys.length === 1) next.set("source", sourceKeys[0]);
+    else if (selectedSource && !sourceKeys.includes(selectedSource)) next.delete("source");
+  }
+
+  return next;
 }
 
 export function BuildsPage() {
@@ -223,53 +267,8 @@ export function BuildsPage() {
   // 정확히 하나의 source만 실패했을 때만 그 failedStage를 안전한 문맥으로 취급한다(#255 §2).
   useEffect(() => {
     if (!selectedRunId) return;
-    const datasetId = specState.status === "loaded" ? extractDatasetId(specState.data.spec) : null;
-    const failureEvidence =
-      stagesState.status === "loaded" ? collectFailureEvidence(stagesState.data.sources) : [];
-    const sources = stagesState.status === "loaded" ? stagesState.data.sources : [];
-    const requestedStage = searchParams.get("stage");
-    const selectedSource = searchParams.get("source");
-    const requestedStageAvailable =
-      requestedStage === "bronze" || requestedStage === "silver" || requestedStage === "gold"
-        ? sources.some((source) => source[requestedStage].status !== "not_run")
-        : false;
-    const stage = requestedStageAvailable
-      ? requestedStage
-      : failureEvidence.length === 1
-        ? failureEvidence[0].failedStage
-        : null;
-
-    const next = new URLSearchParams(searchParams);
-    let changed = false;
-    if (datasetId) {
-      if (next.get("dataset") !== datasetId) {
-        next.set("dataset", datasetId);
-        changed = true;
-      }
-    } else if (next.has("dataset")) {
-      next.delete("dataset");
-      changed = true;
-    }
-    if (stage) {
-      if (next.get("stage") !== stage) {
-        next.set("stage", stage);
-        changed = true;
-      }
-    } else if (next.has("stage")) {
-      next.delete("stage");
-      changed = true;
-    }
-    const sourceKeys = sources.map((source) => source.source_key);
-    if (stage && sourceKeys.length === 1) {
-      if (next.get("source") !== sourceKeys[0]) {
-        next.set("source", sourceKeys[0]);
-        changed = true;
-      }
-    } else if (selectedSource && !sourceKeys.includes(selectedSource)) {
-      next.delete("source");
-      changed = true;
-    }
-    if (changed) setSearchParams(next, { replace: true });
+    const next = normalizeBuildContextSearch(searchParams, specState, stagesState);
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
   }, [selectedRunId, specState, stagesState, searchParams, setSearchParams]);
 
   // Run 자체가 존재하지 않는다고 판정하는 기준: 목록 scope 밖이고, stage 조회도 404다.

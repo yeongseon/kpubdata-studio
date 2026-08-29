@@ -20,6 +20,7 @@ import { useKubiSession } from "./useKubiSession";
 import { MarkdownContent } from "./MarkdownContent";
 import type { KubiEvidenceRef } from "./types";
 import { formatSqlForDisplay } from "./formatSqlForDisplay";
+import { useLiveRunSources } from "./useLiveRunSources";
 
 /** 데모 CTA와 onboarding 예시 질문이 함께 쓰는 기본 질문(mock evidence만으로도 답이 나온다). */
 const DEMO_QUESTION = "이 데이터셋 품질 어때?";
@@ -554,17 +555,9 @@ export function KubiContent({ compact = false }: KubiContentProps) {
     return [];
   }, [session.turns, session.isStale]);
 
-  const contextSources = useMemo(() => {
-    const values = new Set<string>();
-    for (let i = session.turns.length - 1; i >= 0; i -= 1) {
-      const turn = session.turns[i];
-      if (!turn.evidence || session.isStale(turn)) continue;
-      turn.evidence.quality?.results.forEach((item) => values.add(item.source));
-      if (turn.evidence.stage?.source) values.add(turn.evidence.stage.source);
-      break;
-    }
-    return [...values];
-  }, [session.turns, session.isStale]);
+  // 첫 질문 전에도 현재 Run의 Builder-confirmed stage source 목록을 authoritative하게 쓴다.
+  // 과거 turn/LLM/quality 결과는 live source 후보를 만들 근거로 사용하지 않는다.
+  const contextSources = useLiveRunSources(session.liveContext.runId);
 
   const suggestedQuestions = useMemo(() => {
     if (session.liveContext.stage === "gold" || session.liveContext.stage === "silver") return ["사용할 수 있는 컬럼을 알려줘.", "이 데이터를 집계하는 SQL을 만들어줘."];
