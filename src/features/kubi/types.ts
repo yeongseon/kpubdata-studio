@@ -43,6 +43,11 @@ export function qualityResultRefId(result: {
   return `${result.source_key}::${result.category}::${result.rule}::${result.column ?? "_"}`;
 }
 
+/** Builder가 확인한 stage detail을 가리키는 canonical evidence ID. */
+export function stageEvidenceRefId(runId: string, source: string, stage: KubiStage): string {
+  return `${runId}::${source}::${stage}`;
+}
+
 /** evidence 조회 중 실패한 개별 evidence 종류. */
 export type KubiEvidenceSource = "dataset" | "runs" | "stage" | "quality" | "catalog" | "spec";
 
@@ -77,6 +82,8 @@ export interface KubiEvidence {
   };
   recentRuns?: { runId: string; status: string; startedAt: string | null; finishedAt: string | null }[];
   stage?: {
+    /** run/source/stage exact identity로 만든 canonical evidence ref. */
+    refId: string;
     stage: KubiStage;
     /** Builder canonical source_key. 필드명이 `sourceKey`면 redactSecrets가 `[REDACTED]`한다(`*key$`). */
     source: string;
@@ -133,6 +140,8 @@ export interface KubiKnownRefs {
   providers: Set<string>;
   qualityResultIds: Set<string>;
   schemaDriftIds: Set<string>;
+  /** 이번 evidence load에서 Builder stage detail로 실제 존재가 확인된 canonical ref만 포함. */
+  stageIds: Set<string>;
   /**
    * evidence에 실제로 등장한 Builder canonical source_key("provider.dataset") 집합.
    * quality 결과·stage evidence에서 모은다. Generated SQL의 `source`가 이 집합에 없으면
@@ -205,6 +214,9 @@ export type KubiActionRunState =
   | { status: "rejected"; reason: string }
   | { status: "error"; message: string };
 
+/** 실제 요청 파이프라인에서 현재 수행 중인 단계. 가짜 timer 없이 await 경계에서만 전환한다. */
+export type KubiTurnPhase = "collecting_evidence" | "generating" | "validating";
+
 /** 하나의 질문에서 시작된 전체 turn. context는 요청 시작 시점 값을 그대로 고정한다(stale guard). */
 export interface KubiTurn {
   id: string;
@@ -213,6 +225,7 @@ export interface KubiTurn {
   context: KubiContext;
   createdAt: string;
   status: "loading" | "ok" | "error";
+  phase?: KubiTurnPhase;
   evidence?: KubiEvidence;
   response?: KubiStructuredResponse;
   error?: KubiErrorState;

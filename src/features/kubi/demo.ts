@@ -79,7 +79,7 @@ export function buildKubiDemoResponse(evidence: KubiEvidence): KubiStructuredRes
     };
     evidenceRefs.push({
       kind: "stage",
-      id: `${evidence.stage.source}:${evidence.stage.stage}`,
+      id: evidence.stage.refId,
       label: `${evidence.stage.source} · ${evidence.stage.stage}`,
     });
     lines.push("Generated SQL은 데모용 미리보기 조회입니다 — 실행하면 mock 결과가 표시됩니다(실제 Builder 호출 없음).");

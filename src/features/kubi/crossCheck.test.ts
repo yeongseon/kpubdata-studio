@@ -20,6 +20,7 @@ function makeKnownRefs(overrides: Partial<KubiKnownRefs> = {}): KubiKnownRefs {
     providers: new Set(["datago"]),
     qualityResultIds: new Set(["src::missing::max_null_ratio::price"]),
     schemaDriftIds: new Set(["column_added::region"]),
+    stageIds: new Set(),
     sourceKeys: new Set(["datago.air_quality"]),
     ...overrides,
   };
@@ -63,6 +64,35 @@ describe("crossCheckKubiResponse (#256 hallucination gate)", () => {
       makeKnownRefs(),
     );
     expect(result.response.evidenceRefs).toHaveLength(0);
+  });
+
+  it("retains only the exact Builder-confirmed canonical stage ref", () => {
+    const refId = "run-1::provider.dataset::gold";
+    const evidence = makeEvidence({
+      context: { page: "quality", runId: "run-1", source: "provider.dataset", stage: "gold" },
+      stage: { refId, stage: "gold", source: "provider.dataset", status: "completed", available: true, rowCount: 40 },
+    });
+    const known = makeKnownRefs({ stageIds: new Set([refId]), sourceKeys: new Set(["provider.dataset"]) });
+
+    const valid = crossCheckKubiResponse(
+      makeResponse({ evidenceRefs: [{ kind: "stage", id: refId, label: "Gold" }] }),
+      evidence,
+      known,
+    );
+    expect(valid.response.evidenceRefs).toHaveLength(1);
+
+    for (const wrong of [
+      "wrong-run::provider.dataset::gold",
+      "run-1::wrong.source::gold",
+      "run-1::provider.dataset::silver",
+    ]) {
+      const checked = crossCheckKubiResponse(
+        makeResponse({ evidenceRefs: [{ kind: "stage", id: wrong, label: "unknown" }] }),
+        evidence,
+        known,
+      );
+      expect(checked.response.evidenceRefs).toHaveLength(0);
+    }
   });
 
   it("rejects OPEN_BUILD referencing an unknown run", () => {

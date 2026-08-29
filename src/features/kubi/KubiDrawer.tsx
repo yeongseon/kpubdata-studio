@@ -5,7 +5,7 @@
  * 렌더 금지). 실제 LLM 연동, Evidence/Generated SQL, Suggested Action은 `KubiContent`
  * (`useKubiSession` 공유)가 담당하고, 이 컴포넌트는 drawer 자체의 열림/닫힘·포커스 트랩만 맡는다.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useUIStore } from "@/shared/hooks/useUIStore";
 import { KubiContent } from "./KubiContent";
 
@@ -20,6 +20,7 @@ export function KubiDrawer() {
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   // 열리는 순간 닫기 버튼으로 포커스를 옮기고, 모달 안에서 포커스를 순환시킨다.
   // 닫히면 drawer를 열었던 요소로 포커스를 되돌린다(접근성).
@@ -80,24 +81,21 @@ export function KubiDrawer() {
         aria-label="Kubi AI Assistant"
         aria-modal="true"
         role="dialog"
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col overflow-y-auto border-l border-border bg-card px-5 py-5 shadow-xl sm:w-96"
+        className={`fixed inset-y-0 right-0 z-50 flex w-full flex-col overflow-hidden border-l border-border bg-card shadow-xl transition-[width] sm:w-[min(34rem,100vw)] ${expanded ? "lg:w-[min(60vw,60rem)]" : ""}`}
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             ✨ Kubi AI Assistant
           </p>
-          <button
-            ref={closeButtonRef}
-            aria-label="Kubi 닫기"
-            className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            onClick={closeKubiDrawer}
-            type="button"
-          >
-            ✕
-          </button>
+          <div className="flex gap-1.5">
+            <button aria-label={expanded ? "Kubi 기본 너비로 보기" : "Kubi 확장하기"} aria-pressed={expanded} className="hidden rounded-lg border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted lg:block" onClick={() => setExpanded((value) => !value)} type="button">
+              {expanded ? "기본" : "확장"}
+            </button>
+            <button ref={closeButtonRef} aria-label="Kubi 닫기" className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={closeKubiDrawer} type="button">✕</button>
+          </div>
         </div>
 
-        <div className="mt-4 flex-1">
+        <div className="min-h-0 flex-1">
           <KubiContent compact />
         </div>
       </aside>

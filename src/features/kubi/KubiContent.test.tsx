@@ -5,7 +5,8 @@
  * 내용이 보이는지 확인한다. null/primitive는 기존 표시 방식을 그대로 유지해야 한다.
  */
 import { describe, expect, it } from "vitest";
-import { formatQueryValue } from "./KubiContent";
+import { evidenceDetail, evidenceDetailEntries, formatQueryValue } from "./KubiContent";
+import type { KubiTurn } from "./types";
 
 describe("formatQueryValue (#256 리뷰 §1)", () => {
   it("shows a dash for null/undefined, matching the previous behavior", () => {
@@ -40,5 +41,42 @@ describe("formatQueryValue (#256 리뷰 §1)", () => {
   it("renders an empty array/object distinctly from null", () => {
     expect(formatQueryValue([])).toBe("[]");
     expect(formatQueryValue({})).toBe("{}");
+  });
+});
+
+describe("stage evidence detail", () => {
+  it("resolves only the exact canonical stage ref to frozen evidence", () => {
+    const refId = "run-1::provider.dataset::gold";
+    const turn = {
+      id: "turn-1",
+      question: "Gold 컬럼",
+      context: { page: "quality", runId: "run-1", source: "provider.dataset", stage: "gold" },
+      createdAt: "2026-08-30T00:00:00Z",
+      status: "ok",
+      query: { status: "idle" },
+      actionStates: {},
+      evidence: {
+        fetchedAt: "2026-08-30T00:00:00Z",
+        context: { page: "quality", runId: "run-1", source: "provider.dataset", stage: "gold" },
+        stage: { refId, stage: "gold", source: "provider.dataset", status: "completed", available: true, rowCount: 40, columns: Array.from({ length: 23 }, (_, index) => `column_${index}`) },
+        deepLinks: {},
+        partial: false,
+        unavailable: [],
+      },
+    } satisfies KubiTurn;
+    expect(evidenceDetail(turn, { kind: "stage", id: refId, label: "Gold" })).toMatchObject({
+      stage: "gold",
+      source: "provider.dataset",
+      status: "completed",
+      rowCount: 40,
+    });
+    expect(evidenceDetail(turn, { kind: "stage", id: "run-1::provider.dataset::silver", label: "wrong" })).toBeNull();
+    expect(evidenceDetailEntries(turn, { kind: "stage", id: refId, label: "Gold" })).toEqual([
+      ["Stage", "Gold"],
+      ["Source", "provider.dataset"],
+      ["Status", "completed"],
+      ["Rows", "40"],
+      ["Columns", "23"],
+    ]);
   });
 });

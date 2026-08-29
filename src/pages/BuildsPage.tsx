@@ -161,6 +161,7 @@ export function BuildsPage() {
     // 지우면 함께 지워 다음 화면에 이전 run의 문맥이 남지 않게 한다.
     next.delete("dataset");
     next.delete("stage");
+    next.delete("source");
     setSearchParams(next);
   }, [searchParams, setSearchParams]);
 
@@ -225,7 +226,18 @@ export function BuildsPage() {
     const datasetId = specState.status === "loaded" ? extractDatasetId(specState.data.spec) : null;
     const failureEvidence =
       stagesState.status === "loaded" ? collectFailureEvidence(stagesState.data.sources) : [];
-    const stage = failureEvidence.length === 1 ? failureEvidence[0].failedStage : null;
+    const sources = stagesState.status === "loaded" ? stagesState.data.sources : [];
+    const requestedStage = searchParams.get("stage");
+    const selectedSource = searchParams.get("source");
+    const requestedStageAvailable =
+      requestedStage === "bronze" || requestedStage === "silver" || requestedStage === "gold"
+        ? sources.some((source) => source[requestedStage].status !== "not_run")
+        : false;
+    const stage = requestedStageAvailable
+      ? requestedStage
+      : failureEvidence.length === 1
+        ? failureEvidence[0].failedStage
+        : null;
 
     const next = new URLSearchParams(searchParams);
     let changed = false;
@@ -245,6 +257,16 @@ export function BuildsPage() {
       }
     } else if (next.has("stage")) {
       next.delete("stage");
+      changed = true;
+    }
+    const sourceKeys = sources.map((source) => source.source_key);
+    if (stage && sourceKeys.length === 1) {
+      if (next.get("source") !== sourceKeys[0]) {
+        next.set("source", sourceKeys[0]);
+        changed = true;
+      }
+    } else if (selectedSource && !sourceKeys.includes(selectedSource)) {
+      next.delete("source");
       changed = true;
     }
     if (changed) setSearchParams(next, { replace: true });
