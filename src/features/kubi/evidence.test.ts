@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { saveBuildSpec } from "@/features/build-spec/specStore";
+import * as datasetsApi from "@/features/datasets/api";
 import type { BuildSpec } from "@/shared/lib/types";
 import { loadKubiEvidence } from "./evidence";
 import type { KubiContext } from "./types";
 
 afterEach(() => {
   localStorage.clear();
+  vi.restoreAllMocks();
 });
 
 describe("loadKubiEvidence (#256)", () => {
@@ -46,18 +48,129 @@ describe("loadKubiEvidence (#256)", () => {
     expect(evidence.stage).toBeUndefined();
   });
 
-  it("includes stage evidence (status/rowCount only, no raw sample rows) when a stage is in context", async () => {
+  it("includes stage evidence (status/rowCount only, no raw sample rows) for the context source_key", async () => {
+    // air-2026-08-14는 multi-source(datago__air + kma__weather)라 어느 소스인지 명시해야 한다.
     const context: KubiContext = {
       page: "dataset-detail",
       datasetId: "air-quality",
       runId: "air-2026-08-14",
       stage: "silver",
+      source: "datago__air",
     };
     const { evidence } = await loadKubiEvidence(context);
     expect(evidence.stage?.stage).toBe("silver");
-    expect(evidence.stage?.sourceKey).toBeTruthy();
+    expect(evidence.stage?.source).toBe("datago__air");
     // 원본 sample row는 evidence 타입 자체에 존재하지 않는다 — 최소 데이터 원칙(#256 리뷰 §3).
     expect(evidence.stage).not.toHaveProperty("sample");
+  });
+
+  it("fails closed (stage unavailable) for a multi-source run when the context has no source_key", async () => {
+    const context: KubiContext = {
+      page: "quality",
+      datasetId: "air-quality",
+      runId: "air-2026-08-14",
+      stage: "silver",
+    };
+    const { evidence } = await loadKubiEvidence(context);
+    // 임의로 첫 source를 고르지 않는다 — 어느 소스인지 모호하면 stage를 unavailable로 둔다.
+    expect(evidence.stage).toBeUndefined();
+    expect(evidence.unavailable).toContain("stage");
+  });
+
+  it("falls back to the sole source_key for a single-source run when the context has no source_key", async () => {
+    const context: KubiContext = {
+      page: "quality",
+      datasetId: "population",
+      runId: "population-2026-08-13",
+      stage: "silver",
+    };
+    const { evidence } = await loadKubiEvidence(context);
+    expect(evidence.stage?.stage).toBe("silver");
+    expect(evidence.stage?.source).toBe("kosis__population");
+  });
+
+  it("requests stage detail with a positive limit (real Builder rejects limit=0 with 400 → stage always unavailable)", async () => {
+    // 실 Builder `/builds/{run}/stages/{stage}` 는 limit 을 "1..1000 양의 정수" 로만 받는다.
+    // limit=0 이면 400 → settle 실패 → stage 가 항상 unavailable 로 빠지던 실 runtime 버그.
+    const spy = vi.spyOn(datasetsApi, "getBuildStageDetail");
+    const context: KubiContext = {
+      page: "quality",
+      datasetId: "population",
+      runId: "population-2026-08-13",
+      stage: "silver",
+    };
+    await loadKubiEvidence(context);
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) {
+      const limit = call[3];
+      expect(typeof limit).toBe("number");
+      expect(limit as number).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("exposes exact stage column names + dtypes from the Builder silver stage detail (SQL authoring evidence)", async () => {
+    // 실 Builder Gold 시나리오 재현: 실제 컬럼은 `pm10Value`(String)이고 `pm10`은 없다.
+    // LLM이 컬럼명을 추측하지 않도록 Builder가 반환한 schema를 그대로 노출해야 한다.
+    vi.spyOn(datasetsApi, "getBuildStageDetail").mockResolvedValue({
+      run_id: "population-2026-08-13",
+      stage: "silver",
+      source_key: "kosis__population",
+      status: "completed",
+      available: true,
+      row_count: 40,
+      schema: [
+        { name: "stationName", dtype: "String", nullable: false, unique_count: 40 },
+        { name: "pm10Value", dtype: "String", nullable: true, unique_count: 33 },
+      ],
+      statistics: null,
+      validation: null,
+      sample: [{ stationName: "종로구", pm10Value: "-" }],
+    });
+
+    const context: KubiContext = {
+      page: "quality",
+      datasetId: "population",
+      runId: "population-2026-08-13",
+      stage: "silver",
+    };
+    const { evidence } = await loadKubiEvidence(context);
+
+    expect(evidence.stage?.columns).toEqual(["stationName", "pm10Value"]);
+    expect(evidence.stage?.schema).toContainEqual({ name: "pm10Value", dtype: "String" });
+    // 존재하지 않는 축약 컬럼명은 evidence에 등장하지 않는다.
+    expect(evidence.stage?.columns).not.toContain("pm10");
+    // 최소 데이터 원칙: raw sample row는 여전히 evidence에 새어 나가지 않는다.
+    const serialized = JSON.stringify(evidence);
+    expect(serialized).not.toContain("종로구");
+    expect(evidence.stage).not.toHaveProperty("sample");
+  });
+
+  it("exposes gold stage column names (contract has no dtype) without inventing a schema", async () => {
+    vi.spyOn(datasetsApi, "getBuildStageDetail").mockResolvedValue({
+      run_id: "population-2026-08-13",
+      stage: "gold",
+      source_key: "kosis__population",
+      status: "completed",
+      available: true,
+      row_count: 40,
+      columns: ["stationName", "pm10Value"],
+      splits: null,
+      exports: [{ kind: "parquet" }],
+      sample: null,
+      sample_available: false,
+    });
+
+    const context: KubiContext = {
+      page: "quality",
+      datasetId: "population",
+      runId: "population-2026-08-13",
+      stage: "gold",
+    };
+    const { evidence } = await loadKubiEvidence(context);
+
+    expect(evidence.stage?.columns).toEqual(["stationName", "pm10Value"]);
+    // gold stage detail은 dtype을 주지 않는다 — 지어내지 않고 schema는 생략한다.
+    expect(evidence.stage?.schema).toBeUndefined();
   });
 
   it("never includes source param values (only param key names) in the BuildSpec summary", async () => {
@@ -85,6 +198,31 @@ describe("loadKubiEvidence (#256)", () => {
     const context: KubiContext = { page: "dataset-detail", datasetId: "air-quality", runId: "air-2026-08-14" };
     const { evidence } = await loadKubiEvidence(context);
     expect(JSON.stringify(evidence)).not.toContain("__SCRUBBED_");
+  });
+
+  it("keeps deterministic quality/schema-drift evidence ids out of entropy redaction (safeEvidenceIds provenance)", async () => {
+    const context: KubiContext = { page: "quality", datasetId: "air-quality", runId: "air-2026-08-14" };
+    const { evidence, knownRefs, safeEvidenceIds } = await loadKubiEvidence(context);
+
+    const results = evidence.quality?.results ?? [];
+    expect(results.length).toBeGreaterThan(0);
+    // canonical source_key는 secret이 아니다 — 필드명이 `source`라 redactSecrets의 `*key$`
+    // secret-named 휴리스틱에 걸리지 않고, crossCheck의 stage/그룹 대조에 그대로 쓸 수 있어야 한다.
+    for (const result of results) expect(result.source).not.toBe("[REDACTED]");
+    const ids = results.map((result) => result.id);
+    for (const id of ids) {
+      // valid quality id는 secret scrubber의 엔트로피 오탐으로 `[REDACTED]`되면 안 된다.
+      expect(id).not.toBe("[REDACTED]");
+      // 그리고 crossCheck 대조용 knownRefs와 egress 면제용 safeEvidenceIds 양쪽에 동일 값으로 들어간다.
+      expect(knownRefs.qualityResultIds.has(id)).toBe(true);
+      expect(safeEvidenceIds.has(id)).toBe(true);
+    }
+    for (const finding of evidence.quality?.schemaDrift ?? []) {
+      const driftId = `${finding.kind}::${finding.column ?? "_"}`;
+      expect(safeEvidenceIds.has(driftId)).toBe(true);
+    }
+    // safeEvidenceIds는 run id가 아니라 evidence identifier만 담는다 — run id는 safeRunIds 소관.
+    expect(safeEvidenceIds.has("air-2026-08-14")).toBe(false);
   });
 
   it("omits stage/buildSpecSummary/quality when the context has no runId at all", async () => {

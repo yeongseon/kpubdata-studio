@@ -162,18 +162,22 @@ export function useKubiSession(): UseKubiSessionResult {
       controllersRef.current.set(turnId, controller);
 
       try {
-        const { evidence, knownRefs, safeRunIds } = await loadKubiEvidence(context, controller.signal);
+        const { evidence, knownRefs, safeRunIds, safeEvidenceIds } = await loadKubiEvidence(
+          context,
+          controller.signal,
+        );
         updateTurn(turnId, (t) => ({ ...t, evidence }));
 
         const provider = createProvider({ apiKey, model, baseUrl });
         const messages = buildKubiMessages(trimmed, evidence);
         let rawOutput = "";
-        // Builder 응답으로 존재가 확인된 exact run id(safeRunIds)만 LLM egress 스크러버에서
-        // 보존한다 — knownRefs.runIds 가 아니다. 그래야 모델이 실제 run id를 그대로 echo 하고
-        // crossCheck(knownRefs.runIds)·suggestedAction.runId 와 일치해 정상 action 이 제거되지
-        // 않으면서, 아직 확인되지 않은 route runId 는 엔트로피 스크럽 대상으로 남는다.
+        // LLM egress 스크러버에서 엔트로피 오탐 면제 대상: Builder 응답으로 존재가 확인된 exact
+        // run id(safeRunIds) + Builder `/quality` 응답에서 deterministic 하게 만든 evidence
+        // identifier(safeEvidenceIds). 그래야 모델이 실제 run id/quality id를 그대로 echo 해도
+        // crossCheck(knownRefs)·suggestedAction 와 일치해 정상 근거·action 이 제거되지 않으면서,
+        // 아직 확인되지 않은 route runId 나 임의 문자열은 엔트로피 스크럽 대상으로 남는다.
         for await (const chunk of provider.stream(messages, controller.signal, {
-          safeRunIds,
+          safeRunIds: new Set<string>([...safeRunIds, ...safeEvidenceIds]),
         })) {
           rawOutput += chunk;
         }

@@ -249,6 +249,61 @@ describe("P6 safeRunIds — provenance 기반 exact-value 면제 (#284)", () => 
 });
 
 /**
+ * safe evidence id — deterministic quality evidence identifier 도 exact-value 면제 대상 (#319 후속).
+ *
+ * `qualityResultRefId` 가 만드는 canonical id(`provider.dataset::category::rule::column`)는
+ * Shannon 엔트로피가 4.0 을 넘어(길이·문자 다양성) safe set 없이는 `[REDACTED]` 로 오탐된다.
+ * run id 와 provenance 계약이 같으므로(이번 로딩에서 실제 생성된 exact 문자열) 같은 인자로
+ * 면제하되, secret-named field / 명시적 credential 대입 / lookalike 는 여전히 스크럽해야 한다.
+ */
+describe("safe evidence id — canonical quality identifier 면제 (#319)", () => {
+  const QUALITY_ID = "datago.air_quality::completeness::min_rows::_";
+  const safeValues = new Set([QUALITY_ID]);
+
+  it("safe set 없이는 canonical quality id 도 엔트로피 오탐으로 스크럽된다(기존 동작)", () => {
+    expect(looksLikeSecret(QUALITY_ID)).toBe(true);
+    expect(redactSecrets({ evidenceRefs: [{ kind: "quality", id: QUALITY_ID }] })).toEqual({
+      evidenceRefs: [{ kind: "quality", id: "[REDACTED]" }],
+    });
+  });
+
+  it("safe set 에 exact 로 들어간 quality id 는 evidence/자유 텍스트에서 보존된다", () => {
+    expect(looksLikeSecret(QUALITY_ID, safeValues)).toBe(false);
+
+    const redacted = redactSecrets(
+      {
+        quality: { results: [{ id: QUALITY_ID, rule: "min_rows", actual: 40, threshold: 1000 }] },
+        evidenceRefs: [{ kind: "quality", id: QUALITY_ID, label: "행 수 검사" }],
+      },
+      safeValues,
+    );
+    expect(JSON.stringify(redacted)).not.toContain("[REDACTED]");
+    expect(JSON.stringify(redacted)).toContain(QUALITY_ID);
+
+    const scrubber = createSecretScrubber("safe-ev-a", { safeRunIds: safeValues });
+    expect(scrubber.scrubText(`quality:${QUALITY_ID} 근거를 확인했습니다`)).toContain(QUALITY_ID);
+  });
+
+  it("secret-named field 는 값이 safe quality id 여도 무조건 스크럽한다", () => {
+    for (const key of ["serviceKey", "apiKey", "token", "secret"]) {
+      expect(redactSecrets({ [key]: QUALITY_ID }, safeValues)).toEqual({ [key]: "[REDACTED]" });
+    }
+    const scrubber = createSecretScrubber("safe-ev-b", { safeRunIds: safeValues });
+    const out = scrubber.scrubText(`serviceKey=${QUALITY_ID}`);
+    expect(out).not.toContain(QUALITY_ID);
+    expect(hasSecretPlaceholder(out)).toBe(true);
+  });
+
+  it("safe set 밖의 비슷한 canonical id 는 면제하지 않는다(exact match 만)", () => {
+    const lookalike = "datago.air_quality::completeness::not_null::stationName";
+    expect(looksLikeSecret(lookalike, safeValues)).toBe(true);
+    expect(redactSecrets({ evidenceRefs: [{ kind: "quality", id: lookalike }] }, safeValues)).toEqual({
+      evidenceRefs: [{ kind: "quality", id: "[REDACTED]" }],
+    });
+  });
+});
+
+/**
  * P6 보완 — safe run id 에 인접(adjacency)한 시크릿 조각 스크럽 (#284).
  *
  * `<secret>/<safeRunId>` 처럼 safe id 앞뒤에 비영숫자 경계가 있으면 safe id 는 보존되지만,

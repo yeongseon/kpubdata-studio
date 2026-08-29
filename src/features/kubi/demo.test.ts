@@ -59,7 +59,7 @@ describe("buildKubiDemoResponse (#256 데모)", () => {
         results: [
           {
             id: "datago__air::missing::max_null_ratio::pm10",
-            sourceKey: "datago__air",
+            source: "datago__air",
             category: "missing",
             rule: "max_null_ratio",
             column: "pm10",
@@ -103,7 +103,7 @@ describe("buildKubiDemoResponse (#256 데모)", () => {
     const withStage = baseEvidence({
       ...datasetOnly,
       context: { page: "dataset-detail", datasetId: "air-quality", stage: "silver" },
-      stage: { stage: "silver", sourceKey: "datago__air", status: "completed", available: true, rowCount: 1000 },
+      stage: { stage: "silver", source: "datago__air", status: "completed", available: true, rowCount: 1000 },
     });
     const response = buildKubiDemoResponse(withStage);
     expect(response.generatedSql).toEqual({
@@ -117,11 +117,11 @@ describe("buildKubiDemoResponse (#256 데모)", () => {
   it("demo SQL never uses the source_key as a FROM table name — only the logical relation \"dataset\"", () => {
     const evidence = baseEvidence({
       context: { page: "dataset-detail", datasetId: "air-quality", stage: "gold" },
-      stage: { stage: "gold", sourceKey: "datago__air", status: "completed", available: true, rowCount: 1000 },
+      stage: { stage: "gold", source: "datago__air", status: "completed", available: true, rowCount: 1000 },
     });
     const response = buildKubiDemoResponse(evidence);
     expect(response.generatedSql?.sql).toMatch(/FROM dataset\b/);
-    expect(response.generatedSql?.sql).not.toContain(evidence.stage!.sourceKey);
+    expect(response.generatedSql?.sql).not.toContain(evidence.stage!.source);
     expect(response.generatedSql?.source).toBe("datago__air");
   });
 });
