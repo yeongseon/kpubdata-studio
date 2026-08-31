@@ -137,6 +137,8 @@ export interface KubiEvidence {
 export interface KubiKnownRefs {
   datasetIds: Set<string>;
   runIds: Set<string>;
+  /** Builder dataset detail/run-list가 직접 확인한 dataset_id + run_id 소속 쌍. */
+  datasetRunMemberships: Set<string>;
   providers: Set<string>;
   qualityResultIds: Set<string>;
   schemaDriftIds: Set<string>;
@@ -148,6 +150,11 @@ export interface KubiKnownRefs {
    * 검증되지 않은 값이므로 Builder `/query`로 그대로 보내지 않는다(crossCheck).
    */
   sourceKeys: Set<string>;
+}
+
+/** dataset/run pair를 충돌 없이 trust set key로 직렬화한다. */
+export function datasetRunMembershipRef(datasetId: string, runId: string): string {
+  return JSON.stringify([datasetId, runId]);
 }
 
 /** LLM 구조화 응답이 근거로 인용한 evidence 조각. */
