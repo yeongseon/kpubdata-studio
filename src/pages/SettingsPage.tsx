@@ -20,6 +20,7 @@ import {
   MIN_BUILDER_API_VERSION,
 } from "@/shared/lib/builderApi";
 import type { ProviderSummary } from "@/shared/lib/builderApi.schema";
+import { keycloakLogout } from "@/features/auth/keycloak";
 import { useAuthStore } from "@/features/auth/store";
 import { useAssistConfig } from "@/features/assistant/config";
 import { Card, PageHeader, StatusBadge } from "@/shared/ui";
@@ -38,6 +39,16 @@ type ProvidersState =
 export function SettingsPage() {
   const realEnabled = isRealBuilderEnabled();
   const { email, clear } = useAuthStore();
+  const oidcStatus = useAuthStore((state) => state.oidcStatus);
+
+  // OIDC 세션은 Keycloak에서 로그아웃해야 IdP 세션까지 종료된다. 그 외에는 메모리 세션만 폐기.
+  const handleLogout = () => {
+    if (oidcStatus === "authenticated") {
+      void keycloakLogout();
+      return;
+    }
+    clear();
+  };
   const [connection, setConnection] = useState<ConnectionState>({ status: "idle" });
   const [providers, setProviders] = useState<ProvidersState>({ status: "idle" });
 
@@ -83,7 +94,7 @@ export function SettingsPage() {
         description="계정, Builder 연결, 데이터 Provider 자격 증명, Kubi BYOK를 관리합니다."
       />
 
-      <AccountSection realEnabled={realEnabled} email={email} onLogout={clear} />
+      <AccountSection realEnabled={realEnabled} email={email} onLogout={handleLogout} />
 
       <Card>
         <div className="flex items-center justify-between gap-3">

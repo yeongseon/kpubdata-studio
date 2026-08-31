@@ -30,14 +30,11 @@ async function navigateViaShell(page: import("@playwright/test").Page, label: Re
 test.beforeEach(async ({ page }) => {
   await prepareCleanPage(page);
 
-  // 실연동 모드는 LoginGate가 있어 로그인이 선행돼야 한다(#263). mock auth
-  // provider가 store에 token을 넣으면 Studio가 Bearer 헤더를 붙이고, Builder
-  // DEV_MODE는 principal 검증 없이 dev principal로 받아들인다.
-  await page.goto("/login");
-  await page.getByLabel(/이메일/i).first().fill("real-e2e@example.com");
-  await page.getByLabel(/비밀번호/i).first().fill("real-e2e-password");
-  await page.getByRole("button", { name: /로그인/ }).first().click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 10_000 });
+  // playwright.real.config.ts sets VITE_DEV_BYPASS_AUTH and this suite's Builder runs
+  // with KPUBDATA_BUILDER_DEV_MODE=1 — auth is bypassed on both sides, so this suite
+  // exercises the data path only, never the OIDC path. Real OIDC E2E is a manual smoke
+  // (see README "Keycloak → Builder OIDC smoke").
+  await page.goto("/");
 });
 
 test("실 Builder /version이 응답한다 (기동 전제) @real-builder", async ({ request }) => {

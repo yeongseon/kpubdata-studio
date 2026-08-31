@@ -115,6 +115,46 @@ describe("apiFetch auth header injection (#186)", () => {
   });
 });
 
+describe("async auth token provider (OIDC refresh at request boundary)", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    setAuthTokenProvider(null);
+  });
+
+  afterEach(() => {
+    setAuthTokenProvider(null);
+    vi.restoreAllMocks();
+  });
+
+  function requestInitOf(fetchMock: ReturnType<typeof vi.spyOn>) {
+    return fetchMock.mock.calls[0][1] as RequestInit;
+  }
+
+  it("awaits a Promise-returning provider and uses the resolved (refreshed) token", async () => {
+    setAuthTokenProvider(async () => "refreshed-access-token");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { service: "kpubdata-builder", api_version: "1.0.0" }));
+
+    await builderApi.version();
+
+    const headers = requestInitOf(fetchMock).headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer refreshed-access-token");
+  });
+
+  it("sends no Authorization header when the async provider resolves null (refresh failed / mock mode)", async () => {
+    setAuthTokenProvider(() => Promise.resolve(null));
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { service: "kpubdata-builder", api_version: "1.0.0" }));
+
+    await builderApi.version();
+
+    const headers = requestInitOf(fetchMock).headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+  });
+});
+
 describe("auth error callback on 401 (#189, S4)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();

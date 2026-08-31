@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Silent SSO check</title>
+  </head>
+  <body>
+    <!--
+      keycloak-js가 hidden iframe으로 로드해 기존 Keycloak 세션을 조용히 확인하는 데 쓰인다.
+      토큰/코드를 그대로 부모 창으로 전달하기만 하고, 아무것도 저장하지 않는다.
+    -->
+    <script>
+      parent.postMessage(location.href, location.origin);
+    </script>
+  </body>
+</html>

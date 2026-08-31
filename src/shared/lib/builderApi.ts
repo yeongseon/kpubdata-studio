@@ -103,8 +103,11 @@ interface RequestOptions {
  * Builder 요청에 붙일 Bearer 토큰을 제공하는 provider (#186).
  * null을 반환하면 해당 요청에 Authorization 헤더를 붙이지 않는다 —
  * mock 모드·미로그인 상태에서 빈 헤더가 나가는 것을 방지한다.
+ *
+ * OIDC 연동에서는 provider가 요청 직전 `keycloak.updateToken()`으로 만료 임박 토큰을
+ * 갱신하므로 Promise를 반환할 수 있다 — apiFetch는 값을 await한 뒤 헤더를 붙인다.
  */
-export type AuthTokenProvider = () => string | null;
+export type AuthTokenProvider = () => string | null | Promise<string | null>;
 
 // Studio는 서버가 없는 정적 SPA라 토큰을 메모리(zustand 스토어)에만 보관한다 (#187 예정).
 // apiFetch는 주입받은 provider를 통해 그 토큰을 읽는다 — 전역을 직접 참조하면 테스트가 어렵다.
@@ -208,7 +211,7 @@ export async function apiFetch<T>(
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     try {
       if (!options.skipAuth) {
-        const token = authTokenProvider?.() ?? null;
+        const token = (await authTokenProvider?.()) ?? null;
         if (token) headers.Authorization = `Bearer ${token}`;
       }
       response = await fetch(`${API_BASE}${path}`, {
@@ -794,7 +797,7 @@ export async function uploadFile(
   if (options.filename) params.set("filename", options.filename);
 
   const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
-  const token = authTokenProvider?.() ?? null;
+  const token = (await authTokenProvider?.()) ?? null;
   if (token) headers.Authorization = `Bearer ${token}`;
 
   let response: Response;

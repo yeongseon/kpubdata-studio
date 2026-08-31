@@ -1,22 +1,23 @@
 /**
- * 로그인 화면 (/login, #263).
+ * 로그인 화면 (/login, #263; OIDC 연동에서 실제 Keycloak 로그인 진입점 추가).
  *
- * 실제 IdP는 kpubdata-builder ADR 0015(Accepted)가 self-hosted Keycloak +
- * Authorization Code + PKCE로 확정했지만, Studio에 아직 실제 Keycloak
- * provider/callback/token 연동 코드가 없다(keycloak/PKCE 관련 구현 전무 확인). 그래서
- * 이 화면은 `isRealBuilderEnabled()`(mock/demo vs 실제 Builder 연동)로 분기한다:
- * - mock/demo 환경: 기존 mockAuthProvider 이메일/비밀번호 폼을 그대로 유지한다(dev/demo 전용).
- * - 실제 Builder 연동인데 Keycloak이 아직 없는 환경: mock 폼을 실제 인증처럼 보여주지 않고
- *   "OIDC 인증 미구성" 안내만 보여준다 — 가짜 Keycloak redirect/token flow를 만들지 않는다.
+ * 실제 IdP는 kpubdata-builder ADR 0015가 self-hosted Keycloak + Authorization Code +
+ * PKCE(S256)로 확정했다. 이 화면은 환경에 따라 분기한다:
+ * - mock/demo 환경(`!isRealBuilderEnabled()`): 기존 mockAuthProvider 이메일/비밀번호
+ *   폼을 그대로 유지한다(dev/demo 전용).
+ * - 실연동 + OIDC 활성: Keycloak 로그인 리다이렉트 버튼만 제공한다. 이메일/비밀번호,
+ *   비밀번호 재설정, 이메일 인증은 모두 Keycloak 책임이므로 Studio는 입력 폼을 두지 않는다.
+ * - 실연동 + OIDC 미구성/오류: 안내만 보여준다 — 가짜 redirect/token flow를 만들지 않는다.
  *
- * 기존 Google 로그인 플로우(#187, GoogleLoginButton/gis.ts)는 건드리지 않는다 — 이 화면은
- * 별도의 mockAuthProvider를 통해 같은 세션 store(useAuthStore)에 로그인한다.
+ * 기존 Google 로그인 플로우(#187, GoogleLoginButton/gis.ts)는 건드리지 않는다.
  */
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { keycloakLogin } from "@/features/auth/keycloak";
 import { mockAuthProvider } from "@/features/auth/mockAuthProvider";
 import { useAuthStore } from "@/features/auth/store";
 import { AuthError } from "@/features/auth/types";
+import { getOidcConfig } from "@/shared/config/env";
 import { isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import { Button, Card, DemoBadge, ErrorMessage, FormField, TextInput } from "@/shared/ui";
 
@@ -33,6 +34,7 @@ function ProductIntro() {
 export function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((state) => state.setSession);
+  const oidcStatus = useAuthStore((state) => state.oidcStatus);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +58,14 @@ export function LoginPage() {
   }
 
   const demoMode = !isRealBuilderEnabled();
+  const oidc = getOidcConfig();
+
+  // 이미 Keycloak 세션이 확인되면 앱으로 돌려보낸다(로그인 화면에 머물지 않게).
+  useEffect(() => {
+    if (!demoMode && oidcStatus === "authenticated") {
+      navigate("/", { replace: true });
+    }
+  }, [demoMode, oidcStatus, navigate]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-5 py-12">
@@ -114,6 +124,29 @@ export function LoginPage() {
                 </Link>
               </p>
             </>
+          ) : oidc.status === "ok" ? (
+            <div className="mt-4 flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">
+                KPubData 계정(Keycloak)으로 로그인합니다. 비밀번호, 이메일 인증, 비밀번호
+                재설정은 Keycloak에서 처리됩니다.
+              </p>
+              <Button type="button" onClick={() => void keycloakLogin()}>
+                Keycloak으로 로그인
+              </Button>
+              {oidcStatus === "error" ? (
+                <ErrorMessage>
+                  인증 초기화에 실패했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.
+                </ErrorMessage>
+              ) : null}
+            </div>
+          ) : oidc.status === "error" ? (
+            <div className="mt-4 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">OIDC 인증 설정에 문제가 있습니다.</p>
+              <p className="mt-2">
+                이 환경은 실제 Builder에 연결되어 있지만 OIDC 설정(<code>VITE_OIDC_ISSUER</code> /{" "}
+                <code>VITE_OIDC_CLIENT_ID</code>)이 올바르지 않습니다. 관리자에게 문의하세요.
+              </p>
+            </div>
           ) : (
             <div className="mt-4 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">OIDC 인증이 아직 구성되지 않았습니다.</p>

@@ -199,6 +199,161 @@ src/
 | [PRD.md](./PRD.md) | 제품 요구사항 |
 | [ROADMAP.md](./ROADMAP.md) | 개발 로드맵 |
 
+### Keycloak OIDC authentication (real Builder)
+
+The real Builder flow authenticates humans through a self-hosted Keycloak realm using
+Authorization Code Flow + PKCE (S256). Studio is a public SPA — there is **no client
+secret** in the frontend. Email/password sign-in, verification, password reset, token
+refresh and logout are Keycloak's responsibility; Studio never sees or stores a password.
+
+```dotenv
+# Studio .env.local (do not commit)
+VITE_USE_REAL_BUILDER=true
+VITE_BUILDER_API_URL=http://localhost:8000
+VITE_OIDC_ISSUER=http://localhost:8080/realms/kpubdata
+VITE_OIDC_CLIENT_ID=kpubdata-studio
+```
+
+Keycloak client (`kpubdata-studio`): public client (client auth OFF), Standard Flow ON,
+Direct Access Grants OFF, PKCE `S256` required, valid redirect URI + web origin
+`http://localhost:5173`, and access-token audience `kpubdata-builder`.
+
+- `VITE_OIDC_ISSUER` is the full issuer URL (`.../realms/<realm>`); Studio derives the
+  Keycloak base URL and realm from it. A missing or malformed issuer/client id fails
+  closed with a visible error — Studio never assumes the user is authenticated.
+- Access tokens live only in the `keycloak-js` in-memory session. Studio attaches
+  `Authorization: Bearer <token>` at the shared Builder request boundary and refreshes
+  near-expiry tokens there; nothing is written to `localStorage`/`sessionStorage` or logs.
+- The existing `X-API-Key` path on the Builder is unaffected.
+
+#### Builder side (real OIDC verification)
+
+The Builder must be started **without `KPUBDATA_BUILDER_DEV_MODE`**. Builder's
+`authenticate()` handles dev mode first and returns a `dev` principal *before any Bearer
+JWT is inspected*, so a Builder running with `KPUBDATA_BUILDER_DEV_MODE=1` accepts every
+request and proves nothing about the OIDC path. Dev mode is only for the mock-token-free
+data-path E2E described below — never for authentication verification.
+
+Builder reads these environment variables (see `kpubdata-builder` `service/auth.py` /
+its README "Docker deployment"):
+
+| Variable | Value (local example) | Notes |
+| :--- | :--- | :--- |
+| `OIDC_ISSUER` | `http://localhost:8080/realms/kpubdata` | Enables the Bearer path. Must equal `VITE_OIDC_ISSUER`. |
+| `OIDC_AUDIENCE` | `kpubdata-builder` | Required once `OIDC_ISSUER` is set (fail-closed if missing). Must match the Studio client's access-token audience. |
+| `OIDC_ALLOWED_EMAILS` | *(the Keycloak test user's email)* | Comma-separated allowlist. Use `OIDC_ALLOWED_SUBJECTS` instead to allowlist by `sub`. |
+| `KPUBDATA_BUILDER_ALLOWED_ORIGINS` | `http://localhost:5173` | CORS is default-deny; must list the Studio dev origin. |
+
+Builder needs the `auth` optional dependency (`pyjwt[crypto]>=2.9,<3`, declared as the
+`auth` extra in `kpubdata-builder`'s `pyproject.toml`) for JWT verification. Install and
+run it with the extra present — do **not** rely on a bare install:
+
+```bash
+# from PyPI
+pip install "kpubdata-builder[auth]"
+OIDC_ISSUER=http://localhost:8080/realms/kpubdata \
+OIDC_AUDIENCE=kpubdata-builder \
+OIDC_ALLOWED_EMAILS=<keycloak-test-user-email> \
+KPUBDATA_BUILDER_ALLOWED_ORIGINS=http://localhost:5173 \
+kpubdata-builder serve --host 127.0.0.1 --port 8000 --output-dir ./dist
+
+# or from a local checkout (../kpubdata-builder)
+OIDC_ISSUER=http://localhost:8080/realms/kpubdata \
+OIDC_AUDIENCE=kpubdata-builder \
+OIDC_ALLOWED_EMAILS=<keycloak-test-user-email> \
+KPUBDATA_BUILDER_ALLOWED_ORIGINS=http://localhost:5173 \
+uv run --project ../kpubdata-builder --extra auth \
+  kpubdata-builder serve --host 127.0.0.1 --port 8000 --output-dir ./dist
+```
+
+#### `email_verified` precondition
+
+Builder rejects any OIDC token whose payload does not carry `email_verified: true`
+(`authenticate()` returns an auth error otherwise). Therefore, before the smoke run:
+
+- The Keycloak **test user must have "Email verified" = ON** (Users → *user* → Details).
+- The `kpubdata-studio` client must include the `email` client scope so the issued
+  **access token** carries `email` and `email_verified` claims (Client scopes → `email`
+  as Default; verify with the Keycloak "Evaluate" tab or by decoding the access token).
+
+If either is missing, Builder answers protected endpoints with 401/403 even though the
+Studio login succeeded.
+
+### Local real-Builder data-path E2E (auth bypassed on both sides)
+
+`npm run test:e2e:real` (→ `scripts/run-real-e2e.mjs`) exercises the Studio → Builder →
+`kpubdata` ingestion → manifest data path **without** a running Keycloak. It is **not**
+an authentication test: it sets `VITE_DEV_BYPASS_AUTH=true` on the Studio dev server and
+`KPUBDATA_BUILDER_DEV_MODE=1` on the Builder, so **no Bearer token is issued or verified
+on either side**. Real OIDC E2E cannot be observed in this mode — use the manual smoke
+below for that.
+
+```dotenv
+# Studio .env.local (do not commit)
+VITE_USE_REAL_BUILDER=true
+VITE_BUILDER_API_URL=http://localhost:8000
+VITE_DEV_BYPASS_AUTH=true
+```
+
+```bash
+KPUBDATA_BUILDER_DEV_MODE=1
+KPUBDATA_BUILDER_ALLOWED_ORIGINS=http://localhost:5173
+uv run --with "pandas>=2.2,<3" kpubdata-builder serve --host 127.0.0.1 --port 8000 --output-dir ./dist
+```
+
+`VITE_DEV_BYPASS_AUTH` takes effect only in Vite development (`import.meta.env.DEV`); a
+production build never bypasses the login gate. Use `KPUBDATA_BUILDER_DEV_MODE=1` only in
+a local development environment.
+
+### Keycloak → Builder OIDC smoke (manual)
+
+Run this to confirm the real authentication path end to end. It requires a running
+Keycloak realm and a Builder started **with `OIDC_ISSUER` set and `KPUBDATA_BUILDER_DEV_MODE`
+unset** (see "Builder side" above). It cannot be automated here — perform the steps
+manually and check every item.
+
+**Preconditions**
+
+1. Keycloak realm `kpubdata` up on `http://localhost:8080` with the `kpubdata-studio`
+   public client and a `kpubdata-builder` audience mapper on its access token.
+2. A Keycloak test user with a password **and "Email verified" = ON**.
+3. Builder running with `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_ALLOWED_EMAILS`
+   (or `OIDC_ALLOWED_SUBJECTS`), `KPUBDATA_BUILDER_ALLOWED_ORIGINS`, and the `auth`
+   extra installed. **No `KPUBDATA_BUILDER_DEV_MODE`.**
+4. Studio started with `npm run dev` and `.env.local` containing `VITE_USE_REAL_BUILDER`,
+   `VITE_BUILDER_API_URL`, `VITE_OIDC_ISSUER`, `VITE_OIDC_CLIENT_ID` — and
+   **`VITE_DEV_BYPASS_AUTH` unset** (any value makes `getOidcConfig()` return `disabled`).
+
+**Steps**
+
+1. Open `http://localhost:5173` while logged out → Studio's LoginGate shows the Keycloak
+   sign-in prompt and does not render Builder screens.
+2. Sign in on the Keycloak-hosted page with the test user.
+3. Browser returns to `http://localhost:5173`; Studio renders the app shell (LoginGate
+   `oidcStatus === "authenticated"`).
+4. Trigger a Builder call (e.g. open a screen that loads `/version` or run Preview) and
+   inspect the request in DevTools → Network.
+5. In DevTools → Application, inspect `localStorage` and `sessionStorage`.
+6. From a terminal, call a protected Builder endpoint with no token and with a garbage
+   token.
+7. Go to Settings → Account → **Logout**.
+8. After the Keycloak logout redirect completes, revisit a protected Studio route.
+
+**Success criteria** — all must hold:
+
+- [ ] Logged-out Studio redirects into Keycloak login; protected screens are not shown.
+- [ ] After Keycloak login the browser returns to Studio and the app shell renders.
+- [ ] The Builder request carries an `Authorization: Bearer <access token>` header.
+- [ ] With **no** `KPUBDATA_BUILDER_DEV_MODE`, Builder accepts that request (2xx).
+- [ ] A request with a missing or malformed token is rejected (401/403) on a protected
+      Builder endpoint.
+- [ ] Builder logs/response show the request handled as an **`oidc` principal**
+      (`kind="oidc"`), not `dev` or `service`.
+- [ ] Neither `localStorage` nor `sessionStorage` contains a raw access or refresh token;
+      Studio code never writes one (tokens stay in the `keycloak-js` in-memory session).
+- [ ] Settings → Logout triggers Keycloak logout; afterwards every protected Studio route
+      is back to the unauthenticated state and re-prompts for login.
+
 ### KPubData Product Family
 | 저장소 | 문서 | 설명 |
 | :--- | :--- | :--- |

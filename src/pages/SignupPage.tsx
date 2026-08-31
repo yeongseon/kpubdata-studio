@@ -20,6 +20,10 @@ export function SignupPage() {
           KPubData Studio는 공개 회원가입을 제공하지 않습니다. 계정 발급 방식은 조직 정책에 따라
           관리자가 안내합니다.
         </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          비밀번호, 이메일 인증, 비밀번호 재설정은 KPubData 계정(Keycloak)에서 관리됩니다 —
+          Studio는 비밀번호를 입력받거나 저장하지 않습니다.
+        </p>
         <Link to="/login" className="mt-6 inline-block font-medium text-accent-subtle-foreground underline">
           로그인하러 가기
         </Link>
