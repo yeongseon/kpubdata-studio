@@ -76,7 +76,6 @@ describe("ProviderPage real mode (#S01)", () => {
       providers: [{ provider: "datago", requires_credential: true, configured: true }],
     });
     vi.spyOn(builderApi, "getProviderCredential").mockResolvedValue({
-      provider: "datago",
       configured: false,
       masked: null,
       updated_at: null,
@@ -118,7 +117,6 @@ describe("ProviderPage real mode (#S01)", () => {
       providers: [{ provider: "datago", requires_credential: true, configured: true }],
     });
     vi.spyOn(builderApi, "getProviderCredential").mockResolvedValue({
-      provider: "datago",
       configured: false,
       masked: null,
       updated_at: null,
@@ -139,7 +137,6 @@ describe("ProviderPage real mode (#S01)", () => {
       providers: [{ provider: "datago", requires_credential: true, configured: true }],
     });
     vi.spyOn(builderApi, "getProviderCredential").mockResolvedValue({
-      provider: "datago",
       configured: true,
       masked: "AK••••9f",
       updated_at: "2026-08-30T10:00:00.000Z",
@@ -160,7 +157,6 @@ describe("ProviderPage real mode (#S01)", () => {
       providers: [{ provider: "datago", requires_credential: true, configured: false }],
     });
     const credSpy = vi.spyOn(builderApi, "getProviderCredential").mockResolvedValue({
-      provider: "datago",
       configured: false,
       masked: null,
       updated_at: null,
@@ -178,7 +174,6 @@ describe("ProviderPage real mode (#S01)", () => {
 
     // 저장 후 사용자 credential이 생겼다고 응답하도록 바꾼다.
     credSpy.mockResolvedValue({
-      provider: "datago",
       configured: true,
       masked: "se••••23",
       updated_at: "2026-08-31T00:00:00.000Z",
@@ -201,7 +196,6 @@ describe("ProviderPage real mode (#S01)", () => {
       providers: [{ provider: "datago", requires_credential: true, configured: true }],
     });
     const credSpy = vi.spyOn(builderApi, "getProviderCredential").mockResolvedValue({
-      provider: "datago",
       configured: true,
       masked: "AK••••9f",
       updated_at: "2026-08-30T10:00:00.000Z",
@@ -215,7 +209,6 @@ describe("ProviderPage real mode (#S01)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "삭제" }));
 
     credSpy.mockResolvedValue({
-      provider: "datago",
       configured: false,
       masked: null,
       updated_at: null,

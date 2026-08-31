@@ -313,11 +313,10 @@ export const providerTestResponseSchema = z.object({
  * `masked`/`updated_at`은 저장된 credential이 없으면 null이다.
  */
 export const providerCredentialResponseSchema = z.object({
-  provider: z.string(),
   configured: z.boolean(),
   masked: z.string().nullable(),
   updated_at: z.string().nullable(),
-});
+}).strict();
 
 /** kind="file" source 업로드 메타데이터(secret-free, content는 포함하지 않음). */
 export const uploadMetadataSchema = z.object({
