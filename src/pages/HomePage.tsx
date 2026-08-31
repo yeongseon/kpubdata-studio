@@ -18,7 +18,8 @@ import { listBuilds } from "@/features/runs/api";
 import { SUGGESTED_QUESTIONS } from "@/features/kubi/suggestedQuestions";
 import { useKubiStore } from "@/features/kubi/useKubiSession";
 import { useUIStore } from "@/shared/hooks/useUIStore";
-import type { BuildListItem, BuildRunStatus } from "@/shared/lib/types";
+import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
+import type { BuildListItem } from "@/shared/lib/types";
 import {
   Button,
   Card,
@@ -26,14 +27,13 @@ import {
   LinkButton,
   PageHeader,
   Skeleton,
-  type StatusValue,
 } from "@/shared/ui";
 
 interface DashboardStats {
-  datasetCount: number;
-  buildSuccess: number;
-  validationWarn: number;
-  running: number;
+  datasetCount: number | null;
+  buildSuccess: number | null;
+  validationWarn: number | null;
+  running: number | null;
 }
 
 interface LoadingState {
@@ -50,16 +50,12 @@ interface ApiState {
  * 신규 사용자 여부를 판단한다.
  * dataset/build이 하나도 없으면 신규 사용자로 간주한다.
  */
-function isNewUser(stats: DashboardStats): boolean {
-  return stats.datasetCount === 0 && stats.buildSuccess === 0 && stats.validationWarn === 0 && stats.running === 0;
-}
-
 export function HomePage() {
   const [builds, setBuilds] = useState<BuildListItem[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     datasetCount: 0,
     buildSuccess: 0,
-    validationWarn: 0,
+    validationWarn: null,
     running: 0,
   });
   const [loading, setLoading] = useState<LoadingState>({
@@ -76,7 +72,12 @@ export function HomePage() {
 
     const fetchData = async () => {
       try {
+        const realBuilder = isRealBuilderEnabled();
         const buildList = await listBuilds();
+        // 비어 있는 목록은 신규 사용자 분기에 충분하며, 불필요한 monitoring 호출로 막지 않는다.
+        const monitoring = realBuilder && buildList.length > 0
+          ? await builderApi.getMonitoringBuilds().catch(() => null)
+          : null;
         if (active) {
           setBuilds(buildList);
           setApiState((prev) => ({ ...prev, builds: "success" }));
@@ -84,15 +85,19 @@ export function HomePage() {
           const succeeded = buildList.filter((b) => b.status === "succeeded").length;
           const running = buildList.filter((b) => b.status === "running" || b.status === "queued").length;
 
+          const monitoredSuccess = monitoring?.availability === "available"
+            ? monitoring.buckets.reduce((sum, bucket) => sum + bucket.success, 0)
+            : null;
           setStats({
-            datasetCount: succeeded,
-            buildSuccess: succeeded,
-            validationWarn: 0,
-            running,
+            datasetCount: realBuilder ? null : succeeded,
+            buildSuccess: realBuilder ? monitoredSuccess : succeeded,
+            validationWarn: null,
+            // GET /builds의 real 계약은 terminal summary만 제공하므로 active 수로 해석하지 않는다.
+            running: realBuilder ? null : running,
           });
           setApiState((prev) => ({ ...prev, stats: "success" }));
         }
-      } catch (error) {
+      } catch {
         if (active) {
           setApiState((prev) => ({ ...prev, builds: "error", stats: "error" }));
         }
@@ -118,7 +123,7 @@ export function HomePage() {
     })
     .slice(0, 5);
 
-  const isNew = stats.datasetCount === 0 && stats.buildSuccess === 0;
+  const isNew = apiState.builds === "success" && builds.length === 0;
 
   return (
     <main className="flex flex-1 flex-col gap-8 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
@@ -266,7 +271,7 @@ function KpiCards({ stats, loading, apiState }: { stats: DashboardStats; loading
   if (apiState === "error") {
     return (
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {["DATASETS", "BUILD SUCCESS", "VALIDATION WARN", "RUNNING"].map((label) => (
+        {["DATASETS", "SUCCEEDED (24H)", "VALIDATION WARN", "RUNNING"].map((label) => (
           <Card key={label} variant="error" className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">{label}</span>
             <span className="text-xl font-semibold tracking-tight text-muted-foreground">—</span>
@@ -279,7 +284,7 @@ function KpiCards({ stats, loading, apiState }: { stats: DashboardStats; loading
   return (
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <KpiCard label="DATASETS" value={stats.datasetCount} loading={loading} />
-      <KpiCard label="BUILD SUCCESS" value={stats.buildSuccess} loading={loading} variant="success" />
+      <KpiCard label="SUCCEEDED (24H)" value={stats.buildSuccess} loading={loading} variant="success" />
       <KpiCard label="VALIDATION WARN" value={stats.validationWarn} loading={loading} variant="error" />
       <KpiCard label="RUNNING" value={stats.running} loading={loading} />
     </section>
@@ -293,7 +298,7 @@ function KpiCard({
   variant = "default",
 }: {
   label: string;
-  value: number;
+  value: number | null;
   loading: boolean;
   variant?: "default" | "success" | "error";
 }) {
@@ -314,7 +319,7 @@ function KpiCard({
     <Card className="flex items-center justify-between">
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className={`text-2xl font-semibold tracking-tight ${colorClass}`}>
-        {value}
+        {value === null ? "확인 불가" : value}
       </span>
     </Card>
   );
@@ -380,8 +385,8 @@ function QualitySection() {
       <PageHeader eyebrow="품질" title="품질 경고" className="mb-4" />
       <Card className="p-0">
         <EmptyState
-          title="품질 경고가 없습니다"
-          description="모든 빌드가 정상적으로 완료되었습니다"
+          title="품질 경고 집계 확인 불가"
+          description="Builder monitoring API는 validation warning 집계를 제공하지 않습니다. 각 빌드의 품질 화면에서 확인하세요."
         />
       </Card>
     </section>

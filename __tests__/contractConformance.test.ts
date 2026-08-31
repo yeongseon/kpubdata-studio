@@ -24,6 +24,7 @@ const EXPECTED_OPERATIONS = [
   "getBuildJob",
   "cancelBuildJob",
   "artifacts",
+  "getBuildManifest",
   "listBuilds",
   "catalog",
   "listDatasets",

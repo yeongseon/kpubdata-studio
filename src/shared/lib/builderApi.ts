@@ -490,6 +490,14 @@ export const builderApi = {
   artifacts: (runId: string, signal?: AbortSignal) =>
     apiFetch(`/artifacts/${encodeURIComponent(runId)}`, { signal }, schemas.artifactsResponseSchema),
 
+  /** GET /builds/{runId}/manifest — Builder가 기록한 authoritative manifest 본문. */
+  getBuildManifest: (runId: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/builds/${encodeURIComponent(runId)}/manifest`,
+      { signal },
+      schemas.buildManifestResponseSchema,
+    ),
+
   /** GET /builds — 빌드 이력 목록(#153, builder #250). */
   listBuilds: (limit?: number, signal?: AbortSignal) => {
     const query = limit !== undefined ? `?limit=${limit}` : "";

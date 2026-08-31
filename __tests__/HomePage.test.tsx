@@ -32,6 +32,10 @@ function configureKey() {
   });
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("HomePage", () => {
   it("renders the existing-user dashboard heading and KPI summary once builds load (#248)", async () => {
     render(
@@ -48,7 +52,7 @@ describe("HomePage", () => {
     ).toBeInTheDocument();
     // 상태 요약 KPI 카드 라벨
     expect(screen.getByText("DATASETS")).toBeInTheDocument();
-    expect(screen.getByText("BUILD SUCCESS")).toBeInTheDocument();
+    expect(screen.getByText("SUCCEEDED (24H)")).toBeInTheDocument();
     expect(screen.getByText("RUNNING")).toBeInTheDocument();
   });
 
@@ -68,10 +72,7 @@ describe("HomePage", () => {
   });
 
   it("points the new-user '데이터 추가하기' CTA at the canonical /add route, not /add-data (#regression)", async () => {
-    // 신규 사용자 분기를 재현하기 위해 빌드 목록을 빈 배열로 오버라이드한다.
-    mswServer.use(
-      http.get(`${BUILDER_BASE}/builds`, () => HttpResponse.json({ builds: [] })),
-    );
+    useEmptyBuildsRealMode();
 
     render(
       <MemoryRouter>
@@ -81,6 +82,35 @@ describe("HomePage", () => {
 
     const cta = await screen.findByRole("link", { name: "데이터 추가하기" });
     expect(cta).toHaveAttribute("href", "/add");
+  });
+
+  it("uses monitoring success counts and renders unavailable metrics as unavailable, never zero/PASS", async () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    mswServer.use(
+      http.get(`${BUILDER_BASE}/builds`, () => HttpResponse.json({
+        builds: [
+          { run_id: "ok-run", status: "ok", started_at: "2026-08-31T00:00:00Z", finished_at: "2026-08-31T00:01:00Z" },
+          { run_id: "failed-run", status: "failed", started_at: "2026-08-31T00:02:00Z", finished_at: "2026-08-31T00:03:00Z" },
+          { run_id: "cancelled-run", status: "cancelled", started_at: "2026-08-31T00:04:00Z", finished_at: "2026-08-31T00:05:00Z" },
+        ],
+      })),
+      http.get(`${BUILDER_BASE}/monitoring/builds`, () => HttpResponse.json({
+        window: "24h",
+        bucket: "hour",
+        availability: "available",
+        excluded_count: 0,
+        buckets: [{ bucket_start: "2026-08-31T00:00:00Z", bucket_end: "2026-08-31T01:00:00Z", total: 9, success: 7, failed: 1, cancelled: 1 }],
+        recent_runs: [],
+      })),
+    );
+
+    render(<MemoryRouter><HomePage /></MemoryRouter>);
+
+    expect(await screen.findByText("7")).toBeInTheDocument();
+    expect(screen.getAllByText("확인 불가")).toHaveLength(3);
+    expect(screen.getByText("품질 경고 집계 확인 불가")).toBeInTheDocument();
+    expect(screen.queryByText("품질 경고가 없습니다")).not.toBeInTheDocument();
+    expect(screen.queryByText("모든 빌드가 정상적으로 완료되었습니다")).not.toBeInTheDocument();
   });
 });
 

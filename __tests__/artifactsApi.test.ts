@@ -22,34 +22,39 @@ afterEach(() => {
 });
 
 describe("getBuildManifest (#75)", () => {
-  it("maps the real /artifacts {files, run_id} shape to a BuildManifest in real mode", async () => {
+  it("returns the authoritative Builder manifest without synthesizing or dropping fields", async () => {
     vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
     const fetchMock = vi.fn().mockResolvedValue(
       mockResponse(200, {
-        run_id: "run-99",
-        files: ["artifacts/builds/run-99/data.jsonl", "artifacts/builds/run-99/README.md"],
+        build_id: "run-99",
+        schema_version: "2.3.0",
+        started_at: "2026-08-31T00:00:00Z",
+        finished_at: "2026-08-31T00:01:00Z",
+        status: "cancelled",
+        partial: true,
+        outputs: ["artifacts/builds/run-99/data.jsonl"],
+        inputs_fingerprint: "sha256:authoritative",
+        created_by: "oidc:user",
+        future_builder_field: { preserved: true },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     const manifest = await getBuildManifest("run-99");
 
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/artifacts/run-99");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/builds/run-99/manifest");
     expect(manifest.build_id).toBe("run-99");
-    expect(manifest.outputs).toEqual([
-      "artifacts/builds/run-99/data.jsonl",
-      "artifacts/builds/run-99/README.md",
-    ]);
-    // /artifacts가 제공하지 않는 필드는 undefined로 남겨 미제공 상태를 표현 (#119)
-    expect(manifest.row_counts).toBeUndefined();
-    expect(manifest.provenance).toBeUndefined();
-    expect(manifest.inputs_fingerprint).toBeNull();
-    expect(manifest.started_at).toBeUndefined();
-    expect(manifest.finished_at).toBeUndefined();
-    expect(manifest.inputs).toBeUndefined();
-    expect(manifest.warnings).toBeUndefined();
-    expect(manifest.errors).toBeUndefined();
-    expect(manifest.schema_summaries).toBeUndefined();
+    expect(manifest.schema_version).toBe("2.3.0");
+    expect(manifest.inputs_fingerprint).toBe("sha256:authoritative");
+    expect(manifest).toMatchObject({ future_builder_field: { preserved: true } });
+    expect(manifest.build_environment).toBeUndefined();
+  });
+
+  it("does not replace an unavailable real manifest with a synthetic manifest", async () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse(404, { error: "manifest not found" })));
+
+    await expect(getBuildManifest("missing-run")).rejects.toThrow();
   });
 
   it("returns the mock manifest without network in mock mode", async () => {
