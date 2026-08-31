@@ -5,6 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { API_BASE } from "@/shared/config/env";
 import { builderApi, setAuthErrorCallback, setAuthTokenProvider } from "./builderApi";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -145,5 +146,91 @@ describe("auth error callback on 401 (#189, S4)", () => {
 
     await expect(builderApi.version()).rejects.toMatchObject({ status: 403 });
     expect(cb).not.toHaveBeenCalled();
+  });
+});
+
+describe("provider status / credential CRUD contract (#S02)", () => {
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  function callOf(fetchMock: ReturnType<typeof vi.spyOn>) {
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    return { url, init };
+  }
+
+  it("getProviderStatus → GET /providers/{provider}/status", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        provider: "datago",
+        status: "connected",
+        configured: true,
+        latency_ms: 12,
+        checked_at: "2026-08-31T00:00:00.000Z",
+      }),
+    );
+
+    await builderApi.getProviderStatus("datago");
+
+    const { url, init } = callOf(fetchMock);
+    expect(url).toBe(`${API_BASE}/providers/datago/status`);
+    expect(init.method ?? "GET").toBe("GET");
+  });
+
+  it("putProviderCredential → PUT /providers/{provider}/credential with { credential } body", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, {}));
+
+    await builderApi.putProviderCredential("datago", "raw-secret");
+
+    const { url, init } = callOf(fetchMock);
+    expect(url).toBe(`${API_BASE}/providers/datago/credential`);
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({ credential: "raw-secret" });
+  });
+
+  it("deleteProviderCredential → DELETE /providers/{provider}/credential with no body", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, {}));
+
+    await builderApi.deleteProviderCredential("datago");
+
+    const { url, init } = callOf(fetchMock);
+    expect(url).toBe(`${API_BASE}/providers/datago/credential`);
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBeUndefined();
+  });
+});
+
+describe("async build cancellation contract (#S03)", () => {
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it("cancelBuildJob → POST /builds/{run_id}/cancel", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        run_id: "weather-1",
+        status: "cancelling",
+        created_at: "2026-08-31T00:00:00.000Z",
+        updated_at: "2026-08-31T00:00:01.000Z",
+      }),
+    );
+
+    const job = await builderApi.cancelBuildJob("weather-1");
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${API_BASE}/builds/weather-1/cancel`);
+    expect(init.method).toBe("POST");
+    expect(job.status).toBe("cancelling");
+  });
+
+  it("does not retry cancelBuildJob on 5xx (비멱등 side effect)", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(500, { error: "boom" }));
+
+    await expect(builderApi.cancelBuildJob("weather-1")).rejects.toMatchObject({ status: 500 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

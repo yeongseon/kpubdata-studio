@@ -7,9 +7,9 @@
  */
 import { saveBuildSpec } from "@/features/build-spec/specStore";
 import { serializeSpec } from "@/features/build-spec/specMapping";
-import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
+import { builderApi, isRealBuilderEnabled, type BuildSummary } from "@/shared/lib/builderApi";
 import { DEMO_DATASETS, type DemoDataset } from "@/shared/lib/demoDatasets";
-import type { BuildListItem, BuildRun, BuildSpec } from "@/shared/lib/types";
+import type { BuildListItem, BuildRun, BuildRunStatus, BuildSpec } from "@/shared/lib/types";
 
 const MOCK_TIME = "1970-01-01T00:00:00.000Z";
 
@@ -46,10 +46,32 @@ export type BuilderJobStatus =
   | "failed"
   | "cancelled";
 
+/**
+ * 실행이 어떤 Builder 표면을 타는지(그리고 그 run_id)를 호출부(useBuildJob)에 알린다.
+ *
+ * - `async`: POST /builds + polling. 사용자 취소는 POST /builds/{run_id}/cancel로 전달해야 한다.
+ * - `sync`: POST /build (file source, ADR 0014). server-side 협조적 취소 경로가 없다.
+ */
+export interface BuildExecutionHandle {
+  runId: string;
+  mode: "sync" | "async";
+}
+
+/**
+ * BuildSpec에 file source가 하나라도 포함되면 true.
+ *
+ * ADR 0014: file source의 async build(POST /builds)는 현재 지원 범위 밖이다 — file이
+ * 섞인 spec은 전체를 sync POST /build로 실행해야 한다. "첫 source만" 보지 않고 전체를 본다.
+ */
+export function specHasFileSource(spec: BuildSpec): boolean {
+  return spec.sources.some((source) => source.kind === "file");
+}
+
 export async function executeBuild(
   spec: BuildSpec,
   signal?: AbortSignal,
   onJobStatus?: (status: BuilderJobStatus) => void,
+  onHandle?: (handle: BuildExecutionHandle) => void,
 ): Promise<BuildRun> {
   if (!isRealBuilderEnabled()) {
     const mockRun: BuildRun = {
@@ -67,7 +89,17 @@ export async function executeBuild(
   // 실연동 모드에서는 실제 실행 시각을 기록한다(이력/상세 화면에서 잘못된 1970 값 방지).
   const runId = generateRunId(spec.datasetId);
   const startedAt = new Date().toISOString();
-  const result = await runAsyncBuild(spec, runId, startedAt, signal, onJobStatus);
+
+  // file source가 포함된 spec은 async(POST /builds)가 아니라 sync(POST /build)로
+  // 실행한다(ADR 0014). public_api/url만 있으면 기존 async job 표면을 그대로 쓴다.
+  let result: BuildRun;
+  if (specHasFileSource(spec)) {
+    onHandle?.({ runId, mode: "sync" });
+    result = await runSyncBuild(spec, runId, startedAt, signal);
+  } else {
+    onHandle?.({ runId, mode: "async" });
+    result = await runAsyncBuild(spec, runId, startedAt, signal, onJobStatus);
+  }
 
   // Builder는 spec을 영속화하지 않으므로(#120), 이후 편집 화면이 기존 스펙을 복원할 수
   // 있도록 Studio가 실행 시점의 스펙을 run_id에 묶어 보관한다. 저장 실패는 무시되며
@@ -176,6 +208,53 @@ async function runAsyncBuild(
   return { id: finalRunId, spec, status: "succeeded", startedAt, finishedAt };
 }
 
+/**
+ * file source가 포함된 spec을 동기 `POST /build`로 실행한다(ADR 0014).
+ *
+ * async job 표면(POST /builds + polling)을 타지 않으므로 job status 콜백/취소
+ * endpoint는 관여하지 않는다. 성공/부분 실패 판정은 async 최종 build 응답과 동일한
+ * 규칙(최상위 error → outcomes[].error → 기본 문구, #75)을 따라 UI가 async 결과와
+ * 똑같이 소비할 수 있는 BuildRun을 돌려준다.
+ */
+async function runSyncBuild(
+  spec: BuildSpec,
+  runId: string,
+  startedAt: string,
+  signal: AbortSignal | undefined,
+): Promise<BuildRun> {
+  const response = await builderApi.build(serializeSpec(spec), runId, signal);
+  const finishedAt = new Date().toISOString();
+  const finalRunId = response.run_id || runId;
+
+  if (response.status !== "ok") {
+    const outcomeReason = response.outcomes.find((outcome) => outcome.error)?.error;
+    const reason =
+      ("error" in response && response.error) || outcomeReason || "일부 소스 빌드가 실패했습니다.";
+    return { id: finalRunId, spec, status: "failed", startedAt, finishedAt, error: reason };
+  }
+  return { id: finalRunId, spec, status: "succeeded", startedAt, finishedAt };
+}
+
+/**
+ * Builder `GET /builds`의 BuildSummary.status(canonical 어휘: ok/failed/cancelled)를
+ * Studio BuildRunStatus로 매핑한다.
+ *
+ * 취소된 run은 `cancelled`로 오며 절대 failed로 붕괴시키지 않는다(#S04). Builder 어휘
+ * 밖의 값은 조용히 성공으로 넘기지 않고 fail-closed(failed)로 둔다.
+ */
+function mapBuildSummaryStatus(status: BuildSummary["status"]): BuildRunStatus {
+  switch (status) {
+    case "ok":
+      return "succeeded";
+    case "cancelled":
+      return "cancelled";
+    case "failed":
+      return "failed";
+    default:
+      return "failed";
+  }
+}
+
 /** 데모 카탈로그 항목을 목록/이력 UI용 BuildSpec으로 변환한다. */
 function mockSpec(dataset: DemoDataset): BuildSpec {
   return {
@@ -235,7 +314,7 @@ export async function listBuilds(limit?: number): Promise<BuildListItem[]> {
   return response.builds.map((summary) => ({
     id: summary.run_id,
     title: null, // Builder GET /builds는 title을 제공하지 않음
-    status: summary.status === "ok" ? "succeeded" : "failed",
+    status: mapBuildSummaryStatus(summary.status),
     startedAt: summary.started_at ?? null, // 누락 또는 null을 명시적 null로 정규화
     finishedAt: summary.finished_at ?? null, // 누락 또는 null을 명시적 null로 정규화
   }));

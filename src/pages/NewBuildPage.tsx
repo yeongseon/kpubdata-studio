@@ -931,6 +931,11 @@ export function NewBuildPage() {
                 {job.status === "cancelled" ? (
                   <span className="text-sm text-muted-foreground">실행이 취소되었습니다.</span>
                 ) : null}
+                {job.interrupted && job.status !== "cancelled" ? (
+                  <span className="text-sm text-muted-foreground">
+                    요청을 중단했습니다. 서버 빌드 결과는 확인되지 않았습니다.
+                  </span>
+                ) : null}
               </div>
 
               <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">

@@ -10,7 +10,13 @@
  * - connected/failed/not_configured + latency/checked_at/error category
  * - raw secret DOM/error/log 비노출
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  builderApi,
+  isRealBuilderEnabled,
+  type ProviderSummary,
+  type ProviderTestResponse,
+} from "@/shared/lib/builderApi";
 import {
   Card,
   Button,
@@ -24,15 +30,28 @@ interface ProviderConfig {
   id: string;
   name: string;
   description: string;
-  status: "connected" | "failed" | "not_configured";
+  /** `unknown` = configured/사용 가능하지만 connection을 아직 점검하지 않음. */
+  status: "connected" | "failed" | "not_configured" | "unknown";
   latency?: number;
   checkedAt?: string;
   errorCategory?: string;
 }
 
 interface CredentialForm {
-  providerId: string;
   credential: string;
+}
+
+/** Builder GET /providers 요약을 화면 모델로 변환한다(연결 상태는 별도 status 점검으로 채운다). */
+function mapProviderSummary(summary: ProviderSummary): ProviderConfig {
+  return {
+    id: summary.provider,
+    name: summary.provider,
+    description: summary.requires_credential
+      ? "자격 증명이 필요한 제공 기관입니다."
+      : "자격 증명 없이 사용할 수 있는 제공 기관입니다.",
+    status:
+      summary.requires_credential && !summary.configured ? "not_configured" : "unknown",
+  };
 }
 
 export function ProviderPage() {
@@ -40,53 +59,78 @@ export function ProviderPage() {
   const [selectedProvider, setSelectedProvider] = useState<ProviderConfig | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [showCredentialForm, setShowCredentialForm] = useState(false);
-  const [credentialForm, setCredentialForm] = useState<CredentialForm>({
-    providerId: "",
-    credential: "",
-  });
+  const [credentialForm, setCredentialForm] = useState<CredentialForm>({ credential: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadProviders();
-  }, []);
-
-  const loadProviders = async () => {
+  const loadProviders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/providers");
-      if (!response.ok) {
-        throw new Error("Failed to load providers");
+      if (isRealBuilderEnabled()) {
+        // real mode: GET /providers가 canonical source다. 실패를 mock 성공으로
+        // 위장하지 않는다 — catch에서 명시적 error/빈 목록으로 떨어진다(#S01).
+        const response = await builderApi.listProviders();
+        const mapped = response.providers.map(mapProviderSummary);
+        setProviders(mapped);
+        setSelectedProvider((current) =>
+          current ? mapped.find((p) => p.id === current.id) ?? null : null,
+        );
+      } else {
+        // 명시적 mock/demo mode에서만 mock 목록을 쓴다.
+        setProviders(getMockProviders());
       }
-      const data = await response.json();
-      setProviders(data.providers || []);
-    } catch (err) {
+    } catch {
       setError("Provider 정보를 불러올 수 없습니다");
-      setProviders(getMockProviders());
+      setProviders([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadProviders();
+  }, [loadProviders]);
 
   const handleProviderSelect = (provider: ProviderConfig) => {
     setSelectedProvider(provider);
     setShowCredentialForm(false);
   };
 
+  /** status 점검/테스트 응답을 목록과 선택 상태에 반영한다. */
+  const applyStatus = useCallback((res: ProviderTestResponse) => {
+    const patch: Partial<ProviderConfig> = {
+      status: res.status,
+      latency: res.latency_ms,
+      checkedAt: res.checked_at,
+      errorCategory: res.error_category,
+    };
+    setProviders((list) => list.map((p) => (p.id === res.provider ? { ...p, ...patch } : p)));
+    setSelectedProvider((current) =>
+      current && current.id === res.provider ? { ...current, ...patch } : current,
+    );
+  }, []);
+
   const handleConnectionTest = async () => {
     if (!selectedProvider) return;
+    const provider = selectedProvider.id;
 
     setIsTesting(true);
+    setError(null);
     try {
-      const response = await fetch(`/api/providers/${selectedProvider.id}/test`, {
-        method: "POST",
-      });
-      if (!response.ok) {
-        throw new Error("Connection test failed");
+      if (isRealBuilderEnabled()) {
+        // 연결 테스트는 GET /providers/{provider}/status를 쓴다 — 임의 POST /test가 아니다(#S02).
+        applyStatus(await builderApi.getProviderStatus(provider));
+      } else {
+        applyStatus({
+          provider,
+          status: "connected",
+          configured: true,
+          latency_ms: 42,
+          checked_at: new Date().toISOString(),
+        });
       }
-      await loadProviders();
-    } catch (err) {
+    } catch {
       setError("연결 테스트에 실패했습니다");
     } finally {
       setIsTesting(false);
@@ -94,37 +138,51 @@ export function ProviderPage() {
   };
 
   const handleCredentialSubmit = async () => {
+    if (!selectedProvider || !credentialForm.credential) return;
+    const provider = selectedProvider.id;
+    setError(null);
     try {
-      const response = await fetch(`/api/providers/${credentialForm.providerId}/credentials`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          credential: credentialForm.credential,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error("Failed to save credential");
+      if (isRealBuilderEnabled()) {
+        // PUT /providers/{provider}/credential, body는 { credential } 하나뿐. 원문은
+        // response로 기대하지 않고, 선택된 provider의 canonical id를 URL에 쓴다(#S02).
+        await builderApi.putProviderCredential(provider, credentialForm.credential);
+        setCredentialForm({ credential: "" });
+        setShowCredentialForm(false);
+        await loadProviders();
+      } else {
+        applyStatus({
+          provider,
+          status: "connected",
+          configured: true,
+          latency_ms: 42,
+          checked_at: new Date().toISOString(),
+        });
+        setCredentialForm({ credential: "" });
+        setShowCredentialForm(false);
       }
-      await loadProviders();
-      setCredentialForm({ providerId: "", credential: "" });
-      setShowCredentialForm(false);
-    } catch (err) {
+    } catch {
       setError("Credential 저장에 실패했습니다");
     }
   };
 
   const handleCredentialDelete = async () => {
     if (!selectedProvider) return;
-
+    const provider = selectedProvider.id;
+    setError(null);
     try {
-      const response = await fetch(`/api/providers/${selectedProvider.id}/credentials`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        throw new Error("Failed to delete credential");
+      if (isRealBuilderEnabled()) {
+        await builderApi.deleteProviderCredential(provider);
+        await loadProviders();
+      } else {
+        applyStatus({
+          provider,
+          status: "not_configured",
+          configured: false,
+          latency_ms: 0,
+          checked_at: new Date().toISOString(),
+        });
       }
-      await loadProviders();
-    } catch (err) {
+    } catch {
       setError("Credential 삭제에 실패했습니다");
     }
   };
@@ -140,11 +198,13 @@ export function ProviderPage() {
       connected: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
       failed: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300",
       not_configured: "bg-muted text-muted-foreground",
+      unknown: "bg-muted text-muted-foreground",
     };
     const labels = {
       connected: "연결됨",
       failed: "연결 실패",
       not_configured: "미설정",
+      unknown: "연결 확인 필요",
     };
     return { className: styles[status], label: labels[status] };
   };

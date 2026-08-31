@@ -22,6 +22,7 @@ const EXPECTED_OPERATIONS = [
   "build",
   "submitBuild",
   "getBuildJob",
+  "cancelBuildJob",
   "artifacts",
   "listBuilds",
   "catalog",
@@ -41,6 +42,9 @@ const EXPECTED_OPERATIONS = [
   "getMonitoringBuilds",
   "listProviders",
   "testProviderConnection",
+  "getProviderStatus",
+  "putProviderCredential",
+  "deleteProviderCredential",
   "uploadFile",
 ] as const;
 

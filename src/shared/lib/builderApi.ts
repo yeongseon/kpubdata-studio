@@ -53,7 +53,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
   /** 자동 타임아웃(ms). 미지정 시 DEFAULT_TIMEOUT_MS. 0 이하이면 타임아웃 비활성화. */
@@ -340,8 +340,11 @@ export function formatApiErrorMessage(status: number, parsed: unknown): string {
 export interface BuildSummary {
   /** 빌드 실행 식별자 */
   run_id: string;
-  /** 빌드 상태("ok" | "failed") */
-  status: "ok" | "failed";
+  /**
+   * 빌드 상태. Builder canonical BuildSummary 어휘는 "ok" | "failed" | "cancelled"이다
+   * (취소된 run은 failed가 아니라 cancelled로 온다 — 이력/KPI에서 구분해야 한다).
+   */
+  status: "ok" | "failed" | "cancelled";
   /** 빌드 시작 시각(ISO 8601, null, 또는 생략됨) */
   started_at?: string | null;
   /** 빌드 완료 시각(ISO 8601, null, 또는 생략됨) */
@@ -370,6 +373,8 @@ export type CatalogProvider = schemas.CatalogProvider;
 export type CatalogResponse = schemas.CatalogResponse;
 export type ProviderTestResponse = schemas.ProviderTestResponse;
 export type UploadMetadata = schemas.UploadMetadata;
+export type ProviderSummary = schemas.ProviderSummary;
+export type ProvidersResponse = schemas.ProvidersResponse;
 export type PreviewDiffItem = schemas.PreviewDiffItem;
 export type PreviewTransformSummary = schemas.PreviewTransformSummary;
 export type StageStatus = schemas.StageStatus;
@@ -466,6 +471,18 @@ export const builderApi = {
     apiFetch(
       `/builds/${encodeURIComponent(runId)}`,
       { signal, retries: 1 },
+      schemas.buildJobSchema,
+    ),
+
+  /**
+   * POST /builds/{run_id}/cancel — 진행 중인 async build job의 협조적 취소 요청
+   * (#245, builder #481). queued/running → cancelling/cancelled로 전이한다. 취소는
+   * side effect가 있는 비멱등 요청이므로 재시도하지 않는다. 응답은 최신 job 스냅샷이다.
+   */
+  cancelBuildJob: (runId: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/builds/${encodeURIComponent(runId)}/cancel`,
+      { method: "POST", signal, retries: 0 },
       schemas.buildJobSchema,
     ),
 
@@ -630,6 +647,36 @@ export const builderApi = {
       `/providers/${encodeURIComponent(provider)}/test`,
       { method: "POST", signal, retries: 0 },
       schemas.providerTestResponseSchema,
+    ),
+
+  /**
+   * GET /providers/{provider}/status — 서버에 저장된 credential(또는 무인증 provider)로
+   * 실행하는 lightweight connection 점검 (#259, builder provider credentials API).
+   * credential 원문은 주고받지 않는다. 응답 형태는 POST /providers/{provider}/test와 공통이다.
+   */
+  getProviderStatus: (provider: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/providers/${encodeURIComponent(provider)}/status`,
+      { signal, retries: 1 },
+      schemas.providerTestResponseSchema,
+    ),
+
+  /**
+   * PUT /providers/{provider}/credential — raw credential 등록/교체 (#259).
+   * body는 `{ credential }` 하나뿐이고, 응답에는 원문이 존재하지 않는다(Studio도
+   * 저장/로그/echo하지 않는다). 비멱등 side effect이므로 재시도하지 않는다.
+   */
+  putProviderCredential: (provider: string, credential: string, signal?: AbortSignal) =>
+    apiFetch<unknown>(
+      `/providers/${encodeURIComponent(provider)}/credential`,
+      { method: "PUT", body: { credential }, signal, retries: 0 },
+    ),
+
+  /** DELETE /providers/{provider}/credential — 저장된 credential 제거 (#259). */
+  deleteProviderCredential: (provider: string, signal?: AbortSignal) =>
+    apiFetch<unknown>(
+      `/providers/${encodeURIComponent(provider)}/credential`,
+      { method: "DELETE", signal, retries: 0 },
     ),
 
   /**

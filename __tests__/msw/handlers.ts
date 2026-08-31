@@ -18,7 +18,10 @@ import { API_BASE } from "@/shared/config/env";
  * spec에 `dataset_id: fail_source`가 포함된 경우로 판별한다(동기 /build 모의와
  * 동일한 규칙).
  */
-const asyncJobStates = new Map<string, { pollCount: number; failed: boolean }>();
+const asyncJobStates = new Map<
+  string,
+  { pollCount: number; failed: boolean; cancelled?: boolean; cancelPollCount?: number }
+>();
 
 const ASYNC_JOB_TIMELINE = ["queued", "running"] as const;
 
@@ -137,6 +140,17 @@ export const handlers = [
     if (!state) {
       return HttpResponse.json({ error: `build job not found: ${runId}` }, { status: 404 });
     }
+    // 협조적 취소 관찰 시퀀스: POST /builds/{run_id}/cancel 이후 첫 폴링은 cancelling,
+    // 그다음부터 cancelled terminal(builder #481).
+    if (state.cancelled) {
+      state.cancelPollCount = (state.cancelPollCount ?? 0) + 1;
+      return HttpResponse.json({
+        run_id: runId,
+        status: state.cancelPollCount >= 2 ? "cancelled" : "cancelling",
+        created_at: "2026-08-16T09:00:00+00:00",
+        updated_at: "2026-08-16T09:00:05+00:00",
+      });
+    }
     state.pollCount += 1;
     const timelineIndex = Math.min(state.pollCount - 1, ASYNC_JOB_TIMELINE.length - 1);
     const failed = state.failed;
@@ -167,6 +181,25 @@ export const handlers = [
       status: ASYNC_JOB_TIMELINE[timelineIndex],
       created_at: "2026-08-16T09:00:00+00:00",
       updated_at: "2026-08-16T09:00:01+00:00",
+    });
+  }),
+
+  /**
+   * POST /builds/{run_id}/cancel — 협조적 취소 요청 (#245, builder #481).
+   * 등록된 job이면 취소 시퀀스를 켜고 최신 스냅샷(cancelling)을 돌려준다.
+   */
+  http.post<{ run_id: string }>(`${API_BASE}/builds/:run_id/cancel`, ({ params }) => {
+    const runId = params.run_id as string;
+    const state = asyncJobStates.get(runId);
+    if (!state) {
+      return HttpResponse.json({ error: `build job not found: ${runId}` }, { status: 404 });
+    }
+    state.cancelled = true;
+    return HttpResponse.json({
+      run_id: runId,
+      status: "cancelling",
+      created_at: "2026-08-16T09:00:00+00:00",
+      updated_at: "2026-08-16T09:00:04+00:00",
     });
   }),
 

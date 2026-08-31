@@ -104,6 +104,41 @@ describe("ReviewBuildStep — URL source secret redaction (#283)", () => {
   });
 });
 
+describe("ReviewBuildStep — sync build client-side interruption wording (MAJOR)", () => {
+  function renderWithJob(props: { jobStatus: "idle" | "cancelled"; jobInterrupted?: boolean }) {
+    const draft = publicApiDraft(JSON.stringify({ region: "seoul" }));
+    const specResult = buildSpecFromDraft(draft);
+    render(
+      <ReviewBuildStep
+        draft={draft}
+        spec={specResult.spec}
+        specError={specResult.error}
+        validation={{ status: "validated", valid: true, errors: [] }}
+        previewSources={[]}
+        previewLimit={5}
+        previewSampleMode="first"
+        isStale={false}
+        jobStatus={props.jobStatus}
+        jobInterrupted={props.jobInterrupted}
+        onBuild={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  }
+
+  it("client-side abort는 '취소' 확정 문구 대신 '요청을 중단' 문구만 보여준다", () => {
+    renderWithJob({ jobStatus: "idle", jobInterrupted: true });
+    expect(screen.getByText(/요청을 중단했습니다\. 서버 빌드 결과는 확인되지 않았습니다\./)).toBeInTheDocument();
+    expect(screen.queryByText("실행이 취소되었습니다.")).not.toBeInTheDocument();
+  });
+
+  it("실제 async cancelled terminal에서만 '실행이 취소되었습니다.'를 보여준다", () => {
+    renderWithJob({ jobStatus: "cancelled" });
+    expect(screen.getByText("실행이 취소되었습니다.")).toBeInTheDocument();
+    expect(screen.queryByText(/요청을 중단했습니다/)).not.toBeInTheDocument();
+  });
+});
+
 describe("ReviewBuildStep — public_api sourceParams secret redaction (#283 후속 리뷰 §1)", () => {
   it("serviceKey 원문이 Review DOM에 없다", () => {
     const secret = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
