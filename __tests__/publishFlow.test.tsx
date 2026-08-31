@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -204,6 +204,7 @@ describe("BuildPublishPage readiness and form (#270)", () => {
     renderPublish();
     fireEvent.click(await fillAndConfirm());
     expect(screen.queryByText("Builder 게시 완료")).not.toBeInTheDocument();
+    await waitFor(() => expect(resolvePost).toBeTypeOf("function"));
     await act(() => resolvePost(response(200, SUCCESS)));
     const success = await screen.findByText("Builder 게시 완료");
     const card = success.closest("div.rounded-xl") ?? success.parentElement!;
