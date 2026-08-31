@@ -30,10 +30,26 @@ describe("BuildRunPage (audit #3)", () => {
     expect(screen.queryByText("대기 중")).not.toBeInTheDocument();
   });
 
-  it("does not fabricate stage-by-stage progress it cannot support", async () => {
+  it("does not fabricate stage-by-stage progress, and does not claim the API is unsupported", async () => {
     renderRun("dur-pregnancy-taboo-20260621");
 
     await screen.findByText("실행 중");
-    expect(screen.getByText("상세 진행 정보 미지원")).toBeInTheDocument();
+    // 사실과 다른 "미지원" 문구는 없다.
+    expect(screen.queryByText(/미지원/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/아직 제공하지 않습니다/)).not.toBeInTheDocument();
+    // 대신 canonical Build 상세로 안내한다.
+    expect(screen.getByText("상세 진행은 Build 상세에서 확인하세요")).toBeInTheDocument();
+  });
+
+  it("routes to the canonical Build detail and keeps deep links", async () => {
+    renderRun("dur-pregnancy-taboo-20260621");
+    await screen.findByText("실행 중");
+
+    const detailLinks = screen
+      .getAllByRole("link")
+      .filter((a) => a.getAttribute("href")?.startsWith("/builds?run="));
+    expect(detailLinks.length).toBeGreaterThan(0);
+    // legacy 화면에 항상-disabled 가짜 취소 버튼은 없다.
+    expect(screen.queryByRole("button", { name: "취소" })).not.toBeInTheDocument();
   });
 });

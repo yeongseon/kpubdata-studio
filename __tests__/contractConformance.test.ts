@@ -1,18 +1,22 @@
 /**
  * Builder API 계약 적합성 테스트 (#36).
  *
- * Studio가 실제로 검토·연동한 Builder 계약 버전과 엔드포인트 집합을 고정해, 한쪽이
- * 바뀌면 CI에서 깨지도록 한다. 이 pin은 "Builder main의 최신 API_CONTRACT_VERSION과
- * 항상 exact-equality"를 뜻하지 않는다 — Builder는 additive 변경마다 버전을 계속
- * 올리므로(예: 1.8.0 — per-user provider credentials), Studio가 아직 구현/검토하지
- * 않은 operation까지 지원한다고 오인시키지 않도록 여기서는 마지막으로 검토한 버전만
- * 고정한다(Silver/Gold read-only `/query` 추가 — builder #504, API_CONTRACT_VERSION
- * "1.7.0"). Provider credentials API 연동은 Studio #259 범위이며 아직 여기 없다.
- * exact-equality pin 정책 자체를 versionless capability 협상으로 바꿀지는 builder
- * #521에서 논의 중이며, 이 테스트는 그 결정을 선점하지 않는다.
+ * Studio가 호출하는 Builder operation 집합과, 통합 표면이 요구하는 **최소** Builder
+ * API 버전을 고정한다. 이 값은 "Builder main의 최신 api_version과 exact-equality"가
+ * 아니다 — Builder ADR 0013(#521)에 따라 Studio는 같은 major·server >= 최소값이면
+ * 호환으로 간주하고 더 높은 additive minor/patch(1.19~1.21 등)를 허용한다.
+ *
+ * 현재 최소값은 1.18.0이다: cooperative cancel(POST /builds/{id}/cancel)과 manifest
+ * status/partial 필드가 1.18.0에서 도입됐고 Studio가 둘 다 실제로 사용한다. provider
+ * credential / monitoring / async build job operation은 이미 연동돼 EXPECTED_OPERATIONS에
+ * 포함돼 있다.
  */
 import { describe, expect, it } from "vitest";
-import { API_CONTRACT_VERSION, builderApi } from "@/shared/lib/builderApi";
+import {
+  isBuilderApiCompatible,
+  MIN_BUILDER_API_VERSION,
+  builderApi,
+} from "@/shared/lib/builderApi";
 
 // Studio 클라이언트가 호출하는 Builder service 오퍼레이션(현재 구현 기준).
 const EXPECTED_OPERATIONS = [
@@ -44,14 +48,15 @@ const EXPECTED_OPERATIONS = [
   "listProviders",
   "testProviderConnection",
   "getProviderStatus",
+  "getProviderCredential",
   "putProviderCredential",
   "deleteProviderCredential",
   "uploadFile",
 ] as const;
 
 describe("Builder API contract conformance (#36)", () => {
-  it("pins Builder PR #547's reviewed 1.17.0 contract including publish; unrelated provider/monitoring operations are not implied", () => {
-    expect(API_CONTRACT_VERSION).toBe("1.17.0");
+  it("declares 1.18.0 as the minimum required Builder API version for the integrated surface", () => {
+    expect(MIN_BUILDER_API_VERSION).toBe("1.18.0");
   });
 
   it("exposes exactly the expected client operations", () => {
@@ -62,5 +67,32 @@ describe("Builder API contract conformance (#36)", () => {
     for (const op of EXPECTED_OPERATIONS) {
       expect(typeof builderApi[op]).toBe("function");
     }
+  });
+});
+
+describe("isBuilderApiCompatible — SemVer policy (ADR 0013)", () => {
+  it("accepts the exact minimum version", () => {
+    expect(isBuilderApiCompatible("1.18.0")).toBe(true);
+  });
+
+  it("accepts higher additive minor/patch within the same major", () => {
+    expect(isBuilderApiCompatible("1.18.4")).toBe(true);
+    expect(isBuilderApiCompatible("1.21.0")).toBe(true);
+  });
+
+  it("rejects versions below the minimum within the same major", () => {
+    expect(isBuilderApiCompatible("1.17.0")).toBe(false);
+    expect(isBuilderApiCompatible("1.17.9")).toBe(false);
+  });
+
+  it("rejects a different (higher) major", () => {
+    expect(isBuilderApiCompatible("2.0.0")).toBe(false);
+  });
+
+  it("fails closed on malformed / missing versions", () => {
+    expect(isBuilderApiCompatible("")).toBe(false);
+    expect(isBuilderApiCompatible("1.18")).toBe(false);
+    expect(isBuilderApiCompatible("v1.18.0")).toBe(false);
+    expect(isBuilderApiCompatible(undefined)).toBe(false);
   });
 });

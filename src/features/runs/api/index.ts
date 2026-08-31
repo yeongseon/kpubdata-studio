@@ -97,8 +97,10 @@ export async function executeBuild(
     onHandle?.({ runId, mode: "sync" });
     result = await runSyncBuild(spec, runId, startedAt, signal);
   } else {
-    onHandle?.({ runId, mode: "async" });
-    result = await runAsyncBuild(spec, runId, startedAt, signal, onJobStatus);
+    // async 표면에서는 POST /builds가 성공해 authoritative run_id를 확보한 **다음에만**
+    // handle을 노출한다(F03). 그래야 submit-in-flight 구간의 Cancel이 아직 서버에
+    // 존재하지 않는 run_id로 협조적 취소를 쏘는 race를 막을 수 있다.
+    result = await runAsyncBuild(spec, runId, startedAt, signal, onJobStatus, onHandle);
   }
 
   // Builder는 spec을 영속화하지 않으므로(#120), 이후 편집 화면이 기존 스펙을 복원할 수
@@ -163,8 +165,13 @@ async function runAsyncBuild(
   startedAt: string,
   signal: AbortSignal | undefined,
   onJobStatus: ((status: BuilderJobStatus) => void) | undefined,
+  onHandle: ((handle: BuildExecutionHandle) => void) | undefined,
 ): Promise<BuildRun> {
   const submitted = await builderApi.submitBuild(serializeSpec(spec), runId, signal);
+  // 서버가 반환한 run_id가 정본이다. 이 시점부터만 협조적 취소(POST
+  // /builds/{run_id}/cancel)를 걸 수 있다 — submit 이전 Cancel은 호출부가 pending
+  // intent로 보관했다가 여기서 노출되는 handle을 통해 정확히 1회 반영한다(F03).
+  onHandle?.({ runId: submitted.run_id, mode: "async" });
   onJobStatus?.(submitted.status);
 
   // 제출 직후 이미 terminal인 경우(동일 run_id 재제출 등) 폴링 없이 바로 판정한다.

@@ -13,10 +13,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { API_BASE } from "@/shared/config/env";
 import {
-  API_CONTRACT_VERSION,
   ApiError,
   builderApi,
+  isBuilderApiCompatible,
   isRealBuilderEnabled,
+  MIN_BUILDER_API_VERSION,
 } from "@/shared/lib/builderApi";
 import type { ProviderSummary } from "@/shared/lib/builderApi.schema";
 import { useAuthStore } from "@/features/auth/store";
@@ -90,7 +91,7 @@ export function SettingsPage() {
             연결 상태
           </p>
           <span className="text-xs text-muted-foreground">
-            Studio 계약 버전 {API_CONTRACT_VERSION}
+            필요한 Builder API 최소 버전 {MIN_BUILDER_API_VERSION}
           </span>
         </div>
         <div className="mt-4 rounded-xl border border-dashed border-border bg-muted p-4">
@@ -116,10 +117,11 @@ export function SettingsPage() {
                   Builder API 버전 {connection.apiVersion}
                 </span>
               </div>
-              {connection.apiVersion !== API_CONTRACT_VERSION ? (
+              {!isBuilderApiCompatible(connection.apiVersion) ? (
                 <p role="alert" className="text-sm text-amber-700 dark:text-amber-400">
-                  계약 버전 불일치 주의: Builder {connection.apiVersion} ≠ Studio{" "}
-                  {API_CONTRACT_VERSION}. 일부 응답 형태가 호환되지 않을 수 있습니다.
+                  계약 버전 불일치 주의: Builder {connection.apiVersion}이(가) Studio가
+                  요구하는 최소 버전({MIN_BUILDER_API_VERSION}, 같은 major)과 호환되지
+                  않습니다. 일부 응답 형태가 호환되지 않을 수 있습니다.
                 </p>
               ) : null}
             </div>

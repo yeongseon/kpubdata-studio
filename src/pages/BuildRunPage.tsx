@@ -1,19 +1,20 @@
 /**
- * 빌드 실행 추적 페이지 (/builds/:buildId/run).
+ * 빌드 실행 추적 페이지 (/builds/:buildId/run) — legacy deep-link 호환용.
  *
  * 이전에는 buildId와 무관하게 항상 "대기(queued)"·0번째 stepper를 보여주는 정적
- * placeholder였다 — Builds 목록에서 running인 run을 열어도 이 화면은 항상 waiting으로
- * 보여 같은 run이 화면마다 모순된 상태를 표시했다(UI audit #3). Builder는 stage별 세부
- * 진행률/로그 API를 아직 제공하지 않으므로, 있지도 않은 진행률을 재현하는 대신 Builds
- * 목록/상세(BuildsPage)와 동일한 canonical 상태(historical summary + live job polling)만
- * 보여주고, 지원되지 않는 부분은 "상세 진행 정보 미지원"으로 명확히 구분한다.
+ * placeholder였다(UI audit #3). 지금은 Builds 목록/상세(BuildsPage)와 동일한 canonical
+ * 상태(historical summary + live job polling)만 보여준다.
+ *
+ * 단계별 진행(Bronze/Silver/Gold), 실행 이벤트 타임라인, 협조적 실행 취소는 canonical
+ * Build 상세(`/builds?run=...`)가 이미 제공한다 — 이 legacy 화면은 두 번째 상태 머신을
+ * 만들지 않고 canonical 상세로 안내한다. "API 미지원" 같은 사실과 다른 문구는 두지 않는다.
  */
 import { useParams } from "react-router-dom";
 import { useSelectedRunPolling } from "@/features/runs/useSelectedRunPolling";
 import { useBuild } from "@/features/runs/useBuild";
 import { isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type { BuildRunStatus } from "@/shared/lib/types";
-import { Button, Card, EmptyState, LinkButton, PageHeader, Skeleton, StatusBadge } from "@/shared/ui";
+import { Card, EmptyState, LinkButton, PageHeader, Skeleton, StatusBadge } from "@/shared/ui";
 
 /**
  * 빌드 실행의 canonical 상태를 추적하는 페이지.
@@ -43,9 +44,9 @@ export function BuildRunPage() {
         title={`${buildId || "빌드"} 실행`}
         description="Builds 목록/상세와 동일한 run 상태를 보여줍니다."
         actions={
-          <Button variant="secondary" disabled>
-            취소
-          </Button>
+          <LinkButton variant="secondary" to={`/builds?run=${encodeURIComponent(buildId)}`}>
+            Build 상세에서 관리
+          </LinkButton>
         }
       />
 
@@ -77,8 +78,8 @@ export function BuildRunPage() {
 
       <Card variant="dashed" className="p-0">
         <EmptyState
-          title="상세 진행 정보 미지원"
-          description="Builder는 이 화면에서 stage별 세부 진행률·실행 로그 API를 아직 제공하지 않습니다(#39). 위 상태 배지가 이 run의 canonical 상태이며, stage별 진행(Bronze/Silver/Gold)은 Build 상세의 Pipeline / Stage Progress에서 확인할 수 있습니다."
+          title="상세 진행은 Build 상세에서 확인하세요"
+          description="이 화면은 Builds 목록/상세와 동일한 canonical run 상태만 보여줍니다. 단계별 진행(Bronze/Silver/Gold), 실행 이벤트 타임라인, 협조적 실행 취소는 Build 상세(/builds?run=...)에서 제공됩니다."
         />
       </Card>
 

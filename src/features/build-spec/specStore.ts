@@ -102,7 +102,7 @@ function writeEnvelope(envelope: SpecStoreEnvelope): void {
  *   통과시키지 않는다 — URL 전체가 고엔트로피로 판정되면 host/path까지 통째로 사라져
  *   복원 시 스키마(https:// 강제)를 깨기 때문이다.
  */
-function redactSpecForStorage(spec: BuildSpec): BuildSpec {
+export function redactSpecForStorage(spec: BuildSpec): BuildSpec {
   return {
     ...spec,
     sources: spec.sources.map((source) => {
