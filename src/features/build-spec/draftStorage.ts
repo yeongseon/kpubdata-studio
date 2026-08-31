@@ -55,9 +55,17 @@ export function saveDraft<T>(value: T, key: string = ownedStorageKey(DRAFT_KEY))
  *
  * @param validator - 데이터를 검증할 zod 스키마(선택). 미제공 시 버전만 확인한다.
  * @param key - 초안 저장 key(선택). 미제공 시 New Build Wizard 기본 key를 쓴다.
+ * @param sanitize - 복원 직후 적용할 저장 경계 정책(선택, #206/S07). 결과가 원본과 다르면
+ *   (= 과거 버전이 평문 credential을 저장해 둔 경우) 정리된 값으로 즉시 다시 저장하고 그
+ *   값을 반환한다 — raw credential을 in-memory로 되돌려주지 않는다. non-secret 초안은
+ *   deep-equal이라 불필요한 재저장을 하지 않는다.
  * @returns 저장된 초안 값 또는 null.
  */
-export function loadDraft<T>(validator?: DraftValidator<T>, key: string = ownedStorageKey(DRAFT_KEY)): T | null {
+export function loadDraft<T>(
+  validator?: DraftValidator<T>,
+  key: string = ownedStorageKey(DRAFT_KEY),
+  sanitize?: (data: T) => T,
+): T | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
@@ -72,15 +80,26 @@ export function loadDraft<T>(validator?: DraftValidator<T>, key: string = ownedS
       return null;
     }
     const data = (parsed as DraftEnvelope<unknown>).data;
+    let value: T;
     if (validator) {
       const result = validator.safeParse(data);
       if (!result.success) {
         clearDraft(key);
         return null;
       }
-      return result.data;
+      value = result.data;
+    } else {
+      value = data as T;
     }
-    return data as T;
+    if (sanitize) {
+      const cleaned = sanitize(value);
+      if (JSON.stringify(cleaned) !== JSON.stringify(value)) {
+        // 과거 버전이 남긴 평문 secret을 read 시점에 정리한다(write 경계와 동일 정책).
+        saveDraft(cleaned, key);
+        return cleaned;
+      }
+    }
+    return value;
   } catch {
     return null;
   }

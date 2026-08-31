@@ -6,7 +6,13 @@
  * regex를 여기서 다시 만들지 않는다.
  */
 import { describe, expect, it } from "vitest";
-import { PARAMS_REDACTED_SENTINEL, redactSourceParamsObject, redactSourceParamsText, sourceParamsHasRedactedSecret } from "./paramsRedaction";
+import {
+  PARAMS_REDACTED_SENTINEL,
+  jsonValueHasRedactedSecret,
+  redactSourceParamsObject,
+  redactSourceParamsText,
+  sourceParamsHasRedactedSecret,
+} from "./paramsRedaction";
 
 const SECRET = "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB";
 
@@ -80,5 +86,39 @@ describe("sourceParamsHasRedactedSecret", () => {
 
   it("secret이 없던 원문은 false를 돌려준다", () => {
     expect(sourceParamsHasRedactedSecret('{"region":"seoul"}')).toBe(false);
+  });
+
+  it("persistence 경계의 모든 marker를 감지한다 (S07 리뷰 §1)", () => {
+    // draft redaction sentinel
+    expect(sourceParamsHasRedactedSecret('{"serviceKey":"__KPD_PARAMS_SECRET_REDACTED__"}')).toBe(true);
+    // URL query redaction placeholder
+    expect(sourceParamsHasRedactedSecret("https://x/y?serviceKey=__KPD_URL_SECRET_REDACTED__")).toBe(true);
+    // redactSecrets() 종결 marker (specStore/savedSpecs)
+    expect(sourceParamsHasRedactedSecret('{"serviceKey":"[REDACTED]"}')).toBe(true);
+    // scrub 내부 placeholder
+    expect(sourceParamsHasRedactedSecret('{"k":"__SCRUBBED_abc_0__"}')).toBe(true);
+  });
+
+  it("bare 'REDACTED'(대괄호 없음)는 정상 값으로 보고 false를 유지한다", () => {
+    expect(sourceParamsHasRedactedSecret('{"status":"REDACTED"}')).toBe(false);
+  });
+});
+
+describe("jsonValueHasRedactedSecret", () => {
+  it("nested object/array 어디에 있든 4종 marker를 모두 감지한다 (S07 리뷰 §1)", () => {
+    expect(jsonValueHasRedactedSecret({ sources: [{ params: { serviceKey: "[REDACTED]" } }] })).toBe(true);
+    expect(jsonValueHasRedactedSecret({ a: { b: ["__KPD_PARAMS_SECRET_REDACTED__"] } })).toBe(true);
+    expect(jsonValueHasRedactedSecret({ endpoint: "https://x?k=__KPD_URL_SECRET_REDACTED__" })).toBe(true);
+    expect(jsonValueHasRedactedSecret({ note: "__SCRUBBED_r_1__" })).toBe(true);
+  });
+
+  it("정상 BuildSpec 형태는 false", () => {
+    expect(
+      jsonValueHasRedactedSecret({
+        datasetId: "air",
+        sources: [{ provider: "datago", dataset: "air", params: { region: "11", status: "REDACTED" } }],
+        metadata: { outputPath: "artifacts/builds/air" },
+      }),
+    ).toBe(false);
   });
 });
