@@ -175,7 +175,7 @@ async function runAsyncBuild(
   onJobStatus?.(submitted.status);
 
   // 제출 직후 이미 terminal인 경우(동일 run_id 재제출 등) 폴링 없이 바로 판정한다.
-  const job = await pollBuildJobUntilTerminal(runId, submitted, signal, (polled) =>
+  const job = await pollBuildJobUntilTerminal(submitted.run_id, submitted, signal, (polled) =>
     onJobStatus?.(polled.status),
   );
 

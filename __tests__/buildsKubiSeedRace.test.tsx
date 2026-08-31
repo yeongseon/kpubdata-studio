@@ -130,6 +130,28 @@ afterEach(() => {
 });
 
 describe("C1 — Builds Kubi seed vs. context back-fill race", () => {
+  it("closing the inline card discards a pending analysis before context becomes canonical", async () => {
+    vi.spyOn(runsApi, "listBuilds").mockResolvedValue([listItem]);
+    vi.spyOn(datasetsApi, "getBuildQuality").mockResolvedValue(quality);
+    const spec = deferred<BuildSpecSnapshotResponse>();
+    const stages = deferred<RunStagesResponse>();
+    vi.spyOn(runDetailApi, "getBuildSpecSnapshot").mockReturnValue(spec.promise);
+    vi.spyOn(datasetsApi, "listBuildStages").mockReturnValue(stages.promise);
+
+    renderBuilds();
+    fireEvent.click(await screen.findByRole("button", { name: /분석/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "닫기" }));
+    await act(async () => {
+      spec.resolve(specSnapshot);
+      stages.resolve(stagesResponse);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(useKubiStore.getState().turns).toHaveLength(0);
+    expect(useKubiStore.getState().pendingSeed).toBeNull();
+    expect(streamCalls).toBe(0);
+  });
+
   it("defers the seed until the URL context is canonical, so the fresh turn is not stale-flipped away (spec+stages deferred)", async () => {
     vi.spyOn(runsApi, "listBuilds").mockResolvedValue([listItem]);
     vi.spyOn(datasetsApi, "getBuildQuality").mockResolvedValue(quality);

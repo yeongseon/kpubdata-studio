@@ -95,6 +95,7 @@ function makeWrapper(initialPath: string) {
 }
 
 beforeEach(() => {
+  vi.stubEnv("VITE_USE_REAL_BUILDER", "false");
   useKubiStore.setState({ turns: [], onboarded: false, pendingSeed: null });
   useAssistConfig.getState().clear();
   navigateRef = null;
