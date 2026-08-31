@@ -525,14 +525,47 @@ function RunDetailPanel({
   const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
   const seedKubiQuestion = useKubiStore((state) => state.seedQuestion);
   const { isConfigured } = useAssistConfig();
+  const [searchParams] = useSearchParams();
 
   // "이 Run 분석"은 더 이상 전역 Kubi drawer를 자동으로 열지 않는다(#255 §2) — 대신 이 Run summary
   // 바로 아래에 inline card를 펼친다. Run을 바꾸면 카드를 닫아, 이전 Run의 분석 결과가 새 Run의
   // context에서 유효한 것처럼 보이지 않게 한다(#256 stale-context guard와 같은 원칙).
   const [showKubiAnalysis, setShowKubiAnalysis] = useState(false);
+  // "이번 분석 클릭은 접수됐지만 아직 seed하지 않은" 상태. URL context가 canonical해질 때까지
+  // 보류한다. 클릭 1회 = 이 flag 1회 set = seed 1회. run이 바뀌면 폐기한다.
+  const [analyzePending, setAnalyzePending] = useState(false);
+
   useEffect(() => {
     setShowKubiAnalysis(false);
+    setAnalyzePending(false);
   }, [runId]);
+
+  const analyzeQuestion = `Run ${runId}의 상태와 실패 원인을 분석해줘.`;
+
+  // "context가 canonical하다" = 현재 URL이 이미 normalizeBuildContextSearch의 고정점이다.
+  // BuildsPage의 정규화 effect와 정확히 같은 helper·같은 동등성 판정을 재사용한다(로직 복제 금지).
+  // spec/stages가 아직 settle되지 않았으면(추가로 dataset/stage/source가 붙을 수 있으므로)
+  // 겉보기 no-op이어도 canonical로 보지 않는다. error도 settle로 취급해 영구 대기를 막는다.
+  const contextCanonical = useMemo(() => {
+    const specSettled = specState.status === "loaded" || specState.status === "error";
+    const stagesSettled = stagesState.status === "loaded" || stagesState.status === "error";
+    if (!specSettled || !stagesSettled) return false;
+    return (
+      normalizeBuildContextSearch(searchParams, specState, stagesState).toString() ===
+      searchParams.toString()
+    );
+  }, [searchParams, specState, stagesState]);
+
+  // 보류된 분석 의도는 URL이 canonical해진 뒤에 seed한다. seed 직전에 pending flag를 내려
+  // 같은 클릭에 대한 재실행을 막는다(effect가 유일한 seeder다). 다음 "이 Run 분석" 클릭은
+  // flag를 다시 set하므로 재분석/에러 후 재시도는 그대로 가능하다 — 중복 방지는 "한 클릭당
+  // 한 번"이지 "run 수명 동안 한 번"이 아니다. (seed는 KubiRunAnalysis mount 시 useKubiSession의
+  // 기존 pending-seed 소비 effect가 ask()로 실행한다 — 그 경로/atomic consumeSeed는 미변경.)
+  useEffect(() => {
+    if (!analyzePending || !isConfigured || !contextCanonical) return;
+    setAnalyzePending(false);
+    seedKubiQuestion(analyzeQuestion);
+  }, [analyzePending, isConfigured, contextCanonical, analyzeQuestion, seedKubiQuestion]);
 
   const sources = stagesState.status === "loaded" ? stagesState.data.sources : [];
   const outcome = stagesState.status === "loaded" ? summarizeMultiSourceOutcome(sources) : "unavailable";
@@ -617,14 +650,17 @@ function RunDetailPanel({
             variant="secondary"
             className="ml-auto"
             onClick={() => {
+              // 클릭은 즉시 inline card를 연다.
+              setShowKubiAnalysis(true);
               // API Key가 없으면 seed하지 않는다 — pending seed는 항상 useKubiSession의
               // 일반 ask()로 소비되고, ask()는 isConfigured가 아니면 no_key 에러를 만든다
               // (#286 후속 보완). inline card는 그래도 열어 KubiRunAnalysis가 no-key 안내를
               // 보여주게 한다.
-              if (isConfigured) {
-                seedKubiQuestion(`Run ${runId}의 상태와 실패 원인을 분석해줘.`);
-              }
-              setShowKubiAnalysis(true);
+              if (!isConfigured) return;
+              // 클릭은 "이번 분석 의도"만 접수한다. 실제 seed는 위 effect가 URL이 canonical해진
+              // 뒤 1회 실행한다 — canonical이면 사실상 즉시. thin context로 turn이 고정돼 곧바로
+              // stale로 빠지는 race를 막고(C1), 재분석/에러 후 재시도는 그대로 가능하다.
+              setAnalyzePending(true);
             }}
           >
             이 Run 분석

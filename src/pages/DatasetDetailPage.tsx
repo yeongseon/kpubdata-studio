@@ -179,6 +179,46 @@ export function DatasetDetailPage() {
   const selectedQualityResults = qualityResultsForSource(qualityState.data, selectedSource);
   const selectedDrift = qualityState.data?.schema_drift[selectedSource] ?? [];
 
+  // AI 탭에 직접 진입/새로고침해도 tab click 경로(goToTab("ai"))와 동일한 canonical Kubi
+  // context를 만든다. Kubi(KubiContent)는 route의 ?run=&source=&stage=만 문맥으로 읽으므로
+  // (context.ts), 화면이 확정한 선택을 URL에 되반영하지 않으면 AI 탭이 dataset 수준
+  // evidence만 받는다(#319 후속, QualityPage와 동일 패턴). replace로만 갱신하고, 이미
+  // 유효하게 선택된 값·invalid 상태는 건드리지 않아 update loop를 만들지 않는다.
+  useEffect(() => {
+    if (selectedTab !== "ai" || core.status !== "loaded" || invalidRun || invalidSource) return;
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+    if (selectedRunId && !requestedRun) {
+      next.set("run", selectedRunId);
+      changed = true;
+    }
+    if (stagesState.status === "loaded" && selectedSource) {
+      if (!requestedSource) {
+        next.set("source", selectedSource);
+        changed = true;
+      }
+      if (!requestedStage) {
+        next.set("stage", selectedStage);
+        changed = true;
+      }
+    }
+    if (changed) setSearchParams(next, { replace: true });
+  }, [
+    selectedTab,
+    core.status,
+    invalidRun,
+    invalidSource,
+    stagesState.status,
+    selectedRunId,
+    requestedRun,
+    selectedSource,
+    requestedSource,
+    requestedStage,
+    selectedStage,
+    searchParams,
+    setSearchParams,
+  ]);
+
   // Run 전체 상태("ok"/"failed"/"cancelled")와 선택된 source·stage 상태("completed"/"failed"/
   // "not_run"/"unavailable")는 서로 다른 vocabulary를 쓰는 별개 scope다 — 한 run에 여러 source가
   // 있으면 선택된 source의 stage는 completed/PASS인데 run 전체는 다른 source의 실패로 failed일 수

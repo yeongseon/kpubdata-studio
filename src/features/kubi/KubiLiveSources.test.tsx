@@ -99,4 +99,30 @@ describe("Kubi live Builder-confirmed source picker", () => {
     expect(await screen.findByText("이 Run에는 source가 여러 개 있습니다. 분석할 source를 먼저 선택하세요.")).toBeInTheDocument();
     expect(screen.getByLabelText("Kubi 분석 Source")).toHaveValue("");
   });
+
+  it("disables the Stage select on a multi-source Run until a source is chosen (A4)", async () => {
+    vi.spyOn(datasetsApi, "listBuildStages").mockResolvedValue(stages("run-a", ["provider.a", "provider.b"]));
+    render(<Harness initialPath="/kubi?run=run-a&stage=gold" />);
+
+    // multi-source인데 source 미선택 → Stage 선택 불가(evidence가 fail-closed로 빠지므로).
+    expect(await screen.findByLabelText("Kubi 분석 Stage")).toBeDisabled();
+    // disabled 상태여도 안내는 유지된다.
+    expect(screen.getByText("이 Run에는 source가 여러 개 있습니다. 분석할 source를 먼저 선택하세요.")).toBeInTheDocument();
+
+    fireEvent.change(await screen.findByLabelText("Kubi 분석 Source"), { target: { value: "provider.b" } });
+    await waitFor(() => expect(screen.getByLabelText("Kubi 분석 Stage")).toBeEnabled());
+  });
+
+  it("keeps the Stage select usable on a single-source Run even without an explicit source (A4)", async () => {
+    vi.spyOn(datasetsApi, "listBuildStages").mockResolvedValue(stages("run-a", ["provider.only"]));
+    render(<Harness initialPath="/kubi?run=run-a" />);
+    await waitFor(() => expect(datasetsApi.listBuildStages).toHaveBeenCalled());
+    expect(screen.getByLabelText("Kubi 분석 Stage")).toBeEnabled();
+  });
+
+  it("disables the Stage select when there is no Run in context (A4)", async () => {
+    vi.spyOn(datasetsApi, "listBuildStages").mockResolvedValue(stages("run-a", ["provider.a"]));
+    render(<Harness initialPath="/kubi" />);
+    expect(await screen.findByLabelText("Kubi 분석 Stage")).toBeDisabled();
+  });
 });
