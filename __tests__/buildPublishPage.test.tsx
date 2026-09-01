@@ -36,6 +36,26 @@ describe("BuildPublishPage readiness (audit #4)", () => {
     expect(screen.getByText(/Bronze stage가 실패해/)).toBeInTheDocument();
   });
 
+  it("?dataset= 없이 exact run_id만으로 들어와도 Dataset identity와 Build 완료를 표시한다", async () => {
+    // 이전에는 URL에 ?dataset=이 없으면 Dataset/Build 완료가 "확인되지 않음"이었다
+    // (Builds/Runs·Artifacts·딥링크 진입 경로 전부). 이제 canonical run 해석으로 채운다.
+    renderPublish("air-quality-20260621");
+
+    const runCard = (await screen.findByText("선택한 Run")).closest("div");
+    expect(runCard).toHaveTextContent("대기오염 정보");
+    expect(runCard).toHaveTextContent("완료");
+    expect(runCard).not.toHaveTextContent("확인되지 않음");
+  });
+
+  it("Run마다 자기 Dataset identity를 표시하고 다른 Run과 섞이지 않는다", async () => {
+    renderPublish("dur-older-adult-caution-20260618");
+
+    const runCard = (await screen.findByText("선택한 Run")).closest("div");
+    expect(runCard).toHaveTextContent("노인주의 의약품");
+    expect(runCard).not.toHaveTextContent("대기오염 정보");
+    expect(runCard).toHaveTextContent("dur-older-adult-caution-20260618");
+  });
+
   it("ready:false인데 blockers가 비어 있으면 'blocker가 있다'고 잘못 단정하지 않는다", async () => {
     vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
     mswServer.use(

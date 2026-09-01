@@ -17,12 +17,14 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchCatalog, testProvider, uploadSourceFile } from "@/features/add-data/api";
-import { ConfigureStep, type CatalogState, type ProviderTestState, type UploadState } from "@/features/add-data/components/ConfigureStep";
+import { fetchCatalog, fetchProviderConfigured, uploadSourceFile } from "@/features/add-data/api";
+import { CREDENTIAL_PREREQUISITE_MESSAGE, checkCredentialPrerequisite } from "@/features/add-data/credentialPrerequisite";
+import { ConfigureStep, type CatalogState, type UploadState } from "@/features/add-data/components/ConfigureStep";
 import { PreviewValidationStep, type PreviewState } from "@/features/add-data/components/PreviewValidationStep";
 import { ReviewBuildStep } from "@/features/add-data/components/ReviewBuildStep";
 import { SourceStep } from "@/features/add-data/components/SourceStep";
 import { clearAddDataDraft, hasAddDataDraft, loadAddDataDraft, saveAddDataDraft } from "@/features/add-data/draftStorage";
+import { checkRequiredParams } from "@/features/add-data/requiredParams";
 import { findDataset, identityFromCatalog, identityFromFilename, identityFromUrl } from "@/features/add-data/identity";
 import {
   INITIAL_DRAFT,
@@ -43,10 +45,10 @@ import { validateSpec } from "@/features/validation/api";
 import { Button, Card, PageHeader, Stepper, type StepItem } from "@/shared/ui";
 
 const STEPS: StepItem[] = [
-  { id: "source", label: "소스" },
-  { id: "configure", label: "설정" },
-  { id: "preview", label: "미리보기·검증" },
-  { id: "review", label: "검토·빌드" },
+  { id: "source", label: "데이터 선택" },
+  { id: "configure", label: "가져오기 설정" },
+  { id: "preview", label: "Preview · 검증" },
+  { id: "review", label: "검토 · Build" },
 ];
 
 export function AddDataPage() {
@@ -57,7 +59,10 @@ export function AddDataPage() {
   const [draft, setDraft] = useState<AddDataDraft>(INITIAL_DRAFT);
   const [step, setStep] = useState(0);
   const [catalog, setCatalog] = useState<CatalogState>({ status: "loading", providers: [] });
-  const [providerTest, setProviderTest] = useState<ProviderTestState>({ status: "idle" });
+  // provider별 effective credential 구성 여부(GET /providers 요약). null = 아직
+  // 로딩 중이거나 조회 실패 — credential prerequisite는 이때 아무것도 막지 않는다
+  // (§3: Studio가 credential 존재 여부를 추측하지 않는다).
+  const [providerConfigured, setProviderConfigured] = useState<Record<string, boolean> | null>(null);
   const [upload, setUpload] = useState<UploadState>({ status: "idle" });
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [previewView, setPreviewView] = useState<"sample" | "diff">("sample");
@@ -100,6 +105,19 @@ export function AddDataPage() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchProviderConfigured(controller.signal)
+      .then((configured) => {
+        if (!controller.signal.aborted) setProviderConfigured(configured);
+      })
+      .catch(() => {
+        // 조회 실패는 "미설정"으로 단정하지 않는다 — null 그대로 두면 prerequisite가
+        // 막지 않는다(위 상태 선언 주석 참고).
+      });
+    return () => controller.abort();
+  }, []);
+
   // Discover preselection(#249 완료를 hard blocker로 두지 않는다 — 쿼리 파라미터만 읽는다).
   useEffect(() => {
     if (preselectApplied.current || catalog.status !== "loaded") return;
@@ -137,6 +155,11 @@ export function AddDataPage() {
       const sourceChanged = lastIdentitySourceRef.current !== null && lastIdentitySourceRef.current !== sourceKey;
       lastIdentitySourceRef.current = sourceKey;
       if (sourceChanged) {
+        // 이 effect는 자동 생성 identity(ID/제목/설명)와 touched 플래그만 담당한다.
+        // 이전 Dataset 전용 요청 파라미터(sourceParams) 초기화는 Provider/Dataset
+        // <select> onChange가 같은 updateDraft에서 atomic하게 처리한다 — 여기서
+        // 하면 setDraft updater 안에서 ref를 mutate하는 특성상 StrictMode의 updater
+        // 이중 호출에서 reset 결과가 버려질 수 있다(#S-stale-params).
         return {
           ...current,
           datasetId: identity.datasetId,
@@ -220,17 +243,14 @@ export function AddDataPage() {
     setStep((s) => Math.max(s - 1, 0));
   }
 
-  async function handleTestProvider() {
-    setProviderTest({ status: "testing" });
-    try {
-      const result = await testProvider(draft.publicApi.provider);
-      setProviderTest({ status: "tested", result });
-    } catch (cause) {
-      setProviderTest({
-        status: "tested",
-        error: cause instanceof Error ? cause.message : "연결 테스트에 실패했습니다.",
-      });
-    }
+  /**
+   * "API 연결하기" CTA — 기존 draft persistence(`saveAddDataDraft`)를 그대로 재사용해
+   * 초안을 저장한 뒤 Provider 화면으로 이동한다. URL에는 provider id와 safe return
+   * destination만 싣는다 — credential/BuildSpec 전체는 절대 담지 않는다(§4).
+   */
+  function handleConnectProvider(provider: string) {
+    saveAddDataDraft(draft);
+    navigate(`/provider?provider=${encodeURIComponent(provider)}&returnTo=${encodeURIComponent("/add")}`);
   }
 
   async function handleUploadFile(file: File) {
@@ -312,6 +332,31 @@ export function AddDataPage() {
       return;
     }
     const spec = specResult.spec;
+
+    // Preview 전 usability preflight — Dataset metadata로 필수 요청 파라미터를 아는
+    // 경우에만 동작한다. 누락이면 Preview API를 호출하지 않고 사용자 문구로 안내한다
+    // (Builder/Core validation을 대체하지 않는 사전 안내).
+    if (draft.sourceKind === "public_api") {
+      const selected = findDataset(catalog.providers, draft.publicApi.provider, draft.publicApi.dataset);
+
+      // credential prerequisite — Preview까지 가서 뒤늦게 credential 오류로 실패하지
+      // 않는다(§3). Configure 단계 배너와 같은 판정을 재사용한다.
+      const prerequisite = checkCredentialPrerequisite(selected, providerConfigured, draft.publicApi.provider);
+      if (prerequisite.blocked) {
+        const message = `${CREDENTIAL_PREREQUISITE_MESSAGE.title} — ${CREDENTIAL_PREREQUISITE_MESSAGE.body.replace("\n", " ")}`;
+        setPreview({ status: "error", error: message });
+        setValidation({ status: "validated", valid: false, errors: [message] });
+        return;
+      }
+
+      const requiredCheck = checkRequiredParams(draft.publicApi.sourceParams, selected?.request_parameters);
+      if (requiredCheck.error) {
+        setPreview({ status: "error", error: requiredCheck.error });
+        setValidation({ status: "validated", valid: false, errors: [requiredCheck.error] });
+        return;
+      }
+    }
+
     const signatureAtRequest = draftSignature(draft);
     setPreview({ status: "loading" });
     setValidation({ status: "validating", valid: false, errors: [] });
@@ -390,7 +435,7 @@ export function AddDataPage() {
       <PageHeader
         eyebrow="Add Data"
         title="데이터 추가"
-        description="Source 유형에 맞는 입력만 보여주고 Preview·Validation을 거쳐 Build를 시작합니다."
+        description="가져오기에 필요한 설정을 준비하고, Preview에서 실제 데이터를 확인·검증한 뒤 Build를 시작합니다."
       />
 
       {draftAvailable ? (
@@ -415,8 +460,8 @@ export function AddDataPage() {
             draft={draft}
             updateDraft={updateDraft}
             catalog={catalog}
-            providerTest={providerTest}
-            onTestProvider={handleTestProvider}
+            providerConfigured={providerConfigured}
+            onConnectProvider={handleConnectProvider}
             upload={upload}
             onUploadFile={handleUploadFile}
             specError={specResult.error}
@@ -440,6 +485,7 @@ export function AddDataPage() {
             onChangeSampleMode={(mode: PreviewSampleMode) => updateDraft({ previewSampleMode: mode })}
             onChangeColumns={(columns: PreviewColumnView) => updateDraft({ previewColumns: columns })}
             onRefresh={() => void runPreviewAndValidate()}
+            isStale={isStale}
             view={previewView}
             onChangeView={setPreviewView}
           />

@@ -41,6 +41,12 @@ export interface PreviewValidationStepProps {
   onChangeSampleMode: (mode: PreviewSampleMode) => void;
   onChangeColumns: (columns: PreviewColumnView) => void;
   onRefresh: () => void;
+  /**
+   * 직전 Preview 실행 이후 Dataset/params 등 설정이 바뀌었는지 여부(AddDataPage의 stale
+   * signature와 동일 값). true면 화면에 남아 있는 sample/검증 결과가 현재 설정과 다르다는
+   * 사실을 알린다 — Build는 ReviewBuildStep의 기존 stale guard가 계속 차단한다.
+   */
+  isStale?: boolean;
   view: "sample" | "diff";
   onChangeView: (view: "sample" | "diff") => void;
 }
@@ -64,6 +70,7 @@ export function PreviewValidationStep({
   onChangeSampleMode,
   onChangeColumns,
   onRefresh,
+  isStale = false,
   view,
   onChangeView,
 }: PreviewValidationStepProps) {
@@ -81,18 +88,32 @@ export function PreviewValidationStep({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-semibold tracking-tight">미리보기 · 검증 (Preview & Validate)</h3>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="text-xl font-semibold tracking-tight">Preview · 검증</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            현재 인증 정보와 요청 파라미터로 Dataset API를 호출해 실제 데이터를 확인합니다.
+          </p>
+        </div>
         <Button variant="secondary" size="sm" loading={preview.status === "loading"} onClick={onRefresh}>
           Preview 새로고침
         </Button>
       </div>
 
       {preview.status === "idle" ? (
-        <EmptyState title="현재 설정으로 샘플 데이터를 확인하세요" description="'Preview 새로고침'을 누르면 Builder가 반환한 샘플 행과 검증 결과가 표시됩니다." />
+        <EmptyState title="실제 데이터 미리보기" description="'Preview 새로고침'을 누르면 현재 설정으로 Dataset API를 호출하고, 샘플 행과 검증 결과를 표시합니다." />
       ) : null}
       {preview.status === "error" ? (
         <EmptyState title="Preview 요청에 실패했습니다" description={preview.error} />
+      ) : null}
+
+      {isStale && preview.status === "loaded" ? (
+        <p
+          role="status"
+          className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+        >
+          설정이 변경되었습니다. 아래 결과는 이전 설정 기준이며, 현재 설정으로 Preview를 다시 실행해주세요.
+        </p>
       ) : null}
 
       {previews.length > 1 ? (

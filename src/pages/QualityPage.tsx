@@ -43,7 +43,7 @@ import type {
   RunStagesResponse,
   SchemaDriftFinding,
 } from "@/shared/lib/builderApi";
-import { Button, Card, EmptyState, ErrorState, PageHeader, Skeleton } from "@/shared/ui";
+import { Button, Card, EmptyState, ErrorState, PageHeader, QualityLegend, Skeleton, TermHelp } from "@/shared/ui";
 
 interface AsyncState<T> {
   status: "idle" | "loading" | "loaded" | "error";
@@ -339,6 +339,8 @@ export function QualityPage() {
         }
       />
 
+      <QualityLegend />
+
       <Card className="flex flex-wrap items-end gap-3 p-3">
         <label className="min-w-52 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Dataset
@@ -371,6 +373,7 @@ export function QualityPage() {
           <span>·</span><span>Availability</span><strong className="text-foreground">{qualityState.data?.availability ?? "—"}</strong>
           <QualityStateBadge state={overallState} />
         </div>
+        <p className="basis-full text-xs text-muted-foreground">현재 선택한 Dataset · Run · Source · Stage 범위의 Builder 평가 결과입니다. <TermHelp term="quality" /></p>
         {datasetDetailHref && selectedSource ? <Link className="ml-auto text-xs font-medium text-accent-subtle-foreground underline" to={datasetDetailHref}>Dataset Detail에서 보기</Link> : null}
       </Card>
 

@@ -27,7 +27,7 @@ export interface SourceStepProps {
 export function SourceStep({ selected, onSelect }: SourceStepProps) {
   return (
     <div className="space-y-4">
-      <h3 className="text-xl font-semibold tracking-tight">Source 선택</h3>
+      <h3 className="text-xl font-semibold tracking-tight">데이터 선택</h3>
       <p className="text-sm text-muted-foreground">
         데이터를 어디서 가져올지 선택하세요. 이후 단계는 선택한 source에 맞는 입력만 보여줍니다.
       </p>

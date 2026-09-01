@@ -50,6 +50,34 @@ describe("Layout sidebar accessibility", () => {
   });
 });
 
+describe("Layout 제품 문구 중복 제거", () => {
+  beforeEach(() => {
+    act(() =>
+      useUIStore.setState({
+        theme: "light",
+        isMobileSidebarOpen: false,
+        isDesktopSidebarCollapsed: false,
+        isKubiDrawerOpen: false,
+      }),
+    );
+  });
+
+  it("sidebar에는 제품명만 남기고 tagline은 두지 않는다", () => {
+    renderLayout();
+    const aside = screen.getByRole("navigation").closest("aside")!;
+
+    expect(within(aside).getByRole("link", { name: "KPubData Studio" })).toBeInTheDocument();
+    expect(within(aside).queryByText("공공데이터를 데이터셋으로 만드는 워크스페이스")).not.toBeInTheDocument();
+  });
+
+  it("topbar에는 workspace context tagline이 그대로 남는다", () => {
+    renderLayout();
+    const header = screen.getByRole("banner");
+
+    expect(within(header).getByText("공공데이터를 데이터셋으로 만드는 워크스페이스")).toBeInTheDocument();
+  });
+});
+
 describe("Layout desktop sidebar collapse (#247)", () => {
   beforeEach(() => {
     act(() =>

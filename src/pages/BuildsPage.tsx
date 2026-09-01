@@ -64,6 +64,8 @@ import {
   SkeletonTable,
   Skeleton,
   StatusBadge,
+  StageLegend,
+  TermHelp,
   TextInput,
 } from "@/shared/ui";
 
@@ -301,7 +303,7 @@ export function BuildsPage() {
       <PageHeader
         eyebrow="Builds / Runs"
         title="빌드 실행 이력"
-        description="Run 상태, Stage Progress, Quality, Failure evidence를 한 화면에서 확인합니다."
+        description={<span><strong>Build</strong>는 데이터를 수집·처리하는 작업이고 <strong>Run</strong>은 그 Build가 실제로 한 번 실행된 기록입니다. <TermHelp term="build" /> <TermHelp term="run" /></span>}
       />
 
       <KpiRow kpi={kpi} />
@@ -687,6 +689,7 @@ function RunDetailPanel({
           <h3 className="text-sm font-semibold">Pipeline / Stage Progress</h3>
           {stagesState.status === "loaded" ? <MultiSourceOutcomeBadge outcome={outcome} /> : null}
         </div>
+        <div className="mt-3"><StageLegend /></div>
         {stagesState.status === "loading" || stagesState.status === "idle" ? (
           <Skeleton className="mt-4 h-24 w-full" />
         ) : stagesState.status === "error" ? (

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { getDataset, listDatasetRuns } from "@/features/datasets/api";
+import { getBuild } from "@/features/runs/api/getBuild";
 import {
   describePublishFailure,
   getPublishReadiness,
@@ -11,6 +11,7 @@ import {
 } from "@/features/publish/api";
 import { usePublishJob } from "@/features/publish/usePublishJob";
 import { formatDateTime } from "@/features/datasets/model";
+import type { BuildRunStatus } from "@/shared/lib/types";
 import { Button, Card, PageHeader, Skeleton, StatusBadge } from "@/shared/ui";
 
 type ReadinessState =
@@ -18,10 +19,33 @@ type ReadinessState =
   | { status: "loaded"; data: PublishReadinessResponse }
   | { status: "error"; message: string };
 
-interface DatasetContext {
-  title: string;
+/**
+ * 게시 화면의 Run 문맥(Dataset identity + Build 완료 상태)은 URL의 `?dataset=` 존재
+ * 여부가 아니라 **exact run_id**로만 해석한다 — Builds/Runs·Artifacts·Dataset Detail·
+ * 딥링크 어느 경로로 들어와도 동일하게 표시되도록 한다. canonical 경로는
+ * `getBuild(runId)`(= `/builds/{run_id}/spec` snapshot + authoritative status)이며,
+ * latest run으로 대체하지 않는다.
+ */
+interface RunContext {
+  datasetTitle: string;
+  datasetId: string;
+  status: BuildRunStatus;
   finishedAt: string | null;
 }
+
+type RunContextState =
+  | { status: "loading" }
+  | { status: "loaded"; data: RunContext }
+  | { status: "error"; message: string };
+
+const BUILD_STATUS_LABEL: Record<BuildRunStatus, string> = {
+  queued: "대기 중",
+  running: "실행 중",
+  cancelling: "취소 중",
+  succeeded: "완료",
+  failed: "실패",
+  cancelled: "취소됨",
+};
 
 const inputClassName =
   "h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -29,8 +53,10 @@ const inputClassName =
 export function BuildPublishPage() {
   const { buildId: runId = "" } = useParams();
   const [searchParams] = useSearchParams();
-  const datasetId = searchParams.get("dataset") ?? "";
-  const [datasetContext, setDatasetContext] = useState<DatasetContext>();
+  // `?dataset=`은 있으면 보조 표시 힌트로만 쓴다 — 없다고 실제 존재하는 Run을
+  // "확인되지 않음"으로 만들지 않는다(canonical 해석은 runId 기반).
+  const datasetHint = searchParams.get("dataset") ?? "";
+  const [runContext, setRunContext] = useState<RunContextState>({ status: "loading" });
   const [readiness, setReadiness] = useState<ReadinessState>({ status: "loading" });
   const [readinessVersion, setReadinessVersion] = useState(0);
   const [destination, setDestination] = useState("");
@@ -39,28 +65,38 @@ export function BuildPublishPage() {
   const publish = usePublishJob();
 
   useEffect(() => {
-    if (!datasetId || !runId) {
-      setDatasetContext(undefined);
+    if (!runId) {
+      setRunContext({ status: "error", message: "게시할 Run ID가 없습니다." });
       return;
     }
-    const controller = new AbortController();
     let active = true;
-    Promise.all([
-      getDataset(datasetId, controller.signal),
-      listDatasetRuns(datasetId, 50, controller.signal),
-    ]).then(([dataset, runs]) => {
-      if (!active) return;
-      const run = runs.runs.find((item) => item.run_id === runId);
-      if (!run) return;
-      setDatasetContext({ title: dataset.title, finishedAt: run.finished_at });
-    }).catch(() => {
-      if (active && !controller.signal.aborted) setDatasetContext(undefined);
-    });
+    setRunContext({ status: "loading" });
+    // canonical: getBuild(runId) = BuildSpec snapshot(dataset identity) + authoritative status.
+    // dataset URL 파라미터도, listDatasetRuns 윈도우도 필요로 하지 않는다.
+    getBuild(runId)
+      .then((run) => {
+        if (!active) return;
+        setRunContext({
+          status: "loaded",
+          data: {
+            datasetTitle: run.spec.title || run.spec.datasetId || runId,
+            datasetId: run.spec.datasetId,
+            status: run.status,
+            finishedAt: run.finishedAt ?? null,
+          },
+        });
+      })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setRunContext({
+          status: "error",
+          message: cause instanceof Error ? cause.message : "이 Run의 정보를 확인할 수 없습니다.",
+        });
+      });
     return () => {
       active = false;
-      controller.abort();
     };
-  }, [datasetId, runId]);
+  }, [runId]);
 
   useEffect(() => {
     if (!runId) {
@@ -91,6 +127,19 @@ export function BuildPublishPage() {
     };
   }, [runId, readinessVersion, publish.reset]);
 
+  const runCtx = runContext.status === "loaded" ? runContext.data : null;
+  const datasetLabel = runCtx?.datasetTitle ?? (datasetHint || null);
+  const buildCompletionText =
+    runContext.status === "loading"
+      ? "확인 중…"
+      : runCtx
+        ? runCtx.status === "succeeded"
+          ? runCtx.finishedAt
+            ? `완료 · ${formatDateTime(runCtx.finishedAt)}`
+            : "완료"
+          : `${BUILD_STATUS_LABEL[runCtx.status]}${runCtx.finishedAt ? ` · ${formatDateTime(runCtx.finishedAt)}` : ""}`
+        : "확인되지 않음";
+
   const destinationError = validatePublishDestination(destination);
   const builderReady = readiness.status === "loaded" && readiness.data.ready && readiness.data.blockers.length === 0;
   const canReview = Boolean(runId && builderReady && !destinationError && publish.status !== "publishing");
@@ -117,19 +166,22 @@ export function BuildPublishPage() {
     <main className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
       <PageHeader
         eyebrow="게시"
-        title={`${(datasetContext?.title ?? runId) || "Run"} 게시`}
+        title={`${datasetLabel || runId || "Run"} 게시`}
         description="Builder가 선택한 Run의 준비 상태를 확인한 뒤 Hugging Face에 게시합니다."
       />
 
       <Card>
         <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">선택한 Run</p>
         <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-          <div><dt className="text-muted-foreground">Dataset</dt><dd>{(datasetContext?.title ?? datasetId) || "확인되지 않음"}</dd></div>
+          <div><dt className="text-muted-foreground">Dataset</dt><dd>{datasetLabel || (runContext.status === "loading" ? "확인 중…" : "확인되지 않음")}</dd></div>
           <div><dt className="text-muted-foreground">Run ID</dt><dd className="break-all font-mono">{runId || "—"}</dd></div>
-          <div><dt className="text-muted-foreground">Build 완료</dt><dd>{datasetContext?.finishedAt ? formatDateTime(datasetContext.finishedAt) : "확인되지 않음"}</dd></div>
+          <div><dt className="text-muted-foreground">Build 완료</dt><dd>{buildCompletionText}</dd></div>
           <div><dt className="text-muted-foreground">Target</dt><dd>Hugging Face</dd></div>
         </dl>
-        <p className="mt-3 text-xs text-muted-foreground">이 화면은 URL의 exact Run ID를 유지하며 latest Run으로 바꾸지 않습니다.</p>
+        <p className="mt-3 text-xs text-muted-foreground">이 화면은 URL의 exact Run ID로 Dataset과 Build 완료 상태를 확인하며, latest Run으로 바꾸지 않습니다.</p>
+        {runContext.status === "error" ? (
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">이 Run의 Dataset 정보를 불러오지 못했습니다. Run ID로 게시 준비 상태는 아래에서 계속 확인할 수 있습니다.</p>
+        ) : null}
       </Card>
 
       <Card>

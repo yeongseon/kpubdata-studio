@@ -9,11 +9,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { SpecDiff } from "@/features/build-spec/components/SpecDiff";
 import { useAssistConfig } from "@/features/assistant/config";
-import { Button, Card, Disclosure, Textarea } from "@/shared/ui";
+import { Button, Card, Disclosure, TermHelp, Textarea } from "@/shared/ui";
 import { describeAction } from "./actions";
 import { relatedCatalogDatasets } from "./relatedDatasets";
 import type { KubiAction } from "./schema";
-import { SUGGESTED_QUESTIONS } from "./suggestedQuestions";
+import { getSuggestedQuestions } from "./suggestedQuestions";
 import { summarizeKubiQuality } from "./types";
 import type { KubiActionRunState, KubiContext, KubiErrorState, KubiQueryState, KubiTurn } from "./types";
 import { useKubiSession } from "./useKubiSession";
@@ -42,7 +42,7 @@ function ContextBar({ context, pageLabel, qualityLabel, sources, onContextChange
   const stageSelectDisabled = !context.runId || (sources.length > 1 && !context.source);
   return (
     <div>
-      <p className="mb-1.5 text-[10px] text-muted-foreground">현재 화면 · {pageLabel}</p>
+      <p className="mb-1.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground">현재 Context · {pageLabel}<TermHelp term="context" /></p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {cells.map((cell) => (
           <div key={cell.label} className="rounded-lg border border-border bg-muted/40 px-2.5 py-2">
@@ -275,7 +275,7 @@ function ActionCard({
           {turn.response && turn.response.evidenceRefs.length > 0 ? (
             <div className="mt-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                연결된 Evidence
+                연결된 Evidence <TermHelp term="evidence" />
               </p>
               <ul className="mt-1 flex flex-wrap gap-1.5">
                 {turn.response.evidenceRefs.map((ref) => (
@@ -487,7 +487,7 @@ function TurnCard({ turn, session, collapsed = false, onToggle }: { turn: KubiTu
 
             {turn.response.generatedSql ? (
               <div className="min-w-0">
-                <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Generated SQL · {turn.response.generatedSql.stage}</p><Button size="sm" variant="ghost" aria-label="Generated SQL 복사" onClick={() => void navigator.clipboard?.writeText(turn.response!.generatedSql!.sql).catch(() => {})}>복사</Button></div>
+                <div className="flex items-center justify-between gap-2"><p className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Generated SQL · {turn.response.generatedSql.stage}<TermHelp term="generatedSql" /></p><Button size="sm" variant="ghost" aria-label="Generated SQL 복사" onClick={() => void navigator.clipboard?.writeText(turn.response!.generatedSql!.sql).catch(() => {})}>복사</Button></div>
                 <pre className="mt-1 max-w-full overflow-x-auto whitespace-pre rounded-lg bg-muted/70 p-2 font-mono text-[11px]">{formatSqlForDisplay(turn.response.generatedSql.sql)}</pre>
                 <Button
                   size="sm"
@@ -563,13 +563,17 @@ export function KubiContent({ compact = false }: KubiContentProps) {
   // 과거 turn/LLM/quality 결과는 live source 후보를 만들 근거로 사용하지 않는다.
   const contextSources = useLiveRunSources(session.liveContext.runId);
 
-  const suggestedQuestions = useMemo(() => {
-    if (session.liveContext.stage === "gold" || session.liveContext.stage === "silver") return ["사용할 수 있는 컬럼을 알려줘.", "이 데이터를 집계하는 SQL을 만들어줘."];
-    if (session.liveContext.page === "quality") return ["Quality 결과를 요약해줘.", "FAIL/WARN의 원인을 알려줘."];
-    if (session.liveContext.runId) return ["이 Run 상태를 요약해줘.", "실패 원인이 있으면 알려줘."];
-    if (session.liveContext.datasetId) return ["이 Dataset의 특징을 알려줘."];
-    return SUGGESTED_QUESTIONS;
-  }, [session.liveContext]);
+  // 추천 질문은 현재 context와 최근 대화에서 deterministic하게 고른다(LLM 추가 호출
+  // 없음, suggestedQuestions.ts). turns가 바뀌면(첫 질문 후 등) 곧바로 갱신된다.
+  const suggestedQuestions = useMemo(
+    () =>
+      getSuggestedQuestions({
+        context: session.liveContext,
+        turns: session.turns,
+        isStale: session.isStale,
+      }),
+    [session.liveContext, session.turns, session.isStale],
+  );
 
   function changeContext(key: "stage" | "source", value?: string) {
     const params = new URLSearchParams(location.search);

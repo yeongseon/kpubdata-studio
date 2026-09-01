@@ -1,11 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAssistConfig } from "@/features/assistant/config";
-import { SUGGESTED_QUESTIONS } from "@/features/kubi/suggestedQuestions";
+import { START_QUESTIONS } from "@/features/kubi/suggestedQuestions";
 import { useKubiStore } from "@/features/kubi/useKubiSession";
 import { HomePage } from "@/pages/HomePage";
+import { KubiPage } from "@/pages/KubiPage";
 import { builderApi } from "@/shared/lib/builderApi";
 import { API_BASE } from "@/shared/config/env";
 import { useUIStore } from "@/shared/hooks/useUIStore";
@@ -147,9 +148,7 @@ describe("HomePage", () => {
     expect(await screen.findByText("7")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getAllByText("확인 불가")).toHaveLength(2);
-    expect(
-      screen.getByText("개별 품질 경고 목록은 아직 제공되지 않습니다"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("일부 품질 정보를 확인할 수 없습니다")).toBeInTheDocument();
     expect(screen.queryByText("품질 경고가 없습니다")).not.toBeInTheDocument();
     expect(screen.queryByText("모든 빌드가 정상적으로 완료되었습니다")).not.toBeInTheDocument();
   });
@@ -192,9 +191,21 @@ describe("HomePage", () => {
   });
 });
 
-const HERO_HEADING = "Kubi에게 필요한 데이터를 물어보세요";
+const HERO_HEADING = "어디서 시작할지 모르겠다면 Kubi에게 물어보세요";
 
-describe("Home Kubi Hero (#Phase2 UI polish)", () => {
+/** Home과 /kubi를 함께 마운트해 Home hero의 이동 대상을 관측한다. */
+function renderHomeWithKubiRoute() {
+  return render(
+    <MemoryRouter initialEntries={["/"]}>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/kubi" element={<div>KUBI ROUTE STUB</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("Home Kubi Hero (#Phase2 UI polish, #S-kubi-suggest)", () => {
   beforeEach(() => {
     useKubiStore.setState({ turns: [], onboarded: false, pendingSeed: null });
     useAssistConfig.getState().clear();
@@ -227,66 +238,78 @@ describe("Home Kubi Hero (#Phase2 UI polish)", () => {
     expect(await screen.findAllByRole("heading", { name: HERO_HEADING })).toHaveLength(1);
   });
 
-  it("configured: submitting a question seeds it into the shared Kubi store and opens the drawer", async () => {
+  it("configured: submitting a question seeds it and navigates to /kubi (not the drawer)", async () => {
     useEmptyBuildsRealMode();
     configureKey();
-    render(
-      <MemoryRouter>
-        <HomePage />
-      </MemoryRouter>,
-    );
+    renderHomeWithKubiRoute();
     const input = await screen.findByLabelText("Kubi에게 자연어로 데이터 물어보기");
     fireEvent.change(input, { target: { value: "서울 대기오염 데이터로 뭘 할 수 있어?" } });
     fireEvent.submit(input.closest("form")!);
 
+    expect(await screen.findByText("KUBI ROUTE STUB")).toBeInTheDocument();
     expect(useKubiStore.getState().pendingSeed).toBe("서울 대기오염 데이터로 뭘 할 수 있어?");
-    expect(useUIStore.getState().isKubiDrawerOpen).toBe(true);
+    expect(useUIStore.getState().isKubiDrawerOpen).toBe(false);
   });
 
-  it("not configured: submitting opens the drawer but does not seed a question or create a no_key turn", async () => {
+  it("not configured: navigates to /kubi without seeding a question or creating a no_key turn", async () => {
     useEmptyBuildsRealMode();
-    render(
-      <MemoryRouter>
-        <HomePage />
-      </MemoryRouter>,
-    );
+    renderHomeWithKubiRoute();
     const input = await screen.findByLabelText("Kubi에게 자연어로 데이터 물어보기");
     fireEvent.change(input, { target: { value: "서울 대기오염 데이터로 뭘 할 수 있어?" } });
     fireEvent.submit(input.closest("form")!);
 
-    expect(useUIStore.getState().isKubiDrawerOpen).toBe(true);
+    expect(await screen.findByText("KUBI ROUTE STUB")).toBeInTheDocument();
+    expect(useUIStore.getState().isKubiDrawerOpen).toBe(false);
     expect(useKubiStore.getState().pendingSeed).toBeNull();
     expect(useKubiStore.getState().turns).toHaveLength(0);
   });
 
-  it("configured: clicking a suggested-question chip seeds that shared question and opens the drawer", async () => {
+  it("configured: clicking a suggested-question chip seeds it and navigates to /kubi", async () => {
     useEmptyBuildsRealMode();
     configureKey();
+    renderHomeWithKubiRoute();
+    const chip = await screen.findByRole("button", { name: START_QUESTIONS[0] });
+    fireEvent.click(chip);
+
+    expect(await screen.findByText("KUBI ROUTE STUB")).toBeInTheDocument();
+    expect(useKubiStore.getState().pendingSeed).toBe(START_QUESTIONS[0]);
+    expect(useUIStore.getState().isKubiDrawerOpen).toBe(false);
+  });
+
+  it("hero chips no longer surface Quality/Build-failure/SQL questions with no context", async () => {
+    useEmptyBuildsRealMode();
     render(
       <MemoryRouter>
         <HomePage />
       </MemoryRouter>,
     );
-    const chip = await screen.findByRole("button", { name: SUGGESTED_QUESTIONS[0] });
-    fireEvent.click(chip);
-
-    expect(useKubiStore.getState().pendingSeed).toBe(SUGGESTED_QUESTIONS[0]);
-    expect(useUIStore.getState().isKubiDrawerOpen).toBe(true);
+    await screen.findByRole("heading", { name: HERO_HEADING });
+    expect(screen.queryByRole("button", { name: /Build.*실패/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Quality 이슈/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: START_QUESTIONS[0] })).toBeInTheDocument();
   });
 
   it("empty/whitespace query: does not seed a question or create a turn", async () => {
     useEmptyBuildsRealMode();
     configureKey();
-    render(
-      <MemoryRouter>
-        <HomePage />
-      </MemoryRouter>,
-    );
+    renderHomeWithKubiRoute();
     const input = await screen.findByLabelText("Kubi에게 자연어로 데이터 물어보기");
     fireEvent.change(input, { target: { value: "   " } });
     fireEvent.submit(input.closest("form")!);
 
     expect(useKubiStore.getState().pendingSeed).toBeNull();
     expect(useKubiStore.getState().turns).toHaveLength(0);
+  });
+
+  it("seeded question renders as a user turn once the Kubi page mounts", async () => {
+    useEmptyBuildsRealMode();
+    useKubiStore.setState({ turns: [], onboarded: false, pendingSeed: "서울 대기오염 데이터로 뭘 할 수 있어?" });
+    render(
+      <MemoryRouter initialEntries={["/kubi"]}>
+        <KubiPage />
+      </MemoryRouter>,
+    );
+    // BYOK 미설정이라 no_key 에러 turn이 되지만, 질문 자체는 user turn으로 표시된다(네트워크 없음).
+    expect(await screen.findByText("서울 대기오염 데이터로 뭘 할 수 있어?")).toBeInTheDocument();
   });
 });

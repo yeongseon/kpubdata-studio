@@ -21,4 +21,7 @@ export { ErrorMessage, type ErrorMessageProps } from "./ErrorMessage";
 export { ErrorState, type ErrorStateProps } from "./ErrorState";
 export { Skeleton, SkeletonTable, type SkeletonProps, type SkeletonTableProps } from "./Skeleton";
 export { Disclosure, type DisclosureProps } from "./Disclosure";
+export { HelpTooltip, type HelpTooltipProps } from "./HelpTooltip";
+export { TermHelp } from "./TermHelp";
+export { StageLegend, QualityLegend } from "./StatusLegend";
 export { cn, type ClassValue } from "./cn";

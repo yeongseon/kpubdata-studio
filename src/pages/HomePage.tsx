@@ -14,17 +14,20 @@
  */
 import {
   useEffect,
+  useMemo,
   useState,
   type Dispatch,
   type FormEvent,
   type SetStateAction,
 } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useAssistConfig } from "@/features/assistant/config";
 import { listBuilds } from "@/features/runs/api";
-import { SUGGESTED_QUESTIONS } from "@/features/kubi/suggestedQuestions";
+import { getSuggestedQuestions } from "@/features/kubi/suggestedQuestions";
 import { useKubiStore } from "@/features/kubi/useKubiSession";
-import { useUIStore } from "@/shared/hooks/useUIStore";
+import { FirstRunTour, resetFirstRunTour } from "@/features/onboarding/FirstRunTour";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
+import type { BuildQualityResponse, QualityCheckResult } from "@/shared/lib/builderApi.schema";
 import type { BuildListItem } from "@/shared/lib/types";
 import {
   Button,
@@ -33,6 +36,7 @@ import {
   LinkButton,
   PageHeader,
   Skeleton,
+  HelpTooltip,
 } from "@/shared/ui";
 
 interface DashboardStats {
@@ -160,6 +164,10 @@ export function HomePage() {
     monitoring: "loading",
     quality: "loading",
   });
+  const [recentQuality, setRecentQuality] = useState<RecentQualityState>({
+    phase: "loading",
+    alerts: [],
+  });
 
   useEffect(() => {
     let active = true;
@@ -215,13 +223,58 @@ export function HomePage() {
     };
   }, [realBuilder]);
 
-  const recentBuilds = [...builds]
-    .sort((a, b) => {
-      const aTime = a.startedAt ? new Date(a.startedAt).getTime() : 0;
-      const bTime = b.startedAt ? new Date(b.startedAt).getTime() : 0;
-      return bTime - aTime;
-    })
-    .slice(0, 5);
+  const recentBuilds = useMemo(
+    () =>
+      [...builds]
+        .sort((a, b) => {
+          const aTime = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+          const bTime = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+          return bTime - aTime;
+        })
+        .slice(0, 5),
+    [builds],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (buildsState === "loading") {
+      setRecentQuality({ phase: "loading", alerts: [] });
+      return () => controller.abort();
+    }
+    if (!realBuilder || buildsState === "error" || recentBuilds.length === 0) {
+      setRecentQuality({ phase: "unavailable", alerts: [] });
+      return () => controller.abort();
+    }
+
+    // Quality 결과는 manifest에서 조회한다(GET /builds/{run_id}/quality). manifest가 있는
+    // 것은 성공적으로 완료된 Run뿐이므로, queued/running/취소된 Run에 getBuildQuality를
+    // 호출하면 항상 404다 — canonical 대상인 succeeded Run만 조회한다.
+    const qualityRuns = recentBuilds.filter((run) => run.status === "succeeded");
+    if (qualityRuns.length === 0) {
+      setRecentQuality({ phase: "ready", alerts: [], incomplete: false });
+      return () => controller.abort();
+    }
+
+    setRecentQuality({ phase: "loading", alerts: [] });
+    void Promise.allSettled(
+      qualityRuns.map((run) => builderApi.getBuildQuality(run.id, controller.signal)),
+    ).then((results) => {
+      if (controller.signal.aborted) return;
+      const alerts: QualityAlert[] = [];
+      let incomplete = false;
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          incomplete = true;
+          return;
+        }
+        if (result.value.availability !== "available") incomplete = true;
+        alerts.push(...qualityAlertsForRun(qualityRuns[index], result.value));
+      });
+      setRecentQuality({ phase: "ready", alerts: alerts.slice(0, 5), incomplete });
+    });
+
+    return () => controller.abort();
+  }, [buildsState, realBuilder, recentBuilds]);
 
   // real 모드: 빌드 0개 + dataset total 조회 성공(kpi.datasets="ready") + total===0
   // 이 모두 충족될 때만 신규 사용자로 확정한다. total이 unavailable이면 빈 build만으로
@@ -243,6 +296,7 @@ export function HomePage() {
           recentBuilds={recentBuilds}
           buildsState={buildsState}
           kpi={kpi}
+          recentQuality={recentQuality}
         />
       )}
     </main>
@@ -254,17 +308,18 @@ function NewUserHome() {
     <>
       <PageHeader
         eyebrow="시작하기"
-        title="공공데이터를 쉽게 수집하고 변환하세요"
-        description="Kubi가 도와드립니다. 자연어로 물어보거나 원하는 방식으로 바로 시작하세요."
+        title="공공데이터를 찾아 신뢰할 수 있는 데이터셋으로 만드세요"
+        description="데이터를 찾거나 직접 가져온 뒤 Preview와 Quality를 확인하고 Build할 수 있습니다."
+        actions={<Button variant="ghost" size="sm" onClick={resetFirstRunTour}>둘러보기 다시 보기</Button>}
       />
 
-      <KubiHero />
+      <WorkflowStrip />
 
-      <section className="grid gap-6 lg:grid-cols-2">
+      <section data-tour="start-actions" className="grid gap-6 lg:grid-cols-2">
         <Card variant="elevated" className="flex flex-col items-center justify-center p-10 text-center">
           <h2 className="text-xl font-semibold tracking-tight">공공데이터 탐색</h2>
           <p className="mt-3 text-muted-foreground">
-            어떤 공공데이터를 다룰 수 있는지 카탈로그에서 둘러보세요
+            Builder가 제공하는 공공데이터 카탈로그에서 Provider와 Dataset을 찾아 시작합니다.
           </p>
           <LinkButton className="mt-6" variant="secondary" to="/discover">
             탐색하기
@@ -272,40 +327,112 @@ function NewUserHome() {
         </Card>
 
         <Card variant="elevated" className="flex flex-col items-center justify-center p-10 text-center">
-          <h2 className="text-xl font-semibold tracking-tight">데이터 바로 가져오기</h2>
+          <h2 className="text-xl font-semibold tracking-tight">데이터 직접 가져오기</h2>
           <p className="mt-3 text-muted-foreground">
-            Public API, 파일, URL에서 데이터를 직접 가져와 빌드하세요
+            Public API·파일·URL을 직접 추가하고 Preview와 검증을 거쳐 Build합니다.
           </p>
           <LinkButton className="mt-6" variant="secondary" to="/add">
             데이터 추가하기
           </LinkButton>
         </Card>
       </section>
+      <div data-tour="kubi-helper"><KubiHero /></div>
+      <FirstRunTour />
     </>
   );
 }
 
+interface QualityAlert {
+  runId: string;
+  runTitle: string;
+  status: "warn" | "fail";
+  detail: string;
+}
+
+type RecentQualityState =
+  | { phase: "loading"; alerts: [] }
+  | { phase: "ready"; alerts: QualityAlert[]; incomplete: boolean }
+  | { phase: "unavailable"; alerts: [] };
+
+function qualityAlertsForRun(
+  run: BuildListItem,
+  response: BuildQualityResponse,
+): QualityAlert[] {
+  const runTitle = run.title ?? run.id;
+  return Object.values(response.quality_results)
+    .flat()
+    .filter((result): result is QualityCheckResult & { status: "warn" | "fail" } =>
+      result.status === "warn" || result.status === "fail",
+    )
+    .map((result) => ({
+      runId: run.id,
+      runTitle,
+      status: result.status,
+      detail: result.detail ?? [result.rule, result.column].filter(Boolean).join(" · "),
+    }));
+}
+
+const WORKFLOW_STEPS = [
+  ["1", "데이터 찾기", "Discover 또는 직접 데이터 추가"],
+  ["2", "가져오기 준비", "Public API는 인증·활용신청·요청값을 확인"],
+  ["3", "Preview · Build", "데이터를 미리 확인·검증한 뒤 Build"],
+  ["4", "품질 확인 · 활용", "Quality · Kubi · Export · Publish"],
+] as const;
+
 /**
- * Home의 Kubi 자연어 hero (#Phase2 UI polish).
+ * Home의 전체 작업 흐름 설명. 클릭 가능한 액션 카드가 아니라 workflow 개요이므로
+ * hover/button 느낌(그림자 강조, cursor-pointer)과 카드 자체 navigation을 두지
+ * 않는다 — 각 STEP에서 실제로 할 일은 아래 "공공데이터 탐색"/"데이터 직접
+ * 가져오기" 카드와 사이드바에서 진행한다.
+ */
+function WorkflowStrip() {
+  return (
+    <section data-tour="workflow" aria-labelledby="workflow-heading" className="space-y-3">
+      <div>
+        <h2 id="workflow-heading" className="text-sm font-semibold text-foreground">전체 작업 흐름</h2>
+        <p className="text-xs text-muted-foreground">아래는 진행 순서를 보여주는 설명입니다 — 각 단계는 사이드바 메뉴와 화면 안내를 따라 진행하세요.</p>
+      </div>
+      <ol className="grid items-stretch gap-2 sm:grid-cols-2 xl:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr]">
+        {WORKFLOW_STEPS.map(([number, title, copy], index) => (
+          <li key={number} className="contents">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <span className="text-xs font-semibold text-accent-subtle-foreground">STEP {number}</span>
+              <h3 className="mt-2 text-sm font-semibold">{title}</h3>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy}</p>
+            </div>
+            {index < WORKFLOW_STEPS.length - 1 ? (
+              <span aria-hidden="true" className="hidden items-center justify-center text-muted-foreground xl:flex">→</span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/**
+ * Home의 Kubi 자연어 hero (#Phase2 UI polish, #S-kubi-suggest).
  *
- * 새 assistant system이 아니라 topbar `KubiSearchInput`과 동일한 seed 흐름
- * (`useKubiStore().seedQuestion` + `useUIStore().openKubiDrawer`)을 재사용한다. 여기서
- * evidence 조회/LLM 호출을 직접 하지 않는다 — drawer가 열리면 `useKubiSession`이 이어받는다.
+ * 본격적인 Kubi 작업 시작점이므로 drawer가 아니라 `/kubi` 전용 페이지로 이동한다.
+ * 새 assistant system을 만들지 않고 기존 seed 메커니즘(`useKubiStore().seedQuestion`)만
+ * 재사용한다 — `/kubi`가 mount되면 `useKubiSession`이 pendingSeed를 소비해 답변을
+ * 생성한다. 질문 내용은 URL query에 싣지 않는다(seed store로만 전달).
  *
- * `ask()`(useKubiSession.ts)는 seed를 받는 즉시 실행하고, API Key 미설정 시 `no_key` 에러
- * turn을 만든다. 여기서 원치 않는 에러 turn을 일부러 만들지 않기 위해, seed는
- * `isConfigured`일 때만 남기고 아니면 drawer만 열어 기존 API Key 설정 안내를 보여준다.
+ * `ask()`(useKubiSession.ts)는 seed를 받는 즉시 실행하고 API Key 미설정 시 `no_key`
+ * 에러 turn을 만든다. 원치 않는 에러 turn을 피하려고 seed는 `isConfigured`일 때만
+ * 남기고, 아니면 seed 없이 `/kubi`로 이동해 그 화면의 API Key 설정 안내를 보여준다.
  */
 function KubiHero() {
   const [query, setQuery] = useState("");
-  const openKubiDrawer = useUIStore((state) => state.openKubiDrawer);
+  const navigate = useNavigate();
   const seedQuestion = useKubiStore((state) => state.seedQuestion);
   const { isConfigured } = useAssistConfig();
+  const startQuestions = getSuggestedQuestions({ context: { page: "home" }, turns: [] });
 
   function ask(question: string) {
     const trimmed = question.trim();
     if (trimmed && isConfigured) seedQuestion(trimmed);
-    openKubiDrawer();
+    navigate("/kubi");
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -315,10 +442,10 @@ function KubiHero() {
   }
 
   return (
-    <Card variant="elevated" className="p-8">
-      <h2 className="text-xl font-semibold tracking-tight">Kubi에게 필요한 데이터를 물어보세요</h2>
+    <Card className="p-6">
+      <h2 className="text-base font-semibold tracking-tight">어디서 시작할지 모르겠다면 Kubi에게 물어보세요</h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        한국어로 질문하면 Kubi가 적합한 공공데이터를 찾고 BuildSpec까지 제안합니다.
+        원하는 데이터나 분석 목적을 입력하면 Kubi에서 시작 방법을 함께 찾아볼 수 있습니다.
       </p>
       <form className="mt-4 flex flex-col gap-2 sm:flex-row" onSubmit={handleSubmit}>
         <label className="sr-only" htmlFor="home-kubi-hero">
@@ -332,10 +459,10 @@ function KubiHero() {
           type="search"
           value={query}
         />
-        <Button type="submit">Kubi에게 물어보기</Button>
+        <Button type="submit">Kubi에서 시작하기 →</Button>
       </form>
       <div className="mt-4 flex flex-wrap gap-1.5">
-        {SUGGESTED_QUESTIONS.map((question) => (
+        {startQuestions.map((question) => (
           <button
             key={question}
             type="button"
@@ -348,7 +475,7 @@ function KubiHero() {
       </div>
       {!isConfigured ? (
         <p className="mt-3 text-xs text-muted-foreground">
-          아직 API Key가 설정되지 않았습니다. Kubi를 열면 설정 방법을 안내합니다.
+          아직 API Key가 설정되지 않았습니다. Kubi 화면에서 설정 방법을 안내합니다.
         </p>
       ) : null}
     </Card>
@@ -360,11 +487,13 @@ function ExistingUserHome({
   recentBuilds,
   buildsState,
   kpi,
+  recentQuality,
 }: {
   stats: DashboardStats;
   recentBuilds: BuildListItem[];
   buildsState: "loading" | "error" | "success";
   kpi: KpiPhases;
+  recentQuality: RecentQualityState;
 }) {
   return (
     <>
@@ -382,7 +511,7 @@ function ExistingUserHome({
           loading={buildsState === "loading"}
           apiState={buildsState}
         />
-        <QualitySection />
+        <QualitySection state={recentQuality} />
       </section>
     </>
   );
@@ -396,31 +525,35 @@ function ExistingUserHome({
 function KpiCards({ stats, kpi }: { stats: DashboardStats; kpi: KpiPhases }) {
   return (
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <KpiCard label="DATASETS" value={stats.datasetCount} loading={kpi.datasets === "loading"} />
+      <KpiCard label="DATASETS" help="현재 접근할 수 있는 전체 빌드 Dataset 수입니다." value={stats.datasetCount} loading={kpi.datasets === "loading"} />
       <KpiCard
         label="SUCCEEDED (24H)"
+        help="최근 24시간 동안 성공적으로 완료된 Build Run 수입니다."
         value={stats.buildSuccess}
         loading={kpi.monitoring === "loading"}
         variant="success"
       />
       <KpiCard
         label="QUALITY WARN (24H)"
+        help="최근 24시간 Quality 검사에서 WARN이 하나 이상 확인된 Run 수입니다."
         value={stats.qualityWarn}
         loading={kpi.quality === "loading"}
         variant="error"
       />
-      <KpiCard label="RUNNING" value={stats.running} loading={kpi.monitoring === "loading"} />
+      <KpiCard label="RUNNING" help="현재 실행 중인 Build 작업 수입니다." value={stats.running} loading={kpi.monitoring === "loading"} />
     </section>
   );
 }
 
 function KpiCard({
   label,
+  help,
   value,
   loading,
   variant = "default",
 }: {
   label: string;
+  help: string;
   value: number | null;
   loading: boolean;
   variant?: "default" | "success" | "error";
@@ -428,7 +561,7 @@ function KpiCard({
   if (loading) {
     return (
       <Card>
-        <span className="text-sm text-muted-foreground">{label}</span>
+        <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">{label}<HelpTooltip content={help} label={`${label} 정의`} /></span>
         <Skeleton className="mt-2 h-8 w-16" />
       </Card>
     );
@@ -440,7 +573,7 @@ function KpiCard({
 
   return (
     <Card className="flex items-center justify-between">
-      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">{label}<HelpTooltip content={help} label={`${label} 정의`} /></span>
       <span className={`text-2xl font-semibold tracking-tight ${colorClass}`}>
         {value === null ? "확인 불가" : value}
       </span>
@@ -510,15 +643,55 @@ function RecentBuildsSection({
   );
 }
 
-function QualitySection() {
+function QualitySection({ state }: { state: RecentQualityState }) {
   return (
     <section>
-      <PageHeader eyebrow="품질" title="품질 경고" className="mb-4" />
+      <PageHeader eyebrow="품질" title="최근 품질 상태" className="mb-4" />
       <Card className="p-0">
-        <EmptyState
-          title="개별 품질 경고 목록은 아직 제공되지 않습니다"
-          description="최근 24시간 WARN run 수는 위의 QUALITY WARN (24H) KPI에서 확인할 수 있습니다. 어떤 run이 경고인지는 각 빌드의 품질 화면에서 확인하세요."
-        />
+        {state.phase === "loading" ? (
+          <div className="space-y-3 px-6 py-5">
+            {[1, 2, 3].map((item) => <Skeleton key={item} className="h-8 w-full" />)}
+          </div>
+        ) : state.phase === "unavailable" || (state.incomplete && state.alerts.length === 0) ? (
+          <EmptyState
+            title="일부 품질 정보를 확인할 수 없습니다"
+            description="Builder에서 최근 Run의 Quality 결과를 제공하지 못했습니다. 실패한 Build를 Quality FAIL로 간주하지 않습니다."
+          />
+        ) : state.alerts.length === 0 ? (
+          <EmptyState
+            title="최근 확인한 Build에서 품질 경고가 없습니다"
+            description="현재 확인 가능한 최근 Quality 결과 중 추가 확인이 필요한 WARN/FAIL이 없습니다."
+          />
+        ) : (
+          <div>
+            <div className="px-6 py-4">
+              <h3 className="font-semibold">품질 확인 필요</h3>
+              {state.incomplete ? (
+                <p className="mt-1 text-xs text-muted-foreground">일부 Run의 Quality 결과는 확인하지 못했습니다.</p>
+              ) : null}
+            </div>
+            <ul className="border-t border-border">
+              {state.alerts.map((alert, index) => (
+                <li key={`${alert.runId}:${alert.detail}:${index}`} className="border-b border-border last:border-0">
+                  {/* WARN/FAIL 항목에서 해당 Run의 Quality context(/builds/:runId, ?run= canonical
+                      form과 동일)로 바로 이동한다 — BuildsPage와 Recent Builds가 이미 쓰는 경로다. */}
+                  <Link to={`/builds/${encodeURIComponent(alert.runId)}`} className="block px-6 py-3 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="truncate font-medium">{alert.runTitle}</span>
+                      <span className={alert.status === "fail" ? "font-semibold text-red-600 dark:text-red-400" : "font-semibold text-amber-700 dark:text-amber-400"}>
+                        {alert.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{alert.detail}</p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="border-t border-border px-6 py-4">
+          <LinkButton variant="secondary" size="sm" to="/quality">Quality Center 보기</LinkButton>
+        </div>
       </Card>
     </section>
   );

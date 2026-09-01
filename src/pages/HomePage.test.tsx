@@ -65,6 +65,7 @@ function baseHandlers(overrides: {
   monitoringBuilds?: () => Response | Promise<Response>;
   monitoringSummary?: () => Response | Promise<Response>;
   quality?: () => Response | Promise<Response>;
+  qualityDetail?: (runId: string) => Response | Promise<Response>;
 } = {}) {
   mswServer.use(
     http.get(`${API_BASE}/builds`, overrides.builds ?? (() => HttpResponse.json({ builds: BUILDS }))),
@@ -83,6 +84,16 @@ function baseHandlers(overrides: {
     http.get(
       `${API_BASE}/quality/summary`,
       overrides.quality ?? (() => HttpResponse.json(QUALITY_SUMMARY)),
+    ),
+    http.get(`${API_BASE}/builds/:runId/quality`, ({ params }) =>
+      overrides.qualityDetail?.(String(params.runId)) ??
+      HttpResponse.json({
+        run_id: String(params.runId),
+        availability: "available",
+        evaluated_checks: 0,
+        quality_results: {},
+        schema_drift: {},
+      }),
     ),
   );
 }
@@ -232,13 +243,149 @@ describe("HomePage 대시보드 KPI", () => {
   });
 });
 
+describe("HomePage 최근 품질 상태", () => {
+  const warning = {
+    source_key: "source-1",
+    category: "completeness",
+    rule: "missing_values",
+    column: "value",
+    status: "warn" as const,
+    actual: 3,
+    threshold: 0,
+    affected_rows: 3,
+    evaluated_rows: 10,
+    detail: "Missing values 3건",
+  };
+
+  it("최근 Run의 실제 WARN/FAIL만 표시하고 24H KPI와 범위를 구분한다", async () => {
+    baseHandlers({
+      qualityDetail: (runId) => HttpResponse.json({
+        run_id: runId,
+        availability: "available",
+        evaluated_checks: 1,
+        quality_results: { "source-1": [warning] },
+        schema_drift: {},
+      }),
+    });
+    renderHome();
+
+    expect(await screen.findByText("최근 품질 상태")).toBeInTheDocument();
+    expect(await screen.findByText("Missing values 3건")).toBeInTheDocument();
+    expect(screen.getByText("WARN")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Quality Center 보기" })).toHaveAttribute("href", "/quality");
+  });
+
+  it("확인 가능한 결과에 WARN/FAIL이 없으면 빈 상태를 정직하게 표시한다", async () => {
+    baseHandlers();
+    renderHome();
+
+    expect(
+      await screen.findByText("최근 확인한 Build에서 품질 경고가 없습니다"),
+    ).toBeInTheDocument();
+  });
+
+  it("detail unavailable을 0건이나 PASS로 위장하지 않는다", async () => {
+    baseHandlers({
+      qualityDetail: (runId) => HttpResponse.json({
+        run_id: runId,
+        availability: "unavailable",
+        evaluated_checks: 0,
+        quality_results: {},
+        schema_drift: {},
+      }),
+    });
+    renderHome();
+
+    expect(await screen.findByText("일부 품질 정보를 확인할 수 없습니다")).toBeInTheDocument();
+    expect(screen.queryByText("최근 확인한 Build에서 품질 경고가 없습니다")).not.toBeInTheDocument();
+  });
+
+  it("succeeded가 아닌 Run(failed/cancelled)에는 getBuildQuality를 호출하지 않는다", async () => {
+    const detailRuns: string[] = [];
+    baseHandlers({
+      builds: () => HttpResponse.json({
+        builds: [
+          { run_id: "ok-1", status: "ok", started_at: "2026-09-01T05:00:00+00:00", finished_at: "2026-09-01T05:05:00+00:00" },
+          { run_id: "failed-1", status: "failed", started_at: "2026-09-01T04:00:00+00:00", finished_at: "2026-09-01T04:05:00+00:00" },
+          { run_id: "cancelled-1", status: "cancelled", started_at: "2026-09-01T03:00:00+00:00", finished_at: "2026-09-01T03:05:00+00:00" },
+        ],
+      }),
+      qualityDetail: (runId) => {
+        detailRuns.push(runId);
+        return HttpResponse.json({
+          run_id: runId,
+          availability: "available",
+          evaluated_checks: 1,
+          quality_results: { "source-1": [warning] },
+          schema_drift: {},
+        });
+      },
+    });
+    renderHome();
+
+    expect(await screen.findByText("Missing values 3건")).toBeInTheDocument();
+    expect(detailRuns).toEqual(["ok-1"]);
+  });
+
+  it("WARN/FAIL 항목은 해당 Run의 context(/builds/:runId)로 이동하는 링크다", async () => {
+    baseHandlers({
+      builds: () => HttpResponse.json({
+        builds: [
+          { run_id: "run-warn", status: "ok", started_at: "2026-09-01T05:00:00+00:00", finished_at: "2026-09-01T05:05:00+00:00" },
+        ],
+      }),
+      qualityDetail: (runId) => HttpResponse.json({
+        run_id: runId,
+        availability: "available",
+        evaluated_checks: 1,
+        quality_results: { "source-1": [warning] },
+        schema_drift: {},
+      }),
+    });
+    renderHome();
+
+    const alert = await screen.findByText("Missing values 3건");
+    const link = alert.closest("a");
+    expect(link).toHaveAttribute("href", "/builds/run-warn");
+  });
+
+  it("최근 Build가 6개여도 detail은 최대 5개만 병렬 조회한다", async () => {
+    const detailRuns: string[] = [];
+    baseHandlers({
+      builds: () => HttpResponse.json({
+        builds: Array.from({ length: 6 }, (_, index) => ({
+          run_id: `r${index}`,
+          status: "ok",
+          started_at: `2026-09-01T0${index}:00:00+00:00`,
+          finished_at: `2026-09-01T0${index}:05:00+00:00`,
+        })),
+      }),
+      qualityDetail: (runId) => {
+        detailRuns.push(runId);
+        return HttpResponse.json({
+          run_id: runId,
+          availability: "available",
+          evaluated_checks: 0,
+          quality_results: {},
+          schema_drift: {},
+        });
+      },
+    });
+    renderHome();
+
+    await screen.findByText("최근 확인한 Build에서 품질 경고가 없습니다");
+    expect(detailRuns).toHaveLength(5);
+    expect(detailRuns).not.toContain("r0");
+  });
+});
+
 /**
  * 신규 사용자 판정: 빈 build 목록만으로는 부족하다. real 모드에서는 Builder
  * GET /datasets의 authoritative `total`이 0으로 확인돼야 신규 사용자로 확정한다.
  * total을 확인할 수 없으면(구버전 Builder / 404·5xx) 기존 대시보드를 보여준다.
  */
 describe("HomePage 신규 사용자 판정", () => {
-  const NEW_USER_HEADING = "공공데이터를 쉽게 수집하고 변환하세요";
+  const NEW_USER_HEADING = "공공데이터를 찾아 신뢰할 수 있는 데이터셋으로 만드세요";
   const DASHBOARD_HEADING = "작업 현황을 한눈에 확인하세요";
 
   it("dataset total > 0이고 빌드가 없으면 신규 사용자가 아니다(기존 대시보드)", async () => {
@@ -288,5 +435,29 @@ describe("HomePage 신규 사용자 판정", () => {
       await within(kpiCard("DATASETS")).findByText("확인 불가", undefined, { timeout: 4000 }),
     ).toBeInTheDocument();
     expect(screen.queryByText(NEW_USER_HEADING)).not.toBeInTheDocument();
+  });
+});
+
+describe("HomePage 전체 작업 흐름 (설명형, 클릭 카드 아님)", () => {
+  it("STEP 1~4를 설명형 워크플로로 보여준다", async () => {
+    baseHandlers({
+      builds: () => HttpResponse.json({ builds: [] }),
+      datasets: () => HttpResponse.json({ datasets: [], total: 0 }),
+    });
+    renderHome();
+
+    expect(await screen.findByText("전체 작업 흐름")).toBeInTheDocument();
+    expect(screen.getByText("데이터 찾기")).toBeInTheDocument();
+    expect(screen.getByText("Discover 또는 직접 데이터 추가")).toBeInTheDocument();
+    expect(screen.getByText("가져오기 준비")).toBeInTheDocument();
+    expect(screen.getByText("Public API는 인증·활용신청·요청값을 확인")).toBeInTheDocument();
+    expect(screen.getByText("Preview · Build")).toBeInTheDocument();
+    expect(screen.getByText("데이터를 미리 확인·검증한 뒤 Build")).toBeInTheDocument();
+    expect(screen.getByText("품질 확인 · 활용")).toBeInTheDocument();
+    expect(screen.getByText("Quality · Kubi · Export · Publish")).toBeInTheDocument();
+
+    // 클릭 가능한 카드가 아니다 — STEP 카드 자체가 링크/버튼이 아니어야 한다.
+    expect(screen.queryByRole("link", { name: /데이터 찾기/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /데이터 찾기/ })).not.toBeInTheDocument();
   });
 });

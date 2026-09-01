@@ -14,7 +14,7 @@ import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse, delay } from "msw";
 import { mswServer } from "../../vitest.setup";
 import { API_BASE } from "@/shared/config/env";
-import { ProviderPage, isCredentialStoreUnavailable } from "./ProviderPage";
+import { ProviderPage, isCredentialStoreUnavailable, isSafeReturnTo } from "./ProviderPage";
 import { ApiError } from "@/shared/lib/builderApi";
 
 const PROVIDERS = {
@@ -24,9 +24,9 @@ const PROVIDERS = {
   ],
 };
 
-function renderProviders() {
+function renderProviders(initialEntry = "/provider") {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <ProviderPage />
     </MemoryRouter>,
   );
@@ -131,6 +131,52 @@ describe("ProviderPage credential 상태", () => {
     fireEvent.click(screen.getByRole("button", { name: "삭제" }));
     expect(await screen.findByText("Credential 삭제에 실패했습니다", undefined, { timeout: 4000 })).toBeInTheDocument();
     expect(screen.queryByText(/master key/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ProviderPage 연결 상태 표현 (credential readiness)", () => {
+  it("generic live probe(연결 테스트) 대신 credential readiness만 노출한다", async () => {
+    mswServer.use(
+      http.get(`${API_BASE}/providers`, () => HttpResponse.json({
+        providers: [{ provider: "datago", requires_credential: true, configured: true }],
+      })),
+      http.get(`${API_BASE}/providers/datago/credential`, () => HttpResponse.json({
+        configured: true,
+        masked: "dg••••99",
+        updated_at: "2026-09-01T00:00:00+00:00",
+      })),
+    );
+    renderProviders();
+    await selectProvider("datago");
+
+    expect(await screen.findByText(/dg••••99/)).toBeInTheDocument();
+    expect(screen.getByText("자격 증명 (Credential) 상태")).toBeInTheDocument();
+    expect(screen.getByText("연결 상태")).toBeInTheDocument();
+    // 사용자 저장 credential이 있으면 "API Key 등록됨" + Preview 안내.
+    expect(screen.getAllByText("API Key 등록됨").length).toBeGreaterThan(0);
+    expect(screen.getByText(/실제 Dataset API 사용 가능 여부는 Add Data의 Preview/)).toBeInTheDocument();
+    // generic probe UI는 없다.
+    expect(screen.queryByRole("button", { name: "연결 테스트" })).not.toBeInTheDocument();
+    expect(screen.queryByText("연결 / 실제 API 확인")).not.toBeInTheDocument();
+  });
+
+  it("credential 미설정이면 목록·상세 모두 'API Key 미설정'으로 표시한다", async () => {
+    mswServer.use(
+      http.get(`${API_BASE}/providers`, () => HttpResponse.json({
+        providers: [{ provider: "datago", requires_credential: true, configured: false }],
+      })),
+      http.get(`${API_BASE}/providers/datago/credential`, () => HttpResponse.json({
+        configured: false,
+        masked: null,
+        updated_at: null,
+      })),
+    );
+    renderProviders();
+    // 목록 배지 — provider 선택 전에도 요약 기준으로 표시된다.
+    expect(await screen.findAllByText("API Key 미설정")).not.toHaveLength(0);
+    await selectProvider("datago");
+    expect(await screen.findByRole("button", { name: "등록하기" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "연결 테스트" })).not.toBeInTheDocument();
   });
 });
 
@@ -260,5 +306,81 @@ describe("ProviderPage provider 전환 race", () => {
     resolveKosis?.(HttpResponse.json({ configured: false, masked: null, updated_at: null }));
 
     expect(await screen.findByRole("button", { name: "등록하기" })).toBeInTheDocument();
+  });
+});
+
+describe("ProviderPage Add Data 왕복 (#S-add-data §4)", () => {
+  it("?provider=로 넘어오면 목록 로딩 후 해당 provider를 자동 선택한다", async () => {
+    mswServer.use(
+      http.get(`${API_BASE}/providers/datago/credential`, () =>
+        HttpResponse.json({ configured: false, masked: null, updated_at: null }),
+      ),
+    );
+    renderProviders("/provider?provider=datago&returnTo=%2Fadd");
+
+    expect(await screen.findByRole("button", { name: "등록하기" })).toBeInTheDocument();
+  });
+
+  it("returnTo가 있으면 Add Data 복귀 안내 배너를 보여준다", async () => {
+    renderProviders("/provider?provider=datago&returnTo=%2Fadd");
+    expect(
+      await screen.findByText("데이터 추가를 계속하려면 API 연결을 완료하세요."),
+    ).toBeInTheDocument();
+  });
+
+  it("returnTo가 없으면 복귀 안내 배너를 보여주지 않는다", async () => {
+    renderProviders();
+    await selectProvider("datago");
+    expect(
+      screen.queryByText("데이터 추가를 계속하려면 API 연결을 완료하세요."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("credential을 저장하면 returnTo로 돌아가는 CTA를 보여준다", async () => {
+    let configured = false;
+    mswServer.use(
+      http.get(`${API_BASE}/providers/datago/credential`, () =>
+        HttpResponse.json(
+          configured
+            ? { configured: true, masked: "dg••••99", updated_at: "2026-09-02T00:00:00+00:00" }
+            : { configured: false, masked: null, updated_at: null },
+        ),
+      ),
+      http.put(`${API_BASE}/providers/datago/credential`, () => {
+        configured = true;
+        return HttpResponse.json({ provider: "datago", configured: true, masked: "dg••••99", updated_at: null });
+      }),
+    );
+    renderProviders("/provider?provider=datago&returnTo=%2Fadd");
+
+    fireEvent.click(await screen.findByRole("button", { name: "등록하기" }));
+    fireEvent.change(screen.getByPlaceholderText("API Key를 입력하세요"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    const cta = await screen.findByRole("link", { name: "데이터 설정으로 돌아가기" });
+    expect(cta).toHaveAttribute("href", "/add");
+  });
+
+  it("저장 전에는 돌아가기 CTA를 보여주지 않는다", async () => {
+    mswServer.use(
+      http.get(`${API_BASE}/providers/datago/credential`, () =>
+        HttpResponse.json({ configured: true, masked: "dg••••99", updated_at: null }),
+      ),
+    );
+    renderProviders("/provider?provider=datago&returnTo=%2Fadd");
+    await screen.findByText(/dg••••99/);
+    expect(screen.queryByRole("link", { name: "데이터 설정으로 돌아가기" })).not.toBeInTheDocument();
+  });
+});
+
+describe("isSafeReturnTo — open redirect 방지", () => {
+  it("내부 절대 경로만 안전으로 판정한다", () => {
+    expect(isSafeReturnTo("/add")).toBe(true);
+    expect(isSafeReturnTo(null)).toBe(false);
+    expect(isSafeReturnTo("")).toBe(false);
+    expect(isSafeReturnTo("add")).toBe(false);
+    expect(isSafeReturnTo("//evil.com")).toBe(false);
+    expect(isSafeReturnTo("https://evil.com")).toBe(false);
+    expect(isSafeReturnTo("/\\evil.com")).toBe(false);
   });
 });

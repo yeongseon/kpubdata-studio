@@ -114,7 +114,7 @@ export function ReviewBuildStep({
 
   return (
     <div className="space-y-4">
-      <h3 className="text-xl font-semibold tracking-tight">검토 · 빌드 (Review & Build)</h3>
+      <h3 className="text-xl font-semibold tracking-tight">검토 · Build</h3>
 
       <div className="grid gap-3 sm:grid-cols-4">
         <Card className="p-4">
