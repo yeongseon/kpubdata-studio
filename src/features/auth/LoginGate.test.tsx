@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { LoginGate } from "./LoginGate";
 import { useAuthStore } from "./store";
 
@@ -12,8 +12,19 @@ function LocationDisplay() {
 function renderGate(path = "/builds?run=abc") {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <LoginGate><div>protected content</div></LoginGate>
-      <LocationDisplay />
+      <Routes>
+        {/* /login은 별도 route로 분리한다. 이렇게 하지 않으면 LoginGate가
+            리다이렉트 후에도 계속 마운트된 채 남아 무한 리다이렉트가 발생한다. */}
+        <Route path="/login" element={<LocationDisplay />} />
+        <Route
+          path="*"
+          element={
+            <LoginGate>
+              <div>protected content</div>
+            </LoginGate>
+          }
+        />
+      </Routes>
     </MemoryRouter>,
   );
 }
