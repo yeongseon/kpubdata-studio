@@ -97,7 +97,8 @@ export function keycloakLogin(returnTo = "/", idpHint?: string): Promise<void> {
 
 /** Keycloak 세션을 종료하고 현재 origin으로 돌아온다. */
 export function keycloakLogout(): Promise<void> {
-  return getKeycloak().logout({ redirectUri: window.location.origin });
+  // 로그인 리다이렉트와 동일하게 앱 base 경로를 보존한다(서브패스 배포 대응).
+  return getKeycloak().logout({ redirectUri: getStudioUrl("/") });
 }
 
 /** 테스트 전용: 모듈 싱글턴 상태를 초기화한다. */

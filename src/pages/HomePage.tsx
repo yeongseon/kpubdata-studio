@@ -113,7 +113,7 @@ export function HomePage() {
         }
       } finally {
         if (active) {
-          setLoading((prev) => ({ ...prev, stats: false }));
+          setLoading((prev) => ({ ...prev, builds: false, stats: false }));
         }
       }
     };

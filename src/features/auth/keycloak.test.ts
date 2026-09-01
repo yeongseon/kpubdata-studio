@@ -146,10 +146,10 @@ describe("login / logout", () => {
     });
   });
 
-  it("keycloakLogout redirects back to the current origin", async () => {
+  it("keycloakLogout redirects back to the app base path (not bare origin)", async () => {
     await keycloakLogout();
     expect(mockKeycloak.logout).toHaveBeenCalledWith({
-      redirectUri: window.location.origin,
+      redirectUri: `${window.location.origin}/`,
     });
   });
 });

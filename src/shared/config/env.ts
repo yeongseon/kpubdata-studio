@@ -61,7 +61,14 @@ export function parseOidcIssuer(
 
   const match = url.pathname.match(/^(.*)\/realms\/([^/]+)\/?$/);
   if (!match) return null;
-  const realm = decodeURIComponent(match[2]);
+  // 잘못 인코딩된 realm(예: "%E0%A4%A")은 decodeURIComponent가 예외를 던지므로,
+  // throw 대신 null을 반환해 호출부가 fail-closed 처리하게 한다.
+  let realm: string;
+  try {
+    realm = decodeURIComponent(match[2]);
+  } catch {
+    return null;
+  }
   if (!realm) return null;
 
   // match[1]은 realms 앞의 경로 프리픽스("" | "/auth" 등). 표준 배포는 프리픽스가 없다.
