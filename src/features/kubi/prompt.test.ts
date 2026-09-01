@@ -32,9 +32,43 @@ describe("buildKubiMessages (#256 프롬프트)", () => {
     expect(systemMessage.content).toContain("generatedSql.source 필드로만 전달");
   });
 
+  it("states the exact-column-name + TRY_CAST authoring invariants in the response contract", () => {
+    const [systemMessage] = buildKubiMessages("질문", baseEvidence());
+    // 컬럼명 추측 금지 + schema evidence 참조
+    expect(systemMessage.content).toContain("evidence.stage.schema");
+    expect(systemMessage.content).toContain("evidence.stage.columns");
+    expect(systemMessage.content).toContain("추측");
+    // String 컬럼 numeric aggregation은 strict CAST가 아니라 TRY_CAST
+    expect(systemMessage.content).toContain("TRY_CAST");
+    // provider sentinel 때문에 전체 쿼리가 실패하지 않도록
+    expect(systemMessage.content).toContain("sentinel");
+    // 특정 데이터셋/컬럼에 하드코딩되어 있지 않다(AirKorea·pm10Value 전용 프롬프트 금지).
+    expect(systemMessage.content).not.toContain("AirKorea");
+    expect(systemMessage.content).not.toContain("pm10Value");
+  });
+
+  it("passes stage schema evidence through as untrusted structured content, not baked into the prompt text", () => {
+    const evidence = baseEvidence({
+      context: { page: "quality", datasetId: "air-quality", runId: "r1", stage: "gold", source: "datago__air_quality" },
+      stage: {
+        stage: "gold",
+        source: "datago__air_quality",
+        status: "completed",
+        available: true,
+        rowCount: 40,
+        columns: ["stationName", "pm10Value"],
+      },
+    });
+    const messages = buildKubiMessages("측정소별 PM10 평균 SQL 만들어줘", evidence);
+    // schema evidence는 structuredContent로만 전달되고 프롬프트 지시문에 문자열로 박히지 않는다.
+    expect(messages[1].structuredContent).toEqual(evidence);
+    expect(messages[0].content).not.toContain("pm10Value");
+    expect(messages[1].content).not.toContain("pm10Value");
+  });
+
   it("keeps evidence and user question isolated as separate untrusted-data messages", () => {
     const evidence = baseEvidence({
-      stage: { stage: "silver", sourceKey: "datago__air", status: "completed", available: true, rowCount: 10 },
+      stage: { stage: "silver", source: "datago__air", status: "completed", available: true, rowCount: 10 },
     });
     const messages = buildKubiMessages("서울 데이터 보여줘", evidence);
     expect(messages).toHaveLength(3);

@@ -121,6 +121,23 @@ export function summarizeChecksPassed(results: QualityCheckResult[]): ChecksPass
   return { pass, warn, fail, evaluated, status };
 }
 
+/**
+ * Quality Center header의 "Kubi 분석" 버튼이 seed할 질문을 현재 Quality 상태에 맞춰 고른다.
+ *
+ * 이전에는 상태와 무관하게 "WARN/FAIL의 원인과 조치"를 고정 seed해서, 모든 check가 PASS인
+ * Run에서도 존재하지 않는 WARN/FAIL을 전제한 질문이 들어갔다(real Builder E2E에서 확인).
+ * per-issue "Kubi 분석" 버튼은 이미 이슈 문맥을 담으므로 이 함수는 header 버튼에만 쓴다.
+ */
+export function qualityKubiSeedQuestion(summary: ChecksPassedSummary): string {
+  if (summary.evaluated === 0) {
+    return "현재 Run에는 평가된 Quality check가 없습니다. 현재 상태를 설명하고, Quality 규칙을 설정할 때 확인할 사항을 Evidence 기준으로 알려줘.";
+  }
+  if (summary.warn > 0 || summary.fail > 0) {
+    return "현재 Quality WARN/FAIL의 원인과 우선 조치 방법을 Evidence 기준으로 분석해줘.";
+  }
+  return "현재 Quality 결과를 Evidence 기준으로 요약하고, 모든 check가 PASS한 근거와 추가로 확인할 사항을 알려줘.";
+}
+
 export interface CategorySummary extends ChecksPassedSummary {
   /** 표시용으로 고른 가장 심각한 개별 결과(FAIL > WARN > 첫 PASS). 평가된 결과가 없으면 null. */
   worst: QualityCheckResult | null;

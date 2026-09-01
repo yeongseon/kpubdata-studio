@@ -20,6 +20,7 @@ function makeKnownRefs(overrides: Partial<KubiKnownRefs> = {}): KubiKnownRefs {
     providers: new Set(["datago"]),
     qualityResultIds: new Set(["src::missing::max_null_ratio::price"]),
     schemaDriftIds: new Set(["column_added::region"]),
+    sourceKeys: new Set(["datago.air_quality"]),
     ...overrides,
   };
 }
@@ -137,6 +138,87 @@ describe("crossCheckKubiResponse (#256 hallucination gate)", () => {
       makeKnownRefs(),
     );
     expect(result.response.generatedSql).not.toBeNull();
+  });
+
+  it("keeps generatedSql.source when it exactly matches a known canonical source_key", () => {
+    const result = crossCheckKubiResponse(
+      makeResponse({ generatedSql: { sql: "SELECT * FROM dataset", stage: "silver", source: "datago.air_quality" } }),
+      makeEvidence(),
+      makeKnownRefs({ sourceKeys: new Set(["datago.air_quality"]) }),
+    );
+    expect(result.response.generatedSql).toEqual({
+      sql: "SELECT * FROM dataset",
+      stage: "silver",
+      source: "datago.air_quality",
+    });
+    expect(result.rejectedSqlReason).toBeUndefined();
+  });
+
+  it("validates generatedSql.source even when stage evidence is unavailable (uses knownRefs.sourceKeys)", () => {
+    const result = crossCheckKubiResponse(
+      makeResponse({ generatedSql: { sql: "SELECT * FROM dataset", stage: "silver", source: "datago__air" } }),
+      makeEvidence({ stage: undefined, dataset: undefined }),
+      makeKnownRefs({ sourceKeys: new Set(["datago.air_quality", "kma.weather"]) }),
+    );
+    // multi-source + 미검증 source → fail-closed (SQL 통째로 제외)
+    expect(result.response.generatedSql).toBeNull();
+    expect(result.rejectedSqlReason).toContain("datago__air");
+  });
+
+  it("drops only the source (keeps SQL) for a single-source run with an unverifiable source", () => {
+    const result = crossCheckKubiResponse(
+      makeResponse({ generatedSql: { sql: "SELECT * FROM dataset", stage: "silver", source: "datago__air" } }),
+      makeEvidence({ stage: undefined }),
+      makeKnownRefs({ sourceKeys: new Set(["datago.air_quality"]) }),
+    );
+    expect(result.response.generatedSql).toEqual({ sql: "SELECT * FROM dataset", stage: "silver", source: undefined });
+    expect(result.rejectedSqlReason).toContain("Builder가 자동");
+  });
+
+  it("uses dataset.sources length as the single-source signal when no sourceKeys were collected", () => {
+    const result = crossCheckKubiResponse(
+      makeResponse({ generatedSql: { sql: "SELECT * FROM dataset", stage: "silver", source: "guessed.source" } }),
+      makeEvidence({
+        stage: undefined,
+        dataset: {
+          datasetId: "ds-1",
+          title: "t",
+          providers: ["datago"],
+          sources: [{ provider: "datago", dataset: "air_quality" }],
+          latestRunId: "run-1",
+          status: "ready",
+          updatedAt: null,
+          totalRowCount: 0,
+        },
+      }),
+      makeKnownRefs({ sourceKeys: new Set() }),
+    );
+    expect(result.response.generatedSql?.sql).toBe("SELECT * FROM dataset");
+    expect(result.response.generatedSql?.source).toBeUndefined();
+  });
+
+  it("fail-closes (drops whole SQL) for a multi-source run when nothing verifies the source", () => {
+    const result = crossCheckKubiResponse(
+      makeResponse({ generatedSql: { sql: "SELECT * FROM dataset", stage: "silver", source: "guessed.source" } }),
+      makeEvidence({
+        stage: undefined,
+        dataset: {
+          datasetId: "ds-1",
+          title: "t",
+          providers: ["datago", "kma"],
+          sources: [
+            { provider: "datago", dataset: "air_quality" },
+            { provider: "kma", dataset: "weather" },
+          ],
+          latestRunId: "run-1",
+          status: "ready",
+          updatedAt: null,
+          totalRowCount: 0,
+        },
+      }),
+      makeKnownRefs({ sourceKeys: new Set() }),
+    );
+    expect(result.response.generatedSql).toBeNull();
   });
 
   it("does not discard the whole answer when some refs/actions are rejected", () => {

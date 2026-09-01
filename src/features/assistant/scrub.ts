@@ -21,6 +21,24 @@ const SECRET_KEY_PATTERNS = [
 const SHANNON_ENTROPY_THRESHOLD = 4.0;
 const MIN_LENGTH_FOR_ENTROPY = 24;
 
+/**
+ * generic 엔트로피 오탐에서만 면제할 "출처가 검증된 exact 값" 집합의 기본값(빈 집합).
+ *
+ * 이 인자를 넘기지 않는 기존 consumer(paramsRedaction/urlRedaction/savedSpecs/일반
+ * assistant)는 main과 완전히 동일한 스크럽 동작을 유지한다. Kubi 경로만 실제 Builder/
+ * evidence에서 만든 run id 집합을 넘겨, canonical run id가 `[REDACTED]`되는 것을 막는다.
+ *
+ * 중요: 이 면제는 "형태가 run id 같다"가 아니라 "이 실행에서 실제 resource identity로
+ * 확인된 exact 문자열"에만 적용된다. secret-named field masking(isSecretKey)과 명시적
+ * credential 대입 스크럽은 이 면제보다 항상 먼저 적용된다.
+ */
+const NO_SAFE_VALUES: ReadonlySet<string> = new Set();
+
+/** 정규식 리터럴로 안전하게 끼워 넣기 위해 메타문자를 escape 한다. */
+function escapeRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function isSecretKey(keyName: string): boolean {
   return SECRET_KEY_PATTERNS.some((p) => p.test(keyName));
 }
@@ -42,8 +60,21 @@ function shannonEntropy(value: string): number {
   return h;
 }
 
-export function looksLikeSecret(value: string): boolean {
+/**
+ * 값이 API key/token 같은 고엔트로피 시크릿처럼 보이는지 Shannon 엔트로피로 판정한다.
+ *
+ * @param value - 검사 대상 문자열.
+ * @param safeValues - 이 실행에서 실제 resource identity로 확인된 exact 값 집합. 여기에
+ *   정확히(대소문자·전체 문자열까지) 일치하는 값만 엔트로피 휴리스틱에서 면제한다.
+ *   부분 일치/형태 매칭은 하지 않는다 — crafted `<words>-<timestamp>` 시크릿은 exact
+ *   match가 아니므로 그대로 아래 엔트로피 검사에 걸린다.
+ */
+export function looksLikeSecret(
+  value: string,
+  safeValues: ReadonlySet<string> = NO_SAFE_VALUES,
+): boolean {
   if (value.length < MIN_LENGTH_FOR_ENTROPY) return false;
+  if (safeValues.has(value)) return false;
   return shannonEntropy(value) >= SHANNON_ENTROPY_THRESHOLD;
 }
 
@@ -68,8 +99,21 @@ function requestId(): string {
   return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 }
 
-export function createSecretScrubber(id = requestId()): SecretScrubber {
+export interface SecretScrubberOptions {
+  /**
+   * 이 스크러버 인스턴스가 generic 엔트로피 검사에서만 면제할 exact 값 집합.
+   * secret-named field / 명시적 credential 대입 스크럽에는 영향을 주지 않는다.
+   * 넘기지 않으면 빈 집합 — main과 동일 동작.
+   */
+  safeRunIds?: ReadonlySet<string>;
+}
+
+export function createSecretScrubber(
+  id = requestId(),
+  options: SecretScrubberOptions = {},
+): SecretScrubber {
   const placeholders = new Map<string, string>();
+  const safeRunIds = options.safeRunIds ?? NO_SAFE_VALUES;
   let counter = 0;
 
   function replace(value: string): string {
@@ -79,7 +123,9 @@ export function createSecretScrubber(id = requestId()): SecretScrubber {
   }
 
   function scrubValue(key: string, value: unknown): unknown {
-    if (typeof value === "string" && (isSecretKey(key) || looksLikeSecret(value))) {
+    // 우선순위: (1) secret-named field는 값이 known safe run id여도 무조건 스크럽,
+    // (2) 그 외에는 safeRunIds exact match일 때만 엔트로피 오탐에서 면제.
+    if (typeof value === "string" && (isSecretKey(key) || looksLikeSecret(value, safeRunIds))) {
       return replace(value);
     }
     // 배열도 순회한다 (#226 결함 a). BuildSpec.sources 가 배열이라
@@ -99,6 +145,17 @@ export function createSecretScrubber(id = requestId()): SecretScrubber {
     return value;
   }
 
+  /**
+   * safe run id 에 인접한 조각을 마스킹할지 판정한다. safe id 자체는 절대 여기 오지 않는다 —
+   * `nonSafeLooksSecret`은 "이 토큰에서 safe id 를 전부 제거한 나머지"가 시크릿처럼 보이는지로,
+   * 조각을 따로 떼면 24자 미만이 되어 엔트로피 검사를 빠져나가는 경우(`<secret>/<safeId>`)를 막는다.
+   */
+  function maskAdjacentFragment(fragment: string, nonSafeLooksSecret: boolean): string {
+    if (!fragment || fragment.startsWith(SCRUBBED_PREFIX)) return fragment;
+    if (nonSafeLooksSecret || looksLikeSecret(fragment, safeRunIds)) return replace(fragment);
+    return fragment;
+  }
+
   function scrubText(text: string): string {
     const assignmentPattern = /\b([\w-]*(?:servicekey|api[_-]?key|token|secret))([ \t]*[:=][ \t]*)([^\s,}\]]+)/gi;
     const assigned = text.replace(assignmentPattern, (_match, key: string, separator: string, value: string) => {
@@ -107,9 +164,46 @@ export function createSecretScrubber(id = requestId()): SecretScrubber {
       return `${key}${separator}${quote}${replace(raw)}${quote}`;
     });
 
-    return assigned.replace(/\S{24,}/g, (token) => {
-      if (token.startsWith(SCRUBBED_PREFIX) || !looksLikeSecret(token)) return token;
-      return replace(token);
+    const scanForSecrets = (segment: string): string =>
+      segment.replace(/\S{24,}/g, (token) => {
+        if (token.startsWith(SCRUBBED_PREFIX) || !looksLikeSecret(token, safeRunIds)) return token;
+        return replace(token);
+      });
+
+    const alternation = [...safeRunIds]
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .sort((a, b) => b.length - a.length)
+      .map(escapeRegExp);
+    if (alternation.length === 0) return scanForSecrets(assigned);
+
+    // 검증된 safe run id 는 "앞뒤가 영숫자가 아닌" 경계로 등장할 때만 그대로 보존한다
+    // (`runId=<id>`, `/builds/<id>`, `<id>의`, 따옴표/콤마/슬래시 경계). `SECRET<id>`처럼
+    // 영숫자로 직접 이어붙은 형태는 경계 검사에 걸리지 않아 토큰 전체가 스크럽된다.
+    const boundary = `(?<![A-Za-z0-9])(?:${alternation.join("|")})(?![A-Za-z0-9])`;
+    const safeIdTest = new RegExp(boundary);
+    const safeIdSplit = new RegExp(boundary, "g");
+
+    // 공백으로 나뉘는 토큰 단위로 처리한다. safe id 를 포함하지 않는 토큰은 기존 엔트로피
+    // 검사를 그대로 받고, safe id 가 붙어 있는 토큰은 safe id 부분만 보존한 채 그 앞뒤(및
+    // 사이) 비-safe 조각을 검사한다. 조각을 단순히 면제하지 않고, "safe id 를 제거한 나머지
+    // 전체"가 시크릿처럼 보이면 모든 비-safe 조각을 마스킹한다 — `<secret>/<safeId>` 처럼
+    // 짧게 쪼개진 시크릿 조각이 엔트로피 검사를 빠져나가지 못하게 한다.
+    return assigned.replace(/\S+/g, (token) => {
+      if (token.startsWith(SCRUBBED_PREFIX)) return token;
+      if (!safeIdTest.test(token)) {
+        return looksLikeSecret(token, safeRunIds) ? replace(token) : token;
+      }
+      safeIdSplit.lastIndex = 0;
+      const nonSafeLooksSecret = looksLikeSecret(token.replace(safeIdSplit, ""), safeRunIds);
+      safeIdSplit.lastIndex = 0;
+      let out = "";
+      let cursor = 0;
+      for (const match of token.matchAll(safeIdSplit)) {
+        const index = match.index ?? 0;
+        out += maskAdjacentFragment(token.slice(cursor, index), nonSafeLooksSecret) + match[0];
+        cursor = index + match[0].length;
+      }
+      return out + maskAdjacentFragment(token.slice(cursor), nonSafeLooksSecret);
     });
   }
 
@@ -174,8 +268,11 @@ export function hasSecretPlaceholder(data: unknown): boolean {
   return false;
 }
 
-export function redactSecrets(data: unknown): unknown {
-  const scrubber = createSecretScrubber();
+export function redactSecrets(
+  data: unknown,
+  safeRunIds: ReadonlySet<string> = NO_SAFE_VALUES,
+): unknown {
+  const scrubber = createSecretScrubber(undefined, { safeRunIds });
   const scrubbed = scrubber.scrub(data);
 
   function redact(value: unknown): unknown {

@@ -75,12 +75,12 @@ export function buildKubiDemoResponse(evidence: KubiEvidence): KubiStructuredRes
       // FROM 테이블명이 아니라 아래 source 필드로 별도 전달한다(query.ts가 /query 요청에 얹는다).
       sql: `SELECT region, COUNT(*) AS count FROM dataset GROUP BY region`,
       stage: evidence.context.stage,
-      source: evidence.stage.sourceKey,
+      source: evidence.stage.source,
     };
     evidenceRefs.push({
       kind: "stage",
-      id: `${evidence.stage.sourceKey}:${evidence.stage.stage}`,
-      label: `${evidence.stage.sourceKey} · ${evidence.stage.stage}`,
+      id: `${evidence.stage.source}:${evidence.stage.stage}`,
+      label: `${evidence.stage.source} · ${evidence.stage.stage}`,
     });
     lines.push("Generated SQL은 데모용 미리보기 조회입니다 — 실행하면 mock 결과가 표시됩니다(실제 Builder 호출 없음).");
   } else if (evidence.dataset) {

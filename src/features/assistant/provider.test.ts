@@ -120,6 +120,63 @@ describe("assistant safe egress (#273)", () => {
     expect(requestBody).toContain("__SCRUBBED_");
   });
 
+  it("safeRunIds 옵션: 확인된 run id 는 egress 에 보존하고 인접 시크릿은 스크럽한다", async () => {
+    const runId = "datago-air-quality-1788004513062";
+    const adjacentSecret = "xJ7kL9mN2pQ4rT6vW8yB3cD5eF7gH9j";
+    let requestBody = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        requestBody = String(init?.body);
+        return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+          status: 200,
+        });
+      }),
+    );
+
+    const provider = createProvider({
+      apiKey: "byok-key",
+      model: "test-model",
+      baseUrl: "https://llm.example.com/v1",
+    });
+    const output = await drain(
+      provider.stream(
+        [{ role: "user", content: `run ${runId} 그리고 ${adjacentSecret}/${runId} 확인` }],
+        undefined,
+        { safeRunIds: new Set([runId]) },
+      ),
+    );
+
+    expect(output).toBe("ok");
+    expect(requestBody).toContain(runId);
+    expect(requestBody).not.toContain(adjacentSecret);
+    expect(requestBody).toContain("__SCRUBBED_");
+  });
+
+  it("safeRunIds 옵션 없이는 run-id 처럼 생긴 고엔트로피 값도 egress 에서 스크럽한다", async () => {
+    const runId = "datago-air-quality-1788004513062";
+    let requestBody = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        requestBody = String(init?.body);
+        return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+          status: 200,
+        });
+      }),
+    );
+
+    const provider = createProvider({
+      apiKey: "byok-key",
+      model: "test-model",
+      baseUrl: "https://llm.example.com/v1",
+    });
+    await drain(provider.stream([{ role: "user", content: `run ${runId} 확인` }]));
+
+    expect(requestBody).not.toContain(runId);
+    expect(requestBody).toContain("__SCRUBBED_");
+  });
+
   it("일반 응답에는 시크릿이나 플레이스홀더를 노출하지 않는다", async () => {
     const secret = "low-entropy-key";
     vi.stubGlobal(

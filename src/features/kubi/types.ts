@@ -22,6 +22,13 @@ export interface KubiContext {
   datasetId?: string;
   runId?: string;
   stage?: KubiStage;
+  /**
+   * 화면에서 선택된 Builder canonical source_key(`?source=` 쿼리 관례, #253/#254).
+   * multi-source run에서 stage evidence를 어느 소스로 조회할지 결정하는 데 쓴다 — route에
+   * 없으면 undefined로 두고 추측하지 않는다(P5 canonical source policy와 동일 identity).
+   * 필드명은 `source` — `redactSecrets`의 secret-named 휴리스틱(`*key$`)에 걸리지 않도록 한다.
+   */
+  source?: string;
   qualityResultIds?: string[];
   provider?: string;
 }
@@ -42,7 +49,8 @@ export type KubiEvidenceSource = "dataset" | "runs" | "stage" | "quality" | "cat
 /** Evidence에 포함하는 quality 결과 요약(원본 QualityCheckResult에 안정적 id만 덧붙임). */
 export interface KubiQualityResultEvidence {
   id: string;
-  sourceKey: string;
+  /** Builder canonical source_key. 필드명이 `sourceKey`면 redactSecrets가 `[REDACTED]`한다(`*key$`). */
+  source: string;
   category: string;
   rule: string;
   column: string | null;
@@ -70,10 +78,24 @@ export interface KubiEvidence {
   recentRuns?: { runId: string; status: string; startedAt: string | null; finishedAt: string | null }[];
   stage?: {
     stage: KubiStage;
-    sourceKey: string;
+    /** Builder canonical source_key. 필드명이 `sourceKey`면 redactSecrets가 `[REDACTED]`한다(`*key$`). */
+    source: string;
     status: string;
     available: boolean;
     rowCount: number | null;
+    /**
+     * 이 stage 산출물의 exact column 이름(Builder stage detail이 반환한 값 그대로).
+     * Generated SQL이 컬럼명을 추측·축약·변형하지 않도록 노출한다 — silver는 schema[].name,
+     * gold는 columns 필드에서 온다. bronze나 available=false면 undefined.
+     * 사용자 질문/모델 출력에서 온 컬럼명은 절대 여기 넣지 않는다(evidence 원칙).
+     */
+    columns?: string[];
+    /**
+     * column별 dtype(Builder silver stage detail의 schema에서만 제공 — gold stage detail은
+     * dtype 없이 이름만 준다). numeric aggregation 대상 컬럼이 String이면 프롬프트가
+     * strict CAST 대신 TRY_CAST를 쓰도록 유도하는 근거로 쓴다. 없으면 undefined.
+     */
+    schema?: { name: string; dtype: string }[];
   };
   quality?: {
     availability: "available" | "partial" | "unavailable";
@@ -111,6 +133,12 @@ export interface KubiKnownRefs {
   providers: Set<string>;
   qualityResultIds: Set<string>;
   schemaDriftIds: Set<string>;
+  /**
+   * evidence에 실제로 등장한 Builder canonical source_key("provider.dataset") 집합.
+   * quality 결과·stage evidence에서 모은다. Generated SQL의 `source`가 이 집합에 없으면
+   * 검증되지 않은 값이므로 Builder `/query`로 그대로 보내지 않는다(crossCheck).
+   */
+  sourceKeys: Set<string>;
 }
 
 /** LLM 구조화 응답이 근거로 인용한 evidence 조각. */

@@ -174,7 +174,9 @@ describe("Dataset Detail P0 (#253)", () => {
   });
 
   it("AI tab demo (no API key, mock mode): Generated SQL and Result Preview render deterministically, clearly labeled as demo (#256 review)", async () => {
-    renderDetail("/datasets/air-quality?tab=ai&stage=silver");
+    // air-2026-08-14는 multi-source run이라 어느 소스인지 URL에 있어야 stage evidence가
+    // fail-closed로 빠지지 않는다(#319 후속) — Dataset Detail의 goToTab("ai")가 실제로 하는 동기화.
+    renderDetail("/datasets/air-quality?tab=ai&source=datago__air&stage=silver");
     const panel = await screen.findByRole("tabpanel", { name: "AI" });
 
     fireEvent.click(within(panel).getByRole("button", { name: "데모 질문 보내보기" }));

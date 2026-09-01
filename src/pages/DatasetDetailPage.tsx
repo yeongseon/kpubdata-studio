@@ -157,14 +157,19 @@ export function DatasetDetailPage() {
     setSearchParams(next);
   }
 
-  // AI 탭은 Kubi(KubiContent)가 route의 ?run=&stage=로만 문맥을 판단한다(추측 금지 원칙,
-  // context.ts 참고) — 그래서 여기서 화면에 이미 계산되어 보이는 selectedRunId/selectedStage를
-  // URL에 명시적으로 반영해줘야, 처음 AI 탭을 열었을 때도 Kubi RUN context bar가 실제로는
-  // 알고 있는 latest run을 "—"로 보여주거나 Generated SQL/Result Preview가 비어 보이지
-  // 않는다(UI audit #5). 탭 바(button onClick)와 Overview 탭의 Kubi discoverability CTA 모두
-  // 이 helper 하나를 공유해 같은 규칙을 두 번 구현하지 않는다.
+  // AI 탭은 Kubi(KubiContent)가 route의 ?run=&source=&stage=로만 문맥을 판단한다(추측 금지 원칙,
+  // context.ts 참고) — 그래서 여기서 화면에 이미 계산되어 보이는 selectedRunId/selectedSource/
+  // selectedStage를 URL에 명시적으로 반영해줘야, 처음 AI 탭을 열었을 때도 Kubi RUN context bar가
+  // 실제로는 알고 있는 latest run을 "—"로 보여주거나 Generated SQL/Result Preview가 비어 보이지
+  // 않는다(UI audit #5). source까지 실어야 multi-source run에서 stage evidence가 fail-closed로
+  // 빠지지 않는다(#319 후속). 탭 바(button onClick)와 Overview 탭의 Kubi discoverability CTA
+  // 모두 이 helper 하나를 공유해 같은 규칙을 두 번 구현하지 않는다.
   function goToTab(tab: DetailTab) {
-    updateContext(tab === "ai" ? { tab: "ai", run: selectedRunId, stage: selectedStage } : { tab: tab === "overview" ? null : tab });
+    updateContext(
+      tab === "ai"
+        ? { tab: "ai", run: selectedRunId, source: selectedSource || null, stage: selectedStage }
+        : { tab: tab === "overview" ? null : tab },
+    );
   }
 
   const tabParam = searchParams.get("tab") as DetailTab | null;

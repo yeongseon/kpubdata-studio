@@ -367,7 +367,7 @@ describe("useKubiSession — askDemo (#256 review, mock mode Kubi 데모)", () =
   it("works without any API key configured and never calls the LLM provider", async () => {
     vi.mocked(createProvider).mockClear();
     const { result } = renderHook(() => useKubiSession(), {
-      wrapper: makeWrapper("/datasets/air-quality?run=air-2026-08-14&stage=silver"),
+      wrapper: makeWrapper("/datasets/air-quality?run=air-2026-08-14&source=datago__air&stage=silver"),
     });
     expect(result.current.isConfigured).toBe(false);
     expect(result.current.isDemoAvailable).toBe(true);
@@ -400,7 +400,7 @@ describe("useKubiSession — askDemo (#256 review, mock mode Kubi 데모)", () =
     const fetchMock = vi.fn(async (_input: unknown) => new Response(null, { status: 500 }));
     vi.stubGlobal("fetch", fetchMock);
     const { result } = renderHook(() => useKubiSession(), {
-      wrapper: makeWrapper("/datasets/air-quality?run=air-2026-08-14&stage=silver"),
+      wrapper: makeWrapper("/datasets/air-quality?run=air-2026-08-14&source=datago__air&stage=silver"),
     });
     await act(async () => {
       await result.current.askDemo("지역별 분포 보여줘");

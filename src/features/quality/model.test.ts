@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { previewSourceState, summarizePreviewSources } from "./model";
+import {
+  previewSourceState,
+  qualityKubiSeedQuestion,
+  summarizeChecksPassed,
+  summarizePreviewSources,
+} from "./model";
 import type { PreviewSource, QualityCheckResult } from "@/shared/lib/builderApi";
 
 function qualityResult(status: QualityCheckResult["status"]): QualityCheckResult {
@@ -99,5 +104,29 @@ describe("summarizePreviewSources (#250 §3, mixed/partial preview)", () => {
     ];
     const summary = summarizePreviewSources(sources);
     expect(summary.perSource[1].quality.status).toBe("FAIL");
+  });
+});
+
+describe("qualityKubiSeedQuestion (real Builder E2E — 상태별 seed 질문)", () => {
+  it("평가된 check가 없으면(evaluated=0) 규칙 미설정 상태를 묻는다", () => {
+    const q = qualityKubiSeedQuestion(summarizeChecksPassed([]));
+    expect(q).toContain("평가된 Quality check가 없습니다");
+    expect(q).not.toContain("WARN/FAIL의 원인");
+  });
+
+  it("모든 check가 PASS면 WARN/FAIL을 전제하지 않고 PASS 근거를 묻는다", () => {
+    const q = qualityKubiSeedQuestion(summarizeChecksPassed([qualityResult("pass"), qualityResult("pass")]));
+    expect(q).toContain("모든 check가 PASS한 근거");
+    expect(q).not.toContain("WARN/FAIL의 원인");
+  });
+
+  it("WARN이 있으면 원인/조치 질문을 유지한다", () => {
+    const q = qualityKubiSeedQuestion(summarizeChecksPassed([qualityResult("pass"), qualityResult("warn")]));
+    expect(q).toContain("WARN/FAIL의 원인과 우선 조치");
+  });
+
+  it("FAIL이 있으면 원인/조치 질문을 유지한다", () => {
+    const q = qualityKubiSeedQuestion(summarizeChecksPassed([qualityResult("fail")]));
+    expect(q).toContain("WARN/FAIL의 원인과 우선 조치");
   });
 });

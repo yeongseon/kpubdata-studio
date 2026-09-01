@@ -26,6 +26,7 @@ import {
   isMissingCategory,
   isSchemaCategory,
   overallQualityState,
+  qualityKubiSeedQuestion,
   summarizeByCategory,
   summarizeChecksPassed,
   warnOrFailResults,
@@ -133,6 +134,36 @@ export function QualityPage() {
   const selectedRunId = requestedRunId || selectedDataset?.latest_run_id || "";
   const selectedRun = runsState.data?.find((run) => run.run_id === selectedRunId);
 
+  // Kubi(KubiContent)는 route의 `?dataset=&run=&source=&stage=`만 문맥으로 읽는다(context.ts,
+  // 추측 금지 원칙). 화면에는 fallback으로 이미 dataset/run이 계산되어 보이지만 URL에 없으면
+  // KubiContext에는 전달되지 않아 "어떤 dataset/run인지 알려달라"는 답이 나온다(#319 후속).
+  // 그래서 fallback으로 확정된 선택을 URL에 되반영해 UI 선택과 KubiContext SSOT를 일치시킨다.
+  // replace로만 갱신해 history를 더럽히지 않고, 유효하지 않은 dataset/run일 때는 건드리지 않는다.
+  useEffect(() => {
+    if (datasetsState.status !== "loaded" || invalidDataset || invalidRun) return;
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+    if (!requestedDatasetId && selectedDatasetId) {
+      next.set("dataset", selectedDatasetId);
+      changed = true;
+    }
+    if (!requestedRunId && selectedRunId) {
+      next.set("run", selectedRunId);
+      changed = true;
+    }
+    if (changed) setSearchParams(next, { replace: true });
+  }, [
+    datasetsState.status,
+    invalidDataset,
+    invalidRun,
+    requestedDatasetId,
+    selectedDatasetId,
+    requestedRunId,
+    selectedRunId,
+    searchParams,
+    setSearchParams,
+  ]);
+
   useEffect(() => {
     if (!selectedRunId || invalidRun) {
       setStagesState({ status: "idle" });
@@ -171,6 +202,18 @@ export function QualityPage() {
       else next.delete(key);
     }
     setSearchParams(next);
+  }
+
+  // Kubi를 열기 전에, 화면에 선택되어 보이는 dataset/run/source/stage를 URL에 확정 반영한다 —
+  // KubiContext는 route만 읽으므로(context.ts) 이 동기화가 없으면 drawer가 catalog 수준
+  // evidence만 받는다(#319 후속). 헤더 버튼과 이슈별 "Kubi 분석"이 이 helper를 공유한다.
+  function syncKubiContext() {
+    updateContext({
+      dataset: selectedDatasetId || null,
+      run: selectedRunId || null,
+      source: selectedSource || null,
+      stage: selectedStage ?? null,
+    });
   }
 
   const scopedResults = useMemo(
@@ -286,7 +329,8 @@ export function QualityPage() {
           <Button
             variant="secondary"
             onClick={() => {
-              seedKubiQuestion("현재 Quality WARN/FAIL의 원인과 우선 조치 방법을 분석해줘.");
+              syncKubiContext();
+              seedKubiQuestion(qualityKubiSeedQuestion(checksPassed));
               openKubiDrawer();
             }}
           >
@@ -367,6 +411,7 @@ export function QualityPage() {
             contextLabel={contextLabel}
             selectedRun={selectedRun}
             onKubi={(issue) => {
+              syncKubiContext();
               seedKubiQuestion(`"${issue.category} · ${issue.rule}" 규칙이 ${issue.status.toUpperCase()}인 이유와 조치 방법을 분석해줘.`);
               openKubiDrawer();
             }}

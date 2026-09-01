@@ -80,12 +80,16 @@ export function resolveKubiContext(pathname: string, search = ""): KubiRouteReso
   const runId = buildId ?? (params.get("run") ?? undefined);
   const stageParam = params.get("stage");
   const stage = isKubiStage(stageParam) ? stageParam : undefined;
+  // Dataset Detail/Quality가 선택된 소스를 `?source=`로 실어 보낸다(#253/#254). 빈 문자열
+  // ("전체 소스")은 명시적 선택이므로 context로는 넘기지 않는다.
+  const source = params.get("source") || undefined;
 
   const context: KubiContext = {
     page,
     ...(datasetId ? { datasetId } : {}),
     ...(runId ? { runId } : {}),
     ...(stage ? { stage } : {}),
+    ...(source ? { source } : {}),
   };
 
   return { context, pageLabel, pathname };
@@ -97,6 +101,7 @@ export function contextsMatch(a: KubiContext, b: KubiContext): boolean {
     a.page === b.page &&
     (a.datasetId ?? null) === (b.datasetId ?? null) &&
     (a.runId ?? null) === (b.runId ?? null) &&
-    (a.stage ?? null) === (b.stage ?? null)
+    (a.stage ?? null) === (b.stage ?? null) &&
+    (a.source ?? null) === (b.source ?? null)
   );
 }
