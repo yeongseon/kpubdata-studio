@@ -8,7 +8,7 @@ Studio는 Builder HTTP API의 소비자입니다. HTTP wire 계약의 단일 소
 
 - Builder endpoint/status/schema 변경은 Builder OpenAPI SSOT에서 시작합니다.
 - Studio는 `src/shared/lib/builderApi.ts`와 `src/shared/lib/builderApi.schema.ts`에서 OpenAPI wire shape를 런타임 검증합니다.
-- `API_CONTRACT_VERSION`과 지원 operation 집합은 `__tests__/contractConformance.test.ts`가 고정합니다.
+- `MIN_BUILDER_API_VERSION`(SemVer 호환성 판정의 기준)과 지원 operation 집합은 `__tests__/contractConformance.test.ts`가 고정합니다.
 - 사용자 화면은 page에서 직접 HTTP를 호출하지 않고 feature API를 통해 Builder를 사용합니다.
 
 ## 2. Studio 클라이언트 계층
@@ -23,7 +23,7 @@ graph LR
 
 | 계층 | 파일 | 책임 |
 | :--- | :--- | :--- |
-| 저수준 HTTP 클라이언트 | `src/shared/lib/builderApi.ts` | Builder URL, 인증 헤더, timeout/retry, `ApiError`, 계약 버전 |
+| 저수준 HTTP 클라이언트 | `src/shared/lib/builderApi.ts` | Builder URL, 인증 헤더, timeout/retry, `ApiError`, 최소 버전/SemVer 호환성 |
 | wire schema | `src/shared/lib/builderApi.schema.ts` | Builder JSON 응답 Zod parse |
 | BuildSpec 매핑 | `src/features/build-spec/specMapping.ts` | Studio camelCase model ↔ Builder snake_case spec |
 | Preview API | `src/features/preview/api/index.ts` | `/preview` 응답을 UI용 rows/schema/warnings로 변환 |
@@ -33,14 +33,32 @@ graph LR
 
 ## 3. 계약 버전과 정합성
 
-Studio는 `GET /version` 응답의 `api_version`을 `API_CONTRACT_VERSION`과 비교해 설정 화면에 호환성 경고를 표시합니다.
+Studio는 `GET /version` 응답의 `api_version`을 `MIN_BUILDER_API_VERSION`과 **SemVer 호환성**
+규칙(Builder ADR 0013)으로 비교해 설정 화면에 경고를 표시합니다. exact-equality 비교가
+아닙니다.
+
+호환성 규칙 (`isBuilderApiCompatible`):
+
+1. `server major == required major` (major가 다르면 breaking — 비호환).
+2. `server >= required` (같은 major 안에서 minor/patch가 최소값 이상).
+3. 더 높은 additive minor/patch는 호환으로 간주합니다 (예: 최소값 1.18.0에 대해 Builder
+   1.21.0은 호환).
+4. 파싱 불가/형식 오류인 버전 문자열은 fail-closed로 비호환 처리합니다.
+
+`MIN_BUILDER_API_VERSION`은 Studio의 현재 통합 표면(async build job + cooperative
+cancel + manifest status/partial + provider credential + monitoring + publish)이 요구하는
+**최소** Builder API 버전입니다. cancellation과 manifest status/partial이 Builder
+1.18.0에서 도입됐고 Studio가 이 둘을 실제로 사용하므로 최소값은 `1.18.0`입니다.
+1.19~1.21에 추가된 미사용 endpoint는 이 최소값에 반영하지 않으며 Studio에 구현하지도
+않습니다.
 
 정합성 규칙:
 
-1. Builder OpenAPI `info.version`과 Builder service `API_CONTRACT_VERSION`이 먼저 일치해야 합니다.
-2. Studio `API_CONTRACT_VERSION`은 실제로 지원하는 Builder 계약 버전만 가리킵니다.
-3. Builder operation이 추가/삭제되면 Studio 클라이언트 구현과 `contractConformance.test.ts`를 함께 갱신합니다.
-4. 문서만 바꿔서 계약 drift를 덮지 않습니다.
+1. `MIN_BUILDER_API_VERSION`은 Studio가 실제로 호출·검토한 operation이 요구하는 최소
+   버전만 가리킵니다.
+2. Builder operation이 추가/삭제되면 Studio 클라이언트 구현과
+   `contractConformance.test.ts`를 함께 갱신합니다.
+3. 문서만 바꿔서 계약 drift를 덮지 않습니다.
 
 ## 4. BuildSpec 매핑 원칙
 

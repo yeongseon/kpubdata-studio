@@ -47,7 +47,8 @@ describe("build-centric routes", () => {
     // run(dur-pregnancy-taboo-20260621, status: running)으로 canonical 상태를 확인한다.
     renderAt("/builds/dur-pregnancy-taboo-20260621/run", <BuildRunPage />);
     expect(await screen.findByText("실행 중")).toBeInTheDocument();
-    expect(screen.getByText("상세 진행 정보 미지원")).toBeInTheDocument();
+    expect(screen.getByText("상세 진행은 Build 상세에서 확인하세요")).toBeInTheDocument();
+    expect(screen.queryByText(/미지원/)).not.toBeInTheDocument();
   });
 
   it("renders the artifacts page with a manifest section", async () => {

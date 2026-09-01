@@ -137,3 +137,48 @@ describe("BuildArtifactsPage - Issue #119: undefined vs empty array", () => {
     expect(screen.getByText("100")).toBeInTheDocument();
   });
 });
+
+describe("BuildArtifactsPage - manifest truthfulness (F05A)", () => {
+  it("full authoritative manifest shows no stale '미연동' warning", async () => {
+    const full: BuildManifest = {
+      schema_version: "1.0.0",
+      build_id: "run-full",
+      build_environment: null,
+      inputs_fingerprint: null,
+      outputs: ["artifacts/builds/run-full/data.jsonl"],
+      row_counts: { "datago.air-quality": 100 },
+      provenance: [
+        {
+          provider: "datago",
+          dataset: "air-quality",
+          fetched_at: "2026-06-21T00:00:00+00:00",
+          record_count: 100,
+          data_checksum: "sha256:abc",
+          api_version: "1.0",
+          params: {},
+        },
+      ],
+    };
+
+    renderWithManifest(full);
+    await waitFor(() => expect(screen.getByText("Manifest 요약")).toBeInTheDocument());
+    expect(screen.queryByText(/아직 연동되지 않아/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/manifest가 아직 연동/)).not.toBeInTheDocument();
+  });
+
+  it("legacy/partial manifest is described factually (missing metadata, not 'API not integrated')", async () => {
+    const partial: BuildManifest = {
+      schema_version: "1.0.0",
+      build_id: "run-partial",
+      build_environment: null,
+      inputs_fingerprint: null,
+      outputs: ["artifacts/builds/run-partial/data.jsonl"],
+      // row_counts / provenance 없음
+    };
+
+    renderWithManifest(partial);
+    await waitFor(() => expect(screen.getByText("Manifest 요약")).toBeInTheDocument());
+    expect(screen.getByText(/일부 메타데이터 필드/)).toBeInTheDocument();
+    expect(screen.queryByText(/아직 연동되지 않아/)).not.toBeInTheDocument();
+  });
+});

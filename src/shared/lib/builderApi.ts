@@ -22,18 +22,53 @@ import * as schemas from "./builderApi.schema";
 import { z } from "zod";
 
 /**
- * Studio가 실제로 검토·연동한 Builder API 계약 버전(고정 pin, "최신 Builder main과 항상
- * 동일"이 아니다). 1.17.0은 Builder PR #547에서 검토한 idempotent publish
- * readiness/POST 계약까지 포함한다.
+ * Studio의 현재 통합 표면(async build job + cooperative cancel + manifest
+ * status/partial + provider credential + monitoring + publish)이 요구하는 **최소**
+ * Builder API 버전이다. exact contract pin이 아니다 — Builder ADR 0013에 따라
+ * Studio는 "같은 major, server >= 이 최소값"이면 호환으로 간주하고, 더 높은
+ * additive minor/patch(1.19~1.21 등)는 그대로 허용한다.
  *
- * Builder는 additive 변경마다 이 값을 계속 올린다. Studio는 자신이 실제로 검토·
- * 연동한 버전만 고정한다 — 현재는 async build job과 publish 표면까지 검토·연동했다.
- * 미연동 operation(예:
- * provider credentials 1.8.0, monitoring 1.11.0)은 여기 숫자에 반영해도 실제
- * 호출이 없으므로 따로 올리지 않는다. pin 정책 자체는 builder ADR 0013(#521)의
- * 기능별 최소 SemVer 판정으로 전환 중이다.
+ * cancellation(POST /builds/{id}/cancel)과 manifest status/partial 필드는 Builder
+ * 1.18.0에서 도입됐고 Studio가 실제로 이 둘을 사용하므로, 통합 표면의 최소값은
+ * 1.18.0이다. 1.19~1.21에 추가된 미사용 endpoint는 이 최소값에 반영하지 않으며
+ * Studio에 별도로 구현하지도 않는다.
  */
-export const API_CONTRACT_VERSION = "1.17.0";
+export const MIN_BUILDER_API_VERSION = "1.18.0";
+
+/** `major.minor.patch` 세 부분으로 파싱한다. 형식이 어긋나면 null(fail-closed 신호). */
+function parseSemver(version: string): [number, number, number] | null {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version.trim());
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+/**
+ * Builder가 보고한 `api_version`이 Studio 통합 표면과 호환되는지 판정한다 (ADR 0013).
+ *
+ * 규칙:
+ * - server major == required major (major가 다르면 breaking — 2.0.0은 비호환)
+ * - server >= required (같은 major 안에서 minor/patch가 최소값 이상)
+ * - 더 높은 additive minor/patch는 호환 (1.21.0 OK)
+ * - 파싱 불가/형식 오류는 fail-closed로 비호환 처리
+ *
+ * @param serverVersion - GET /version 응답의 `api_version`.
+ * @param requiredVersion - 요구 최소 버전(기본 MIN_BUILDER_API_VERSION).
+ */
+export function isBuilderApiCompatible(
+  serverVersion: string | undefined | null,
+  requiredVersion: string = MIN_BUILDER_API_VERSION,
+): boolean {
+  if (!serverVersion) return false;
+  const server = parseSemver(serverVersion);
+  const required = parseSemver(requiredVersion);
+  if (!server || !required) return false;
+  if (server[0] !== required[0]) return false;
+  for (let i = 0; i < 3; i++) {
+    if (server[i] > required[i]) return true;
+    if (server[i] < required[i]) return false;
+  }
+  return true;
+}
 
 /** 실제 Builder 호출 활성화 여부(미설정 시 mock 사용). */
 export function isRealBuilderEnabled(): boolean {
@@ -375,6 +410,7 @@ export type ProviderTestResponse = schemas.ProviderTestResponse;
 export type UploadMetadata = schemas.UploadMetadata;
 export type ProviderSummary = schemas.ProviderSummary;
 export type ProvidersResponse = schemas.ProvidersResponse;
+export type ProviderCredentialResponse = schemas.ProviderCredentialResponse;
 export type PreviewDiffItem = schemas.PreviewDiffItem;
 export type PreviewTransformSummary = schemas.PreviewTransformSummary;
 export type StageStatus = schemas.StageStatus;
@@ -667,6 +703,20 @@ export const builderApi = {
       `/providers/${encodeURIComponent(provider)}/status`,
       { signal, retries: 1 },
       schemas.providerTestResponseSchema,
+    ),
+
+  /**
+   * GET /providers/{provider}/credential — 현재 principal이 저장한 credential의
+   * 메타데이터(#259, ADR 0012). `{ configured, masked, updated_at }`만 반환하며 raw
+   * secret은 포함하지 않는다. GET /providers 요약의 `configured`(effective provider
+   * configuration)와 달리 이 `configured`는 "이 사용자가 직접 저장한 credential이
+   * 있는지"만 뜻한다.
+   */
+  getProviderCredential: (provider: string, signal?: AbortSignal) =>
+    apiFetch(
+      `/providers/${encodeURIComponent(provider)}/credential`,
+      { signal, retries: 1 },
+      schemas.providerCredentialResponseSchema,
     ),
 
   /**

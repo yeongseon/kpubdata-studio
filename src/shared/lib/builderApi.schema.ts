@@ -305,6 +305,19 @@ export const providerTestResponseSchema = z.object({
   response_code: z.number().int().min(100).max(599).optional(),
 });
 
+/**
+ * GET /providers/{provider}/credential — 현재 principal이 저장한 credential의 메타데이터만
+ * 반환한다(ADR 0012). raw secret은 어떤 필드에도 들어 있지 않다. `configured`는 이 사용자가
+ * 직접 저장한 credential이 있는지이며, GET /providers 요약의 `configured`(effective provider
+ * configuration: user credential > server default > 없음)와는 의미가 다르다.
+ * `masked`/`updated_at`은 저장된 credential이 없으면 null이다.
+ */
+export const providerCredentialResponseSchema = z.object({
+  configured: z.boolean(),
+  masked: z.string().nullable(),
+  updated_at: z.string().nullable(),
+}).strict();
+
 /** kind="file" source 업로드 메타데이터(secret-free, content는 포함하지 않음). */
 export const uploadMetadataSchema = z.object({
   upload_id: z.string().regex(/^upl_[a-f0-9]{32}$/),
@@ -318,6 +331,7 @@ export const uploadMetadataSchema = z.object({
 export type ProviderSummary = z.infer<typeof providerSummarySchema>;
 export type ProvidersResponse = z.infer<typeof providersResponseSchema>;
 export type ProviderTestResponse = z.infer<typeof providerTestResponseSchema>;
+export type ProviderCredentialResponse = z.infer<typeof providerCredentialResponseSchema>;
 export type UploadMetadata = z.infer<typeof uploadMetadataSchema>;
 
 /**

@@ -193,6 +193,24 @@ describe("builderApi client (#29)", () => {
     expect(init.method).toBe("GET");
   });
 
+  it("getProviderCredential() parses the exact Builder GET wire body (no provider field)", async () => {
+    // Builder SSOT: GET /providers/{provider}/credential returns
+    // ProviderCredentialGetResponse = { configured, masked, updated_at } only.
+    // `provider` is never on the GET response; the schema must accept this body
+    // verbatim (it rejected it while `provider` was wrongly required).
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { configured: false, masked: null, updated_at: null }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderApi.getProviderCredential("datago");
+
+    expect(result).toEqual({ configured: false, masked: null, updated_at: null });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/providers/datago/credential");
+    expect(init.method ?? "GET").toBe("GET");
+  });
+
   it("getPublishReadiness() sends only target=huggingface and parses the exact Run", async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {
       run_id: "run-270",

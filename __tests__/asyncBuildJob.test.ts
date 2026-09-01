@@ -60,7 +60,10 @@ function mixedSpec(datasetId: string): BuildSpec {
 beforeEach(() => {
   vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 describe("async build job polling (#245)", () => {
   it("submits, polls through queued/running, and maps terminal success", async () => {
@@ -179,6 +182,148 @@ describe("async build job polling (#245)", () => {
     expect(result.current.interrupted).toBe(true);
     buildSpy.mockRestore();
     cancelSpy.mockRestore();
+  });
+});
+
+describe("async pre-submit cancellation race (F03)", () => {
+  it("deferred submit: Cancel before submit resolves does not hit cancel endpoint, then hits it exactly once with the authoritative run_id", async () => {
+    // POST /builds 응답을 테스트가 직접 제어한다.
+    let resolveSubmit: (v: {
+      run_id: string;
+      status: BuilderJobStatus;
+      created_at: string;
+      updated_at: string;
+    }) => void = () => {};
+    const submitSpy = vi
+      .spyOn(builderApi, "submitBuild")
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSubmit = resolve;
+          }),
+      );
+
+    // 서버가 준 authoritative run_id는 client가 생성한 값과 다르다.
+    const AUTHORITATIVE = "authoritative-run-xyz";
+    const pollStates: BuilderJobStatus[] = ["cancelling", "cancelled"];
+    let pollIndex = 0;
+    const getJobSpy = vi.spyOn(builderApi, "getBuildJob").mockImplementation(async () => ({
+      run_id: AUTHORITATIVE,
+      status: pollStates[Math.min(pollIndex++, pollStates.length - 1)],
+      created_at: "2026-08-16T09:00:00+00:00",
+      updated_at: "2026-08-16T09:00:05+00:00",
+    }));
+    const cancelSpy = vi
+      .spyOn(builderApi, "cancelBuildJob")
+      .mockResolvedValue({
+        run_id: AUTHORITATIVE,
+        status: "cancelling",
+        created_at: "2026-08-16T09:00:00+00:00",
+        updated_at: "2026-08-16T09:00:05+00:00",
+      });
+
+    const { result } = renderHook(() => useBuildJob());
+
+    let promise: Promise<void> = Promise.resolve();
+    act(() => {
+      promise = result.current.start(specOf("pub"));
+    });
+    await waitFor(() => expect(result.current.status).toBe("running"));
+
+    // submit이 아직 보류 중일 때 Cancel을 여러 번 누른다.
+    act(() => {
+      result.current.cancel();
+      result.current.cancel();
+      result.current.cancel();
+    });
+
+    // 이 시점에는 cancel endpoint가 호출되지 않았고, local 상태도 취소/중단이 아니다.
+    expect(cancelSpy).not.toHaveBeenCalled();
+    expect(result.current.status).toBe("running");
+    expect(result.current.interrupted).toBe(false);
+    // 사용자 Cancel 때문에 submit 요청 자체를 abort하지 않는다.
+    expect(submitSpy).toHaveBeenCalledTimes(1);
+
+    // submit 성공 → authoritative run_id 확보.
+    await act(async () => {
+      resolveSubmit({
+        run_id: AUTHORITATIVE,
+        status: "queued",
+        created_at: "2026-08-16T09:00:00+00:00",
+        updated_at: "2026-08-16T09:00:00+00:00",
+      });
+      await promise.catch(() => undefined);
+    });
+
+    // pending intent가 authoritative run_id로 정확히 1회 협조적 취소를 건다.
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
+    expect(cancelSpy).toHaveBeenCalledWith(AUTHORITATIVE);
+    expect(getJobSpy).toHaveBeenCalled();
+
+    // cancelling → cancelled polling을 관찰해 최종 상태를 확정한다.
+    expect(result.current.builderStatus).toBe("cancelled");
+    expect(result.current.status).toBe("cancelled");
+    expect(result.current.run?.status).toBe("cancelled");
+
+    submitSpy.mockRestore();
+    getJobSpy.mockRestore();
+    cancelSpy.mockRestore();
+  });
+
+  it("repeated early Cancel coalesces to a single cancel endpoint call", async () => {
+    let resolveSubmit: (v: {
+      run_id: string;
+      status: BuilderJobStatus;
+      created_at: string;
+      updated_at: string;
+    }) => void = () => {};
+    vi.spyOn(builderApi, "submitBuild").mockImplementation(
+      () => new Promise((resolve) => { resolveSubmit = resolve; }),
+    );
+    let pollIndex = 0;
+    const pollStates: BuilderJobStatus[] = ["cancelling", "cancelled"];
+    vi.spyOn(builderApi, "getBuildJob").mockImplementation(async () => ({
+      run_id: "r1",
+      status: pollStates[Math.min(pollIndex++, pollStates.length - 1)],
+      created_at: "2026-08-16T09:00:00+00:00",
+      updated_at: "2026-08-16T09:00:05+00:00",
+    }));
+    const cancelSpy = vi.spyOn(builderApi, "cancelBuildJob").mockResolvedValue({
+      run_id: "r1",
+      status: "cancelling",
+      created_at: "2026-08-16T09:00:00+00:00",
+      updated_at: "2026-08-16T09:00:05+00:00",
+    });
+
+    const { result } = renderHook(() => useBuildJob());
+    let promise: Promise<void> = Promise.resolve();
+    act(() => {
+      promise = result.current.start(specOf("pub"));
+    });
+    await waitFor(() => expect(result.current.status).toBe("running"));
+
+    act(() => {
+      result.current.cancel();
+      result.current.cancel();
+    });
+
+    await act(async () => {
+      resolveSubmit({
+        run_id: "r1",
+        status: "queued",
+        created_at: "2026-08-16T09:00:00+00:00",
+        updated_at: "2026-08-16T09:00:00+00:00",
+      });
+      await promise.catch(() => undefined);
+    });
+
+    // handle이 온 뒤 한 번 더 눌러도 여전히 1회.
+    act(() => {
+      result.current.cancel();
+    });
+
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("cancelled");
   });
 });
 

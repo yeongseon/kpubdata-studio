@@ -2,7 +2,11 @@
  * 빌드 결과물 페이지 (/builds/:buildId/artifacts).
  *
  * manifest 요약, 생성 파일 목록, manifest 원본(JSON)을 보여준다(제안 §5.7, #30).
- * 현재 manifest는 mock이며 #29 Builder API 연동 시 실제 데이터로 교체된다.
+ *
+ * 실연동 모드에서는 `GET /builds/{run_id}/manifest`의 authoritative manifest 본문을
+ * 그대로 렌더링한다. 일부 legacy/partial 실행은 manifest에 메타데이터 필드가 없을 수
+ * 있으며, 그 경우에만 "일부 메타데이터가 없다"고 사실대로 안내한다. mock 모드에서는
+ * 결정적 fixture manifest를 쓴다.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -61,7 +65,7 @@ export function BuildArtifactsPage() {
   const totalRecords = manifest?.row_counts
     ? Object.values(manifest.row_counts).reduce((sum, count) => sum + count, 0)
     : undefined;
-  // 실연동 모드 경고 배너용: 핵심 메타데이터(레코드 수/출처)가 제공되지 않으면 안내한다.
+  // legacy/partial manifest 안내용: 일부 실행은 manifest에 메타데이터 필드가 없다.
   const hasMetadata =
     manifest?.row_counts !== undefined && manifest?.provenance !== undefined;
 
@@ -164,10 +168,9 @@ export function BuildArtifactsPage() {
               manifest.json
             </p>
             {!hasMetadata && (
-              <p className="mt-2 text-xs text-orange-600 dark:text-orange-400">
-                실연동 모드에서는 Builder /build 응답 manifest가 아직 연동되지 않아, 
-                메타데이터 필드(시간/환경/지문/레코드 수/스키마/출처)가 제공되지 않습니다. 
-                파일 목록(outputs)만 실제 데이터입니다.
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                이 실행의 manifest에는 일부 메타데이터 필드(레코드 수·스키마·출처 등)가
+                포함되어 있지 않습니다. 파일 목록(outputs)은 그대로 사용할 수 있습니다.
               </p>
             )}
             <pre className="mt-4 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">

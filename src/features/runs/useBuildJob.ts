@@ -63,12 +63,28 @@ export function useBuildJob(): BuildJob {
   // 진행 중인 실행이 어떤 Builder 표면(sync/async)을 타는지와 그 run_id. 사용자 취소가
   // async job에 대해 POST /builds/{run_id}/cancel을 호출할 수 있게 한다.
   const handleRef = useRef<BuildExecutionHandle | null>(null);
+  // async submit이 아직 진행 중일 때(= handle 미노출) 눌린 Cancel의 intent. abort하지
+  // 않고 보관했다가, authoritative run_id가 담긴 handle이 오면 정확히 1회 반영한다(F03).
+  const pendingCancelRef = useRef(false);
+  // 이 실행에 대해 async 협조적 취소를 이미 1회 쐈는지(반복 early Cancel coalesce).
+  const cancelIssuedRef = useRef(false);
+
+  // async job에 대한 협조적 취소를 정확히 1회 요청한다. polling은 끊지 않는다 —
+  // Builder terminal status가 최종 정답이고, cancel 요청 실패도 local cancelled로
+  // 바꾸지 않는다(#S03).
+  const issueAsyncCancel = useCallback((runId: string) => {
+    if (cancelIssuedRef.current) return;
+    cancelIssuedRef.current = true;
+    void builderApi.cancelBuildJob(runId).catch(() => {});
+  }, []);
 
   const start = useCallback(async (spec: BuildSpec) => {
     if (controllerRef.current) return;
     const controller = new AbortController();
     controllerRef.current = controller;
     handleRef.current = null;
+    pendingCancelRef.current = false;
+    cancelIssuedRef.current = false;
     setStatus("running");
     setBuilderStatus(undefined);
     setError(undefined);
@@ -83,6 +99,11 @@ export function useBuildJob(): BuildJob {
         },
         (handle) => {
           handleRef.current = handle;
+          // submit 이전에 Cancel이 눌려 있었다면, authoritative run_id가 확보된 지금
+          // 정확히 1회 협조적 취소를 건다(F03).
+          if (handle.mode === "async" && pendingCancelRef.current) {
+            issueAsyncCancel(handle.runId);
+          }
         },
       );
       if (controller.signal.aborted) return;
@@ -121,18 +142,27 @@ export function useBuildJob(): BuildJob {
       // 실제 Builder에 협조적 취소를 요청하고 polling은 그대로 둔다 — "취소된 척"
       // 하며 polling을 끊지 않고, Builder가 cancelling → cancelled terminal에 도달하는
       // 것을 관찰해 최종 상태(result.status)로 판정한다(#S03). 이미 terminal이거나
-      // 네트워크 오류면 polling 결과가 authoritative하므로 여기서는 삼킨다 —
-      // cancel 요청 실패를 local `cancelled`로 바꾸지 않는다.
-      void builderApi.cancelBuildJob(handle.runId).catch(() => {});
+      // 네트워크 오류면 polling 결과가 authoritative하므로 issueAsyncCancel이 삼킨다 —
+      // cancel 요청 실패를 local `cancelled`로 바꾸지 않는다. 반복 호출은 1회로 coalesce된다.
+      issueAsyncCancel(handle.runId);
       return;
     }
-    // sync `POST /build`(file source, ADR 0014) 또는 아직 run_id를 모르는 상태:
-    // server-side 협조적 취소 경로가 없다. fetch abort는 클라이언트 요청만 중단할 뿐
-    // Builder 실행을 취소하지 않으므로, 성공/실패/취소 중 무엇도 확정하지 않고
-    // "요청을 클라이언트에서 중단했다"는 사실만 남긴다.
-    controllerRef.current?.abort();
-    setInterrupted(true);
-  }, []);
+    if (handle?.mode === "sync") {
+      // sync `POST /build`(file source, ADR 0014): server-side 협조적 취소 경로가 없다.
+      // fetch abort는 클라이언트 요청만 중단할 뿐 Builder 실행을 취소하지 않으므로,
+      // 성공/실패/취소 중 무엇도 확정하지 않고 "요청을 클라이언트에서 중단했다"는
+      // 사실만 남긴다(#S04, 기존 동작 유지).
+      controllerRef.current?.abort();
+      setInterrupted(true);
+      return;
+    }
+    // 아직 handle이 없다 = async POST /builds 제출이 진행 중이다. 여기서 fetch를
+    // abort하면 서버가 이미 submit을 받았는지 알 수 없어 orphan build가 생길 수 있다.
+    // 그래서 abort하지 않고 "cancel 요청됨" intent만 기록한다 — submit이 성공해
+    // authoritative run_id가 담긴 handle이 오면 그때 정확히 1회 협조적 취소를 건다(F03).
+    // 반복해서 눌러도 boolean이라 1회로 coalesce된다.
+    pendingCancelRef.current = true;
+  }, [issueAsyncCancel]);
 
   // 언마운트 시 진행 중인 실행을 중단해 unmount 이후 setState를 방지한다(#73).
   useEffect(() => () => controllerRef.current?.abort(), []);
