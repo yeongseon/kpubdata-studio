@@ -164,6 +164,12 @@ export function HomePage() {
   useEffect(() => {
     let active = true;
 
+    // real Builder의 aggregate는 Recent Builds와 독립적인 API 경계다. /builds의
+    // 성공 여부나 빈 목록 여부와 무관하게 즉시 시작한다.
+    if (realBuilder) {
+      loadRealKpis(() => active, setStats, setKpi);
+    }
+
     // Recent Builds는 KPI 요청과 완전히 독립이다 — 받는 즉시 커밋하고, 실패하면
     // KPI와 무관하게 그 섹션만 에러 상태로 둔다.
     listBuilds()
@@ -172,21 +178,16 @@ export function HomePage() {
         setBuilds(list);
         setBuildsState("success");
 
-        // 빌드가 없다 — monitoring/quality aggregate는 여기서 부르지 않는다. 다만
-        // 신규 사용자 판정에는 authoritative dataset total이 필요하므로 real 모드에서는
-        // 그것만 독립적으로 조회한다(total 없음/실패 시 신규로 확정하지 않는다).
+        // real 모드 aggregate는 effect 시작 시 이미 독립적으로 요청했다. 빈 build는
+        // 신규 사용자 판정의 한 근거일 뿐, monitoring/quality를 unavailable로 만들지 않는다.
         if (list.length === 0) {
-          if (realBuilder) {
-            setKpi({ datasets: "loading", monitoring: "unavailable", quality: "unavailable" });
-            loadDatasetTotal(() => active, setStats, setKpi);
-          } else {
+          if (!realBuilder) {
             setKpi({ datasets: "unavailable", monitoring: "unavailable", quality: "unavailable" });
           }
           return;
         }
 
         if (realBuilder) {
-          loadRealKpis(() => active, setStats, setKpi);
           return;
         }
 
@@ -202,8 +203,11 @@ export function HomePage() {
       .catch(() => {
         if (!active) return;
         setBuildsState("error");
-        // 빌드 목록을 못 받으면 KPI 근거도 없다 — 임의값 대신 전부 "확인 불가".
-        setKpi({ datasets: "unavailable", monitoring: "unavailable", quality: "unavailable" });
+        // real aggregate는 /builds 오류와 독립적으로 계속 진행한다. mock/demo의
+        // 기존 동작만 유지해, 근거 없는 KPI를 표시하지 않는다.
+        if (!realBuilder) {
+          setKpi({ datasets: "unavailable", monitoring: "unavailable", quality: "unavailable" });
+        }
       });
 
     return () => {

@@ -74,6 +74,13 @@ type CredentialMetaState =
       updatedAt: string | null;
     };
 
+/** Builder가 명시한 credential store 미구성 응답만 operator remediation으로 분류한다. */
+export function isCredentialStoreUnavailable(cause: unknown): boolean {
+  if (!(cause instanceof ApiError) || cause.status !== 503) return false;
+  if (!cause.details || typeof cause.details !== "object" || Array.isArray(cause.details)) return false;
+  return (cause.details as { error?: unknown }).error === "credential store is not configured";
+}
+
 /** Builder GET /providers 요약을 화면 모델로 변환한다(연결 상태는 별도 status 점검으로 채운다). */
 function mapProviderSummary(summary: ProviderSummary): ProviderConfig {
   return {
@@ -116,19 +123,28 @@ export function ProviderPage() {
         const response = await builderApi.listProviders();
         const mapped = response.providers.map(mapProviderSummary);
         setProviders(mapped);
-        setSelectedProvider((current) => {
-          if (!current) return null;
-          const next = mapped.find((p) => p.id === current.id);
-          if (!next) return null;
-          // 연결 테스트 결과는 목록 새로고침으로 잃지 않도록 보존한다.
-          return {
-            ...next,
-            status: current.status,
-            latency: current.latency,
-            checkedAt: current.checkedAt,
-            errorCategory: current.errorCategory,
-          };
-        });
+        // ref는 사용자 선택의 동기적 source of truth다. state updater/effect가 늦게
+        // 실행되며 이미 B로 바뀐 ref를 A로 되돌리면 stale mutation refresh가 시작될 수
+        // 있으므로, 목록 응답으로 선택을 재결정하지 않는다. 실제 목록에서 사라진 경우만
+        // 명시적으로 선택을 해제한다.
+        const selectedId = selectedProviderIdRef.current;
+        const next = selectedId ? mapped.find((provider) => provider.id === selectedId) : undefined;
+        if (!next) {
+          if (selectedId) selectedProviderIdRef.current = null;
+          setSelectedProvider(null);
+        } else {
+          setSelectedProvider((current) =>
+            current?.id === next.id
+              ? {
+                  ...next,
+                  status: current.status,
+                  latency: current.latency,
+                  checkedAt: current.checkedAt,
+                  errorCategory: current.errorCategory,
+                }
+              : next,
+          );
+        }
       } else {
         // 명시적 mock/demo mode에서만 mock 목록을 쓴다.
         setProviders(getMockProviders());
@@ -144,13 +160,6 @@ export function ProviderPage() {
   useEffect(() => {
     void loadProviders();
   }, [loadProviders]);
-
-  // selectedProvider가 바뀔 때(특히 loadProviders 새로고침으로 선택 provider가
-  // 목록에서 사라져 null이 될 때) ref를 정렬 상태로 유지한다. 네트워크 응답은
-  // 항상 이 커밋/effect 이후에 도착하므로, 진행 중이던 조회의 stale 판정 기준이 된다.
-  useEffect(() => {
-    selectedProviderIdRef.current = selectedProvider?.id ?? null;
-  }, [selectedProvider]);
 
   /**
    * 선택된 provider의 "사용자 저장 credential" 메타데이터를 authoritative하게 다시 읽는다.
@@ -185,7 +194,7 @@ export function ProviderPage() {
         }
       } catch (cause) {
         if (!stillCurrent()) return;
-        if (cause instanceof ApiError && cause.status === 503) {
+        if (isCredentialStoreUnavailable(cause)) {
           setCredentialMeta({ status: "store_unavailable" });
           return;
         }
@@ -264,13 +273,17 @@ export function ProviderPage() {
         setCredentialForm({ credential: "" });
         setShowCredentialForm(false);
       }
-      // metadata/provider 요약은 provider 전환 여부와 무관하게 authoritative하게
-      // 갱신한다 — loadCredentialMeta는 내부 guard로 stale 결과를 반영하지 않는다.
-      await Promise.all([loadProviders(), loadCredentialMeta(provider)]);
+      // 목록은 authoritative하게 갱신하되, 다른 provider를 보고 있으면 A의
+      // provider-specific refresh를 시작하지 않는다. 시작 자체가 global generation을
+      // 올려 B의 pending GET을 stale로 만들 수 있기 때문이다.
+      await loadProviders();
+      if (selectedProviderIdRef.current === provider.id) {
+        await loadCredentialMeta(provider);
+      }
     } catch (cause) {
       if (selectedProviderIdRef.current !== provider.id) return;
       setError(
-        cause instanceof ApiError && cause.status === 503
+        isCredentialStoreUnavailable(cause)
           ? "Builder에 자격 증명 저장소(master key)가 구성되어 있지 않아 저장할 수 없습니다."
           : "Credential 저장에 실패했습니다",
       );
@@ -285,13 +298,16 @@ export function ProviderPage() {
       if (isRealBuilderEnabled()) {
         await builderApi.deleteProviderCredential(provider.id);
       }
-      // 삭제 후 metadata와 provider 요약을 다시 authoritative하게 갱신한다.
-      await Promise.all([loadProviders(), loadCredentialMeta(provider)]);
+      // 저장과 동일하게, 선택을 떠난 provider의 metadata refresh는 시작하지 않는다.
+      await loadProviders();
+      if (selectedProviderIdRef.current === provider.id) {
+        await loadCredentialMeta(provider);
+      }
     } catch (cause) {
       // 삭제 도중 다른 provider로 옮겼다면 이 실패를 현재 화면 에러로 노출하지 않는다.
       if (selectedProviderIdRef.current !== provider.id) return;
       setError(
-        cause instanceof ApiError && cause.status === 503
+        isCredentialStoreUnavailable(cause)
           ? "Builder에 자격 증명 저장소(master key)가 구성되어 있지 않아 삭제할 수 없습니다."
           : "Credential 삭제에 실패했습니다",
       );

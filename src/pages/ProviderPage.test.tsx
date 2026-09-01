@@ -14,7 +14,8 @@ import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse, delay } from "msw";
 import { mswServer } from "../../vitest.setup";
 import { API_BASE } from "@/shared/config/env";
-import { ProviderPage } from "./ProviderPage";
+import { ProviderPage, isCredentialStoreUnavailable } from "./ProviderPage";
+import { ApiError } from "@/shared/lib/builderApi";
 
 const PROVIDERS = {
   providers: [
@@ -88,6 +89,61 @@ describe("ProviderPage credential 상태", () => {
     expect(screen.queryByRole("button", { name: "삭제" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "등록하기" })).not.toBeInTheDocument();
   });
+
+  it("unrelated credential GET 503은 일반 조회 실패로 표시한다", async () => {
+    mswServer.use(
+      http.get(`${API_BASE}/providers/datago/credential`, () =>
+        HttpResponse.json({ error: "upstream temporarily unavailable" }, { status: 503 }),
+      ),
+    );
+    renderProviders();
+    await selectProvider("datago");
+
+    expect(await screen.findByText("자격 증명 상태를 불러오지 못했습니다", undefined, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.queryByText("자격 증명 저장소가 아직 구성되지 않았습니다")).not.toBeInTheDocument();
+  });
+
+  it("unrelated credential PUT/DELETE 503은 master key 안내 대신 일반 실패로 표시한다", async () => {
+    let configured = false;
+    mswServer.use(
+      http.get(`${API_BASE}/providers/datago/credential`, () =>
+        HttpResponse.json({ configured, masked: configured ? "dg••••99" : null, updated_at: null }),
+      ),
+      http.put(`${API_BASE}/providers/datago/credential`, () =>
+        HttpResponse.json({ error: "upstream temporarily unavailable" }, { status: 503 }),
+      ),
+      http.delete(`${API_BASE}/providers/datago/credential`, () =>
+        HttpResponse.json({ error: "upstream temporarily unavailable" }, { status: 503 }),
+      ),
+    );
+    renderProviders();
+    await selectProvider("datago");
+
+    fireEvent.click(await screen.findByRole("button", { name: "등록하기" }));
+    fireEvent.change(screen.getByPlaceholderText("API Key를 입력하세요"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    expect(await screen.findByText("Credential 저장에 실패했습니다", undefined, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.queryByText(/master key/)).not.toBeInTheDocument();
+
+    configured = true;
+    fireEvent.click(screen.getAllByText("datago")[0].closest("li") as HTMLElement);
+    expect(await screen.findByRole("button", { name: "삭제" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "삭제" }));
+    expect(await screen.findByText("Credential 삭제에 실패했습니다", undefined, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.queryByText(/master key/)).not.toBeInTheDocument();
+  });
+});
+
+describe("isCredentialStoreUnavailable", () => {
+  it("정확한 Builder 503 payload만 저장소 미구성으로 판별한다", () => {
+    expect(
+      isCredentialStoreUnavailable(
+        new ApiError(503, "Service Unavailable", { error: "credential store is not configured" }),
+      ),
+    ).toBe(true);
+    expect(isCredentialStoreUnavailable(new ApiError(503, "Service Unavailable", { error: "upstream down" }))).toBe(false);
+    expect(isCredentialStoreUnavailable(new ApiError(500, "boom", { error: "credential store is not configured" }))).toBe(false);
+  });
 });
 
 describe("ProviderPage provider 전환 race", () => {
@@ -159,12 +215,50 @@ describe("ProviderPage provider 전환 race", () => {
     await selectProvider("kosis");
     expect(await screen.findByRole("button", { name: "등록하기" })).toBeInTheDocument();
 
-    // 임의 sleep 대신, PUT 완료 후의 loadCredentialMeta(datago) refresh가 실제로
-    // 발생했음을 GET 횟수로 결정적으로 기다린다(초기 조회 1 + mutation 후 refresh 1).
-    // waitFor가 폴링을 act()로 감싸므로 뒤늦은 state 갱신도 act 안에서 flush된다.
-    await waitFor(() => expect(datagoCredentialGets).toBeGreaterThanOrEqual(2));
+    // B로 떠난 뒤에는 stale A metadata refresh를 새로 시작하지 않는다.
+    await waitFor(() => expect(datagoStored).toBe(true));
+    expect(datagoCredentialGets).toBe(1);
 
     expect(screen.queryByText(/DATAGO-NEWKEY/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "등록하기" })).toBeInTheDocument();
+  });
+
+  it("A mutation 완료가 pending B credential GET을 stale 처리하지 않는다", async () => {
+    let resolveKosis: ((response: Response) => void) | undefined;
+    let resolvePut: ((response: Response) => void) | undefined;
+    let datagoCredentialGets = 0;
+    mswServer.use(
+      http.get(`${API_BASE}/providers/datago/credential`, () => {
+        datagoCredentialGets += 1;
+        return HttpResponse.json({ configured: false, masked: null, updated_at: null });
+      }),
+      http.put(`${API_BASE}/providers/datago/credential`, () =>
+        new Promise<Response>((resolve) => {
+          resolvePut = resolve;
+        }),
+      ),
+      http.get(`${API_BASE}/providers/kosis/credential`, () =>
+        new Promise<Response>((resolve) => {
+          resolveKosis = resolve;
+        }),
+      ),
+    );
+    renderProviders();
+
+    await selectProvider("datago");
+    fireEvent.click(await screen.findByRole("button", { name: "등록하기" }));
+    fireEvent.change(screen.getByPlaceholderText("API Key를 입력하세요"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await selectProvider("kosis");
+
+    await waitFor(() => expect(resolveKosis).toBeDefined());
+    await waitFor(() => expect(resolvePut).toBeDefined());
+    resolvePut?.(HttpResponse.json({ provider: "datago", configured: true, masked: "DG", updated_at: null }));
+    // A의 stale mutation 완료가 B request-generation을 증가시키지 않는다.
+    await waitFor(() => expect(datagoCredentialGets).toBe(1));
+    expect(datagoCredentialGets).toBe(1);
+    resolveKosis?.(HttpResponse.json({ configured: false, masked: null, updated_at: null }));
+
+    expect(await screen.findByRole("button", { name: "등록하기" })).toBeInTheDocument();
   });
 });

@@ -178,7 +178,7 @@ describe("HomePage 대시보드 KPI", () => {
     renderHome();
 
     expect(await within(kpiCard("QUALITY WARN (24H)")).findByText("4")).toBeInTheDocument();
-    expect(within(kpiCard("DATASETS")).getByText("확인 불가")).toBeInTheDocument();
+    expect(await within(kpiCard("DATASETS")).findByText("확인 불가")).toBeInTheDocument();
     expect(within(kpiCard("DATASETS")).queryByText("1")).not.toBeInTheDocument();
   });
 
@@ -206,16 +206,29 @@ describe("HomePage 대시보드 KPI", () => {
     expect(await screen.findByText("r1")).toBeInTheDocument();
   });
 
-  it("빌드 목록 실패는 Recent Builds만 에러로 만들고 KPI 요청을 유발하지 않는다", async () => {
+  it("빌드가 없어도 기존 사용자의 aggregate KPI는 정상 표시한다", async () => {
+    baseHandlers({
+      builds: () => HttpResponse.json({ builds: [] }),
+      datasets: () => HttpResponse.json({ datasets: [], total: 3 }),
+    });
+    renderHome();
+
+    expect(await screen.findByText("작업 현황을 한눈에 확인하세요")).toBeInTheDocument();
+    expect(await within(kpiCard("DATASETS")).findByText("3")).toBeInTheDocument();
+    expect(await within(kpiCard("SUCCEEDED (24H)")).findByText("9")).toBeInTheDocument();
+    expect(await within(kpiCard("QUALITY WARN (24H)")).findByText("4")).toBeInTheDocument();
+  });
+
+  it("빌드 목록 실패도 Recent Builds만 에러로 만들고 healthy KPI는 유지한다", async () => {
     baseHandlers({ builds: () => HttpResponse.json({ error: "down" }, { status: 500 }) });
     renderHome();
 
     expect(
       await screen.findByText("빌드 목록을 불러올 수 없습니다", undefined, { timeout: 4000 }),
     ).toBeInTheDocument();
-    // 근거 없는 KPI는 전부 "확인 불가" — 임의 숫자 합성 없음.
-    expect(within(kpiCard("DATASETS")).getByText("확인 불가")).toBeInTheDocument();
-    expect(within(kpiCard("QUALITY WARN (24H)")).getByText("확인 불가")).toBeInTheDocument();
+    expect(await within(kpiCard("DATASETS")).findByText("12")).toBeInTheDocument();
+    expect(await within(kpiCard("SUCCEEDED (24H)")).findByText("9")).toBeInTheDocument();
+    expect(await within(kpiCard("QUALITY WARN (24H)")).findByText("4")).toBeInTheDocument();
   });
 });
 
@@ -259,7 +272,7 @@ describe("HomePage 신규 사용자 판정", () => {
     renderHome();
 
     expect(await screen.findByText(DASHBOARD_HEADING)).toBeInTheDocument();
-    expect(within(kpiCard("DATASETS")).getByText("확인 불가")).toBeInTheDocument();
+    expect(await within(kpiCard("DATASETS")).findByText("확인 불가")).toBeInTheDocument();
     expect(screen.queryByText(NEW_USER_HEADING)).not.toBeInTheDocument();
   });
 
