@@ -10,6 +10,7 @@
  */
 import Keycloak, { type KeycloakInitOptions } from "keycloak-js";
 import { getOidcConfig } from "@/shared/config/env";
+import { getStudioUrl } from "./returnTo";
 
 /** Builder 요청 직전, 남은 유효시간이 이보다 짧으면 access token을 refresh한다(초). */
 const TOKEN_MIN_VALIDITY_SECONDS = 30;
@@ -88,8 +89,10 @@ export async function getFreshToken(opts?: { force?: boolean }): Promise<string 
 }
 
 /** 현재 origin으로 돌아오는 Keycloak 로그인 리다이렉트를 시작한다. */
-export function keycloakLogin(): Promise<void> {
-  return getKeycloak().login({ redirectUri: window.location.origin });
+export function keycloakLogin(returnTo = "/", idpHint?: string): Promise<void> {
+  const callback = `/login?${new URLSearchParams({ returnTo }).toString()}`;
+  const options = { redirectUri: getStudioUrl(callback) };
+  return getKeycloak().login(idpHint ? { ...options, idpHint } : options);
 }
 
 /** Keycloak 세션을 종료하고 현재 origin으로 돌아온다. */

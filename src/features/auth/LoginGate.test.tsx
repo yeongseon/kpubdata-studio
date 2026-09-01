@@ -1,16 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { LoginGate } from "./LoginGate";
 import { useAuthStore } from "./store";
 
-// LoginGate는 로그인 버튼용으로 ./keycloak을 import한다 — SDK 경계는 mock한다.
-vi.mock("keycloak-js", () => ({ default: vi.fn(() => ({})) }));
+function LocationDisplay() {
+  const location = useLocation();
+  return <output>{`${location.pathname}${location.search}`}</output>;
+}
 
-function renderGate() {
+function renderGate(path = "/builds?run=abc") {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <LoginGate><div>protected content</div></LoginGate>
+      <LocationDisplay />
     </MemoryRouter>,
   );
 }
@@ -28,58 +31,36 @@ describe("LoginGate", () => {
     expect(screen.getByText("protected content")).toBeInTheDocument();
   });
 
-  it("requires login in real Builder mode when bypass is off (OIDC disabled)", () => {
+  it("preserves a protected deep link in the login redirect", () => {
     vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
     vi.stubEnv("VITE_DEV_BYPASS_AUTH", "false");
     renderGate();
-    expect(screen.getByRole("link", { name: /로그인 페이지/ })).toBeInTheDocument();
+    expect(screen.getByText("/login?returnTo=%2Fbuilds%3Frun%3Dabc")).toBeInTheDocument();
+    expect(screen.queryByText("protected content")).not.toBeInTheDocument();
   });
 
-  it("renders children in real Builder development mode when bypass is explicitly on", () => {
+  it("renders children when development bypass is explicitly on", () => {
     vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
     vi.stubEnv("VITE_DEV_BYPASS_AUTH", "true");
     renderGate();
     expect(screen.getByText("protected content")).toBeInTheDocument();
   });
 
-  it("renders children in real Builder mode when a legacy memory token exists", () => {
+  it("renders children once OIDC reports authenticated", () => {
     vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
-    useAuthStore.getState().setToken("existing-token");
+    useAuthStore.setState({ oidcStatus: "authenticated" });
     renderGate();
     expect(screen.getByText("protected content")).toBeInTheDocument();
   });
 
-  describe("OIDC status (real Builder, bypass off)", () => {
-    beforeEach(() => {
+  it.each(["initializing", "unauthenticated", "error"] as const)(
+    "redirects to login for OIDC status %s",
+    (oidcStatus) => {
       vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
-      vi.stubEnv("VITE_DEV_BYPASS_AUTH", "false");
-    });
-
-    it("shows a loading notice while OIDC is initializing", () => {
-      useAuthStore.setState({ oidcStatus: "initializing" });
-      renderGate();
-      expect(screen.getByText(/확인하는 중/)).toBeInTheDocument();
+      useAuthStore.setState({ oidcStatus });
+      renderGate("/settings");
+      expect(screen.getByText("/login?returnTo=%2Fsettings")).toBeInTheDocument();
       expect(screen.queryByText("protected content")).not.toBeInTheDocument();
-    });
-
-    it("renders children once OIDC reports authenticated", () => {
-      useAuthStore.setState({ oidcStatus: "authenticated" });
-      renderGate();
-      expect(screen.getByText("protected content")).toBeInTheDocument();
-    });
-
-    it("fails closed with an error notice when OIDC init fails", () => {
-      useAuthStore.setState({ oidcStatus: "error" });
-      renderGate();
-      expect(screen.getByText(/초기화하지 못했습니다/)).toBeInTheDocument();
-      expect(screen.queryByText("protected content")).not.toBeInTheDocument();
-    });
-
-    it("offers a Keycloak login CTA when unauthenticated", () => {
-      useAuthStore.setState({ oidcStatus: "unauthenticated" });
-      renderGate();
-      expect(screen.getByRole("button", { name: /Keycloak/ })).toBeInTheDocument();
-      expect(screen.queryByText("protected content")).not.toBeInTheDocument();
-    });
-  });
+    },
+  );
 });

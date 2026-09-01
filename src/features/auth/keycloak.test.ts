@@ -131,10 +131,18 @@ describe("getFreshToken", () => {
 });
 
 describe("login / logout", () => {
-  it("keycloakLogin redirects back to the current origin", async () => {
-    await keycloakLogin();
+  it("keycloakLogin keeps the existing login options when no IdP hint is supplied", async () => {
+    await keycloakLogin("/builds?run=abc");
     expect(mockKeycloak.login).toHaveBeenCalledWith({
-      redirectUri: window.location.origin,
+      redirectUri: `${window.location.origin}/login?returnTo=%2Fbuilds%3Frun%3Dabc`,
+    });
+  });
+
+  it("keycloakLogin passes an IdP hint through to Keycloak", async () => {
+    await keycloakLogin("/builds?run=abc", "google");
+    expect(mockKeycloak.login).toHaveBeenCalledWith({
+      redirectUri: `${window.location.origin}/login?returnTo=%2Fbuilds%3Frun%3Dabc`,
+      idpHint: "google",
     });
   });
 

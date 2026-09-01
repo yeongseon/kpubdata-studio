@@ -12,8 +12,9 @@
  * 기존 Google 로그인 플로우(#187, GoogleLoginButton/gis.ts)는 건드리지 않는다.
  */
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { keycloakLogin } from "@/features/auth/keycloak";
+import { getSafeReturnTo } from "@/features/auth/returnTo";
 import { mockAuthProvider } from "@/features/auth/mockAuthProvider";
 import { useAuthStore } from "@/features/auth/store";
 import { AuthError } from "@/features/auth/types";
@@ -33,6 +34,7 @@ function ProductIntro() {
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const setSession = useAuthStore((state) => state.setSession);
   const oidcStatus = useAuthStore((state) => state.oidcStatus);
   const [email, setEmail] = useState("");
@@ -47,7 +49,7 @@ export function LoginPage() {
     try {
       const session = await mockAuthProvider.signIn({ email, password });
       setSession(session);
-      navigate("/", { replace: true });
+      navigate(returnTo, { replace: true });
     } catch (cause) {
       setError(
         cause instanceof AuthError ? cause.message : "로그인에 실패했습니다. 잠시 후 다시 시도해주세요.",
@@ -59,13 +61,14 @@ export function LoginPage() {
 
   const demoMode = !isRealBuilderEnabled();
   const oidc = getOidcConfig();
+  const returnTo = getSafeReturnTo(new URLSearchParams(location.search).get("returnTo"));
 
   // 이미 Keycloak 세션이 확인되면 앱으로 돌려보낸다(로그인 화면에 머물지 않게).
   useEffect(() => {
     if (!demoMode && oidcStatus === "authenticated") {
-      navigate("/", { replace: true });
+      navigate(returnTo, { replace: true });
     }
-  }, [demoMode, oidcStatus, navigate]);
+  }, [demoMode, oidcStatus, navigate, returnTo]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-5 py-12">
@@ -124,20 +127,30 @@ export function LoginPage() {
                 </Link>
               </p>
             </>
+          ) : oidcStatus === "initializing" ? (
+            <p className="mt-4 text-sm text-muted-foreground">로그인 상태를 확인하는 중입니다.</p>
+          ) : oidcStatus === "error" ? (
+            <ErrorMessage>인증 초기화에 실패했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.</ErrorMessage>
           ) : oidc.status === "ok" ? (
             <div className="mt-4 flex flex-col gap-4">
               <p className="text-sm text-muted-foreground">
-                KPubData 계정(Keycloak)으로 로그인합니다. 비밀번호, 이메일 인증, 비밀번호
-                재설정은 Keycloak에서 처리됩니다.
+                Google 로그인과 KPubData 계정 로그인은 모두 Keycloak에서 안전하게 처리됩니다.
               </p>
-              <Button type="button" onClick={() => void keycloakLogin()}>
-                Keycloak으로 로그인
+              <Button
+                type="button"
+                leadingIcon={<span aria-hidden="true" className="font-semibold">G</span>}
+                onClick={() => void keycloakLogin(returnTo, "google")}
+              >
+                Google로 계속하기
               </Button>
-              {oidcStatus === "error" ? (
-                <ErrorMessage>
-                  인증 초기화에 실패했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.
-                </ErrorMessage>
-              ) : null}
+              <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+                <span className="h-px flex-1 bg-border" />
+                또는
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <Button type="button" variant="secondary" onClick={() => void keycloakLogin(returnTo)}>
+                KPubData 계정으로 로그인
+              </Button>
             </div>
           ) : oidc.status === "error" ? (
             <div className="mt-4 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">

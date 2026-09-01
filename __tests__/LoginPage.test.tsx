@@ -10,15 +10,20 @@ import { LoginPage } from "@/pages/LoginPage";
 import { useAuthStore } from "@/features/auth/store";
 
 const navigateMock = vi.fn();
+const { keycloakLoginMock } = vi.hoisted(() => ({ keycloakLoginMock: vi.fn() }));
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
   return { ...actual, useNavigate: () => navigateMock };
 });
 
-function renderLogin() {
+vi.mock("@/features/auth/keycloak", () => ({
+  keycloakLogin: keycloakLoginMock,
+}));
+
+function renderLogin(initialEntry = "/login") {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <LoginPage />
     </MemoryRouter>,
   );
@@ -26,7 +31,10 @@ function renderLogin() {
 
 afterEach(() => {
   useAuthStore.getState().clear();
+  useAuthStore.setState({ oidcStatus: "disabled" });
   navigateMock.mockClear();
+  keycloakLoginMock.mockClear();
+  vi.unstubAllEnvs();
 });
 
 describe("LoginPage", () => {
@@ -58,5 +66,81 @@ describe("LoginPage", () => {
     expect(await screen.findByText("이메일 또는 비밀번호가 올바르지 않습니다.")).toBeInTheDocument();
     expect(navigateMock).not.toHaveBeenCalled();
     expect(useAuthStore.getState().token).toBeNull();
+  });
+
+  it("shows Google and KPubData account entrypoints for an unauthenticated real Builder OIDC login", () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    vi.stubEnv("VITE_OIDC_ISSUER", "https://id.example/realms/kpubdata");
+    vi.stubEnv("VITE_OIDC_CLIENT_ID", "studio");
+    useAuthStore.setState({ oidcStatus: "unauthenticated" });
+
+    renderLogin("/login?returnTo=%2Fbuilds%3Frun%3Dabc");
+
+    expect(document.querySelector('input[type="email"]')).not.toBeInTheDocument();
+    expect(document.querySelector('input[type="password"]')).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Google로 계속하기" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "KPubData 계정으로 로그인" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Google로 계속하기" }));
+    expect(keycloakLoginMock).toHaveBeenCalledWith("/builds?run=abc", "google");
+
+    fireEvent.click(screen.getByRole("button", { name: "KPubData 계정으로 로그인" }));
+    expect(keycloakLoginMock).toHaveBeenCalledWith("/builds?run=abc");
+  });
+
+  it("returns an authenticated OIDC user to the preserved internal route", async () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    useAuthStore.setState({ oidcStatus: "authenticated" });
+
+    renderLogin("/login?returnTo=%2Fbuilds%3Frun%3Dabc");
+
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith("/builds?run=abc", { replace: true }),
+    );
+  });
+
+  it.each(["https://evil.example", "//evil.example", "/\\evil.example"]) (
+    "falls back to home for authenticated malicious returnTo %s",
+    async (returnTo) => {
+      vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+      useAuthStore.setState({ oidcStatus: "authenticated" });
+
+      renderLogin(`/login?${new URLSearchParams({ returnTo }).toString()}`);
+
+      await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/", { replace: true }));
+    },
+  );
+
+  it("shows an initializing notice before exposing the Keycloak CTA", () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    vi.stubEnv("VITE_OIDC_ISSUER", "https://id.example/realms/kpubdata");
+    vi.stubEnv("VITE_OIDC_CLIENT_ID", "studio");
+    useAuthStore.setState({ oidcStatus: "initializing" });
+
+    renderLogin();
+
+    expect(screen.getByText(/로그인 상태를 확인하는 중/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Google로 계속하기" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "KPubData 계정으로 로그인" })).not.toBeInTheDocument();
+  });
+
+  it("shows a fail-closed OIDC initialization error", () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    useAuthStore.setState({ oidcStatus: "error" });
+
+    renderLogin();
+
+    expect(screen.getByText(/인증 초기화에 실패/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Google로 계속하기" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "KPubData 계정으로 로그인" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the mock email/password form without real OIDC CTAs", () => {
+    renderLogin();
+
+    expect(screen.getByLabelText("이메일", { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText("비밀번호", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Google로 계속하기" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "KPubData 계정으로 로그인" })).not.toBeInTheDocument();
   });
 });
