@@ -669,7 +669,13 @@ function RunDetailPanel({
       </Card>
 
       {showKubiAnalysis ? (
-        <KubiRunAnalysis onClose={() => setShowKubiAnalysis(false)} onAskMore={openKubiDrawer} />
+        <KubiRunAnalysis
+          onClose={() => {
+            setAnalyzePending(false);
+            setShowKubiAnalysis(false);
+          }}
+          onAskMore={openKubiDrawer}
+        />
       ) : null}
 
       <Card>

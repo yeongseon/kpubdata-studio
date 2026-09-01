@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,10 +6,17 @@ import { useAssistConfig } from "@/features/assistant/config";
 import { SUGGESTED_QUESTIONS } from "@/features/kubi/suggestedQuestions";
 import { useKubiStore } from "@/features/kubi/useKubiSession";
 import { HomePage } from "@/pages/HomePage";
+import { builderApi } from "@/shared/lib/builderApi";
 import { useUIStore } from "@/shared/hooks/useUIStore";
 import { mswServer } from "../vitest.setup";
 
 const BUILDER_BASE = "http://localhost:8000";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 
 function mockEmptyBuilds() {
   mswServer.use(http.get(`${BUILDER_BASE}/builds`, () => HttpResponse.json({ builds: [] })));
@@ -102,15 +109,59 @@ describe("HomePage", () => {
         buckets: [{ bucket_start: "2026-08-31T00:00:00Z", bucket_end: "2026-08-31T01:00:00Z", total: 9, success: 7, failed: 1, cancelled: 1 }],
         recent_runs: [],
       })),
+      http.get(`${BUILDER_BASE}/monitoring/summary`, () => HttpResponse.json({
+        generated_at: "2026-08-31T00:00:00Z",
+        status: "healthy",
+        api: { availability: "available", sample_count: 1, p95_latency_ms: 10 },
+        queue: { availability: "available", waiting: 0, running: 3, total: 3 },
+        workers: { availability: "available", active: 1, capacity: 1, utilization: 1 },
+        artifact_store: { availability: "available", last_write_at: null },
+      })),
     );
 
     render(<MemoryRouter><HomePage /></MemoryRouter>);
 
     expect(await screen.findByText("7")).toBeInTheDocument();
-    expect(screen.getAllByText("확인 불가")).toHaveLength(3);
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getAllByText("확인 불가")).toHaveLength(2);
     expect(screen.getByText("품질 경고 집계 확인 불가")).toBeInTheDocument();
     expect(screen.queryByText("품질 경고가 없습니다")).not.toBeInTheDocument();
     expect(screen.queryByText("모든 빌드가 정상적으로 완료되었습니다")).not.toBeInTheDocument();
+  });
+
+  it("renders recent builds before deferred monitoring settles, then uses authoritative KPIs", async () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    const monitoringBuilds = deferred<Response>();
+    const monitoringSummary = deferred<Response>();
+    mswServer.use(
+      http.get(`${BUILDER_BASE}/builds`, () => HttpResponse.json({ builds: [
+        { run_id: "deferred-run", status: "ok", started_at: "2026-08-31T00:00:00Z", finished_at: null },
+      ] })),
+      http.get(`${BUILDER_BASE}/monitoring/builds`, () => monitoringBuilds.promise),
+      http.get(`${BUILDER_BASE}/monitoring/summary`, () => monitoringSummary.promise),
+    );
+    render(<MemoryRouter><HomePage /></MemoryRouter>);
+    expect(await screen.findByText("deferred-run")).toBeInTheDocument();
+    expect(screen.queryByText(/빌드 목록을 불러오지 못했습니다/)).not.toBeInTheDocument();
+    await act(async () => {
+      monitoringBuilds.resolve(HttpResponse.json({ window: "24h", bucket: "hour", availability: "available", excluded_count: 0, buckets: [{ bucket_start: "2026-08-31T00:00:00Z", bucket_end: "2026-08-31T01:00:00Z", total: 4, success: 4, failed: 0, cancelled: 0 }], recent_runs: [] }));
+      monitoringSummary.resolve(HttpResponse.json({ generated_at: "2026-08-31T00:00:00Z", status: "healthy", api: { availability: "available", sample_count: 1, p95_latency_ms: 1 }, queue: { availability: "available", waiting: 0, running: 3, total: 3 }, workers: { availability: "available", active: 1, capacity: 1, utilization: 1 }, artifact_store: { availability: "available", last_write_at: null } }));
+    });
+    expect(await screen.findByText("4")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("keeps recent builds visible when monitoring fails and marks only KPIs unavailable", async () => {
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+    mswServer.use(
+      http.get(`${BUILDER_BASE}/builds`, () => HttpResponse.json({ builds: [{ run_id: "still-visible", status: "ok", started_at: "2026-08-31T00:00:00Z", finished_at: null }] })),
+    );
+    vi.spyOn(builderApi, "getMonitoringBuilds").mockRejectedValue(new Error("monitoring down"));
+    vi.spyOn(builderApi, "getMonitoringSummary").mockRejectedValue(new Error("monitoring down"));
+    render(<MemoryRouter><HomePage /></MemoryRouter>);
+    expect(await screen.findByText("still-visible")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("확인 불가")).toHaveLength(4));
+    expect(screen.queryByText(/빌드 목록을 불러오지 못했습니다/)).not.toBeInTheDocument();
   });
 });
 

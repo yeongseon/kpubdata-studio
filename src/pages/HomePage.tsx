@@ -74,10 +74,19 @@ export function HomePage() {
       try {
         const realBuilder = isRealBuilderEnabled();
         const buildList = await listBuilds();
+        // Recent builds and monitoring have independent authority and latency.
+        if (active) {
+          setBuilds(buildList);
+          setApiState((prev) => ({ ...prev, builds: "success" }));
+          setLoading((prev) => ({ ...prev, builds: false }));
+        }
         // 비어 있는 목록은 신규 사용자 분기에 충분하며, 불필요한 monitoring 호출로 막지 않는다.
-        const monitoring = realBuilder && buildList.length > 0
-          ? await builderApi.getMonitoringBuilds().catch(() => null)
-          : null;
+        const [monitoring, summary] = realBuilder && buildList.length > 0
+          ? await Promise.all([
+              builderApi.getMonitoringBuilds().catch(() => null),
+              builderApi.getMonitoringSummary().catch(() => null),
+            ])
+          : [null, null];
         if (active) {
           setBuilds(buildList);
           setApiState((prev) => ({ ...prev, builds: "success" }));
@@ -89,11 +98,12 @@ export function HomePage() {
             ? monitoring.buckets.reduce((sum, bucket) => sum + bucket.success, 0)
             : null;
           setStats({
-            datasetCount: realBuilder ? null : succeeded,
+            // /datasets has no total; a paginated response length is not a dataset count.
+            datasetCount: null,
             buildSuccess: realBuilder ? monitoredSuccess : succeeded,
             validationWarn: null,
             // GET /builds의 real 계약은 terminal summary만 제공하므로 active 수로 해석하지 않는다.
-            running: realBuilder ? null : running,
+            running: realBuilder ? summary?.queue.running ?? null : running,
           });
           setApiState((prev) => ({ ...prev, stats: "success" }));
         }
@@ -103,7 +113,7 @@ export function HomePage() {
         }
       } finally {
         if (active) {
-          setLoading({ builds: false, stats: false });
+          setLoading((prev) => ({ ...prev, stats: false }));
         }
       }
     };

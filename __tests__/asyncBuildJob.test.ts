@@ -259,11 +259,13 @@ describe("async pre-submit cancellation race (F03)", () => {
     expect(cancelSpy).toHaveBeenCalledTimes(1);
     expect(cancelSpy).toHaveBeenCalledWith(AUTHORITATIVE);
     expect(getJobSpy).toHaveBeenCalled();
+    expect(getJobSpy.mock.calls.every(([runId]) => runId === AUTHORITATIVE)).toBe(true);
 
     // cancelling → cancelled polling을 관찰해 최종 상태를 확정한다.
     expect(result.current.builderStatus).toBe("cancelled");
     expect(result.current.status).toBe("cancelled");
     expect(result.current.run?.status).toBe("cancelled");
+    expect(result.current.run?.id).toBe(AUTHORITATIVE);
 
     submitSpy.mockRestore();
     getJobSpy.mockRestore();

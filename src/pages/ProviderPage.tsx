@@ -13,7 +13,7 @@
  * - 세 축을 화면에서 분리한다: (1) provider 사용 가능 여부, (2) 사용자 저장 credential
  *   존재 여부, (3) 연결 테스트 결과.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   builderApi,
   isRealBuilderEnabled,
@@ -87,6 +87,7 @@ export function ProviderPage() {
   const [showCredentialForm, setShowCredentialForm] = useState(false);
   const [credentialForm, setCredentialForm] = useState<CredentialForm>({ credential: "" });
   const [credentialMeta, setCredentialMeta] = useState<CredentialMetaState>({ status: "idle" });
+  const credentialRequestGeneration = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,14 +136,16 @@ export function ProviderPage() {
    */
   const loadCredentialMeta = useCallback(
     async (provider: ProviderConfig) => {
+      const generation = ++credentialRequestGeneration.current;
       if (!provider.requiresCredential) {
-        setCredentialMeta({ status: "not_applicable" });
+        if (generation === credentialRequestGeneration.current) setCredentialMeta({ status: "not_applicable" });
         return;
       }
       setCredentialMeta({ status: "loading" });
       try {
         if (isRealBuilderEnabled()) {
           const meta = await builderApi.getProviderCredential(provider.id);
+          if (generation !== credentialRequestGeneration.current) return;
           setCredentialMeta({
             status: "loaded",
             configured: meta.configured,
@@ -150,9 +153,11 @@ export function ProviderPage() {
             updatedAt: meta.updated_at,
           });
         } else {
+          if (generation !== credentialRequestGeneration.current) return;
           setCredentialMeta(mockCredentialMeta(provider));
         }
       } catch {
+        if (generation !== credentialRequestGeneration.current) return;
         setCredentialMeta({ status: "error", message: "자격 증명 상태를 불러오지 못했습니다" });
       }
     },
@@ -160,6 +165,7 @@ export function ProviderPage() {
   );
 
   const handleProviderSelect = (provider: ProviderConfig) => {
+    ++credentialRequestGeneration.current;
     setSelectedProvider(provider);
     setShowCredentialForm(false);
     setCredentialForm({ credential: "" });

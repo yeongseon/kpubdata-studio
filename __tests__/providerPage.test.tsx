@@ -217,6 +217,46 @@ describe("ProviderPage real mode (#S01)", () => {
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("datago"));
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
   });
+
+  it("keeps provider B credential metadata when a stale provider A success resolves late", async () => {
+    let resolveA!: (value: { configured: boolean; masked: string | null; updated_at: string | null }) => void;
+    const pendingA = new Promise<{ configured: boolean; masked: string | null; updated_at: string | null }>((resolve) => { resolveA = resolve; });
+    vi.spyOn(builderApi, "listProviders").mockResolvedValue({ providers: [
+      { provider: "provider-a", requires_credential: true, configured: true },
+      { provider: "provider-b", requires_credential: true, configured: true },
+    ] });
+    vi.spyOn(builderApi, "getProviderCredential").mockImplementation((provider) =>
+      provider === "provider-a" ? pendingA : Promise.resolve({ configured: true, masked: "B-MASK", updated_at: null }),
+    );
+    renderPage();
+    fireEvent.click(await screen.findByText("provider-a"));
+    fireEvent.click(screen.getByText("provider-b"));
+    expect(await screen.findByText("B-MASK")).toBeInTheDocument();
+    resolveA({ configured: true, masked: "A-MASK", updated_at: null });
+    await Promise.resolve();
+    expect(screen.getByText("B-MASK")).toBeInTheDocument();
+    expect(screen.queryByText("A-MASK")).not.toBeInTheDocument();
+  });
+
+  it("keeps provider B metadata when a stale provider A request rejects late", async () => {
+    let rejectA!: (reason?: unknown) => void;
+    const pendingA = new Promise<{ configured: boolean; masked: string | null; updated_at: string | null }>((_, reject) => { rejectA = reject; });
+    vi.spyOn(builderApi, "listProviders").mockResolvedValue({ providers: [
+      { provider: "provider-a", requires_credential: true, configured: true },
+      { provider: "provider-b", requires_credential: true, configured: true },
+    ] });
+    vi.spyOn(builderApi, "getProviderCredential").mockImplementation((provider) =>
+      provider === "provider-a" ? pendingA : Promise.resolve({ configured: true, masked: "B-MASK", updated_at: null }),
+    );
+    renderPage();
+    fireEvent.click(await screen.findByText("provider-a"));
+    fireEvent.click(screen.getByText("provider-b"));
+    expect(await screen.findByText("B-MASK")).toBeInTheDocument();
+    rejectA(new Error("late A failure"));
+    await Promise.resolve();
+    expect(screen.getByText("B-MASK")).toBeInTheDocument();
+    expect(screen.queryByText(/자격 증명 상태를 불러오지 못했습니다/)).not.toBeInTheDocument();
+  });
 });
 
 describe("ProviderPage mock mode (unchanged)", () => {
