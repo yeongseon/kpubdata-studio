@@ -13,7 +13,8 @@
  * `redactBuildSpecForDisplay`/`draftStorage`)가 redact된 사본만 만들어 쓰고, in-memory
  * draft/spec은 원문 그대로 유지한다.
  */
-import { isSecretKey, looksLikeSecret } from "@/features/assistant/scrub";
+import { hasSecretPlaceholder, isSecretKey, looksLikeSecret, REDACTED_SECRET_MARKER } from "@/features/assistant/scrub";
+import { REDACTED_PLACEHOLDER } from "@/features/add-data/urlRedaction";
 import type { JsonValue } from "@/shared/lib/types";
 
 // URL endpoint의 `REDACTED_PLACEHOLDER`(urlRedaction.ts)와 같은 이유로 프로젝트 전용
@@ -90,15 +91,29 @@ export function redactSourceParamsText(sourceParams: string): RedactedParamsText
 }
 
 /**
- * 저장된 초안을 복원했을 때 sourceParams에 sentinel이 남아있는지(= 실제 secret 원문이
- * 사라졌는지) 판정한다. `buildSpecFromDraft`를 fail-closed 시키는 데 쓴다 — sentinel을
- * 실제 파라미터 값처럼 Builder에 제출하지 않기 위함.
+ * 저장된 초안을 복원했을 때 sourceParams에 redaction marker가 남아있는지(= 실제 secret
+ * 원문이 사라졌는지) 판정한다. `buildSpecFromDraft`/`toBuildSpec`을 fail-closed 시키는 데
+ * 쓴다 — marker를 실제 파라미터 값처럼 Builder에 제출하지 않기 위함.
+ *
+ * persistence 경계에서 쓰이는 모든 marker를 한 곳에서 인식한다(S07 리뷰 §1):
+ * `redactSourceParamsText`의 `__KPD_PARAMS_SECRET_REDACTED__`, URL query의
+ * `__KPD_URL_SECRET_REDACTED__`, `redactSecrets()`의 종결 `[REDACTED]`, scrub 내부
+ * `__SCRUBBED_*`.
  */
 export function sourceParamsHasRedactedSecret(sourceParams: string): boolean {
-  return sourceParams.includes(PARAMS_REDACTED_SENTINEL);
+  return (
+    sourceParams.includes(PARAMS_REDACTED_SENTINEL) ||
+    sourceParams.includes(REDACTED_PLACEHOLDER) ||
+    hasSecretPlaceholder(sourceParams)
+  );
 }
 
 export function jsonValueHasRedactedSecret(value: unknown): boolean {
   const serialized = JSON.stringify(value) ?? "";
-  return serialized.includes(PARAMS_REDACTED_SENTINEL) || serialized.includes("__KPD_URL_SECRET_REDACTED__");
+  return (
+    serialized.includes(PARAMS_REDACTED_SENTINEL) ||
+    serialized.includes(REDACTED_PLACEHOLDER) ||
+    serialized.includes(REDACTED_SECRET_MARKER) ||
+    hasSecretPlaceholder(value)
+  );
 }

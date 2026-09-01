@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { crossCheckKubiResponse } from "./crossCheck";
-import type { KubiEvidence, KubiKnownRefs, KubiStructuredResponse } from "./types";
+import { datasetRunMembershipRef, type KubiEvidence, type KubiKnownRefs, type KubiStructuredResponse } from "./types";
 
 function makeEvidence(overrides: Partial<KubiEvidence> = {}): KubiEvidence {
   return {
@@ -17,6 +17,7 @@ function makeKnownRefs(overrides: Partial<KubiKnownRefs> = {}): KubiKnownRefs {
   return {
     datasetIds: new Set(["ds-1"]),
     runIds: new Set(["run-1"]),
+    datasetRunMemberships: new Set([datasetRunMembershipRef("ds-1", "run-1")]),
     providers: new Set(["datago"]),
     qualityResultIds: new Set(["src::missing::max_null_ratio::price"]),
     schemaDriftIds: new Set(["column_added::region"]),
@@ -117,6 +118,66 @@ describe("crossCheckKubiResponse (#256 hallucination gate)", () => {
       makeEvidence(),
       makeKnownRefs(),
     );
+    expect(result.response.suggestedActions).toHaveLength(1);
+  });
+
+  it("rejects OPEN_QUALITY referencing a missing dataset", () => {
+    const result = crossCheckKubiResponse(
+      makeResponse({
+        suggestedActions: [
+          { type: "OPEN_QUALITY", datasetId: "missing-dataset", runId: "run-1", reason: "품질을 확인하세요" },
+        ],
+      }),
+      makeEvidence(),
+      makeKnownRefs(),
+    );
+
+    expect(result.response.suggestedActions).toHaveLength(0);
+    expect(result.rejectedActions[0]).toContain("missing-dataset");
+  });
+
+  it("rejects OPEN_QUALITY when dataset and run exist separately but the membership differs", () => {
+    const result = crossCheckKubiResponse(
+      makeResponse({
+        suggestedActions: [
+          { type: "OPEN_QUALITY", datasetId: "ds-1", runId: "run-2", reason: "품질을 확인하세요" },
+        ],
+      }),
+      makeEvidence(),
+      makeKnownRefs({
+        runIds: new Set(["run-1", "run-2"]),
+        datasetRunMemberships: new Set([datasetRunMembershipRef("ds-2", "run-2")]),
+      }),
+    );
+
+    expect(result.response.suggestedActions).toHaveLength(0);
+    expect(result.rejectedActions[0]).toContain("소속");
+  });
+
+  it("fails closed when Builder membership lookup was unavailable", () => {
+    const result = crossCheckKubiResponse(
+      makeResponse({
+        suggestedActions: [
+          { type: "OPEN_QUALITY", datasetId: "ds-1", runId: "run-1", reason: "품질을 확인하세요" },
+        ],
+      }),
+      makeEvidence({ unavailable: ["runs"], partial: true }),
+      makeKnownRefs({ datasetRunMemberships: new Set() }),
+    );
+
+    expect(result.response.suggestedActions).toHaveLength(0);
+    expect(result.rejectedActions[0]).toContain("확인할 수 없음");
+  });
+
+  it("keeps dataset-only OPEN_QUALITY when no run was requested", () => {
+    const result = crossCheckKubiResponse(
+      makeResponse({
+        suggestedActions: [{ type: "OPEN_QUALITY", datasetId: "ds-1", reason: "최신 품질을 확인하세요" }],
+      }),
+      makeEvidence(),
+      makeKnownRefs(),
+    );
+
     expect(result.response.suggestedActions).toHaveLength(1);
   });
 

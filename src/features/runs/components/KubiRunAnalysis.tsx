@@ -13,7 +13,8 @@
  */
 import { useMemo } from "react";
 import { useAssistConfig } from "@/features/assistant/config";
-import { ErrorNotice } from "@/features/kubi/KubiContent";
+import { ErrorNotice, EvidenceSection } from "@/features/kubi/KubiContent";
+import { MarkdownContent } from "@/features/kubi/MarkdownContent";
 import { useKubiSession } from "@/features/kubi/useKubiSession";
 import { Button, Card } from "@/shared/ui";
 
@@ -85,31 +86,19 @@ export function KubiRunAnalysis({ onClose, onAskMore }: KubiRunAnalysisProps) {
 
               {turn.response ? (
                 <>
-                  <p className="whitespace-pre-wrap leading-6 text-foreground">{turn.response.answer}</p>
+                  {/* Drawer(KubiContent)와 동일한 안전 Markdown 렌더러를 재사용한다(#320). */}
+                  <MarkdownContent>{turn.response.answer}</MarkdownContent>
 
-                  {turn.evidence?.partial ? (
-                    <p className="text-xs text-muted-foreground">
-                      일부 evidence를 확인하지 못했습니다: {turn.evidence.unavailable.join(", ")}
+                  {/* status가 "ok"여도 cross-check가 근거/action/SQL을 제외했으면 그 사실을
+                      숨기지 않는다 — KubiContent와 동일한 경고 + EvidenceSection 표현을 쓴다.
+                      status === "error" 전용 ErrorNotice(위)와는 별개다. */}
+                  {turn.error?.kind === "hallucinated_refs" ? (
+                    <p role="alert" className="text-[11px] text-amber-700 dark:text-amber-400">
+                      {turn.error.message}
                     </p>
                   ) : null}
 
-                  {turn.response.evidenceRefs.length > 0 ? (
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Evidence
-                      </p>
-                      <ul className="mt-1 flex flex-wrap gap-1.5">
-                        {turn.response.evidenceRefs.map((ref) => (
-                          <li
-                            key={`${ref.kind}:${ref.id}`}
-                            className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px]"
-                          >
-                            {ref.label}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
+                  <EvidenceSection turn={turn} />
                 </>
               ) : null}
             </div>

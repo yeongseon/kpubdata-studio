@@ -6,8 +6,9 @@
  * 에서 "확인되지 않은 route runId 가 known 으로 새는" 회귀를 막지 못한다. 세 케이스를
  * 결합 흐름으로 고정한다.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { saveBuildSpec } from "@/features/build-spec/specStore";
+import * as runDetailApi from "@/features/runs/api/runDetail";
 import type { BuildSpec } from "@/shared/lib/types";
 import { loadKubiEvidence } from "./evidence";
 import { crossCheckKubiResponse } from "./crossCheck";
@@ -15,6 +16,7 @@ import type { KubiContext, KubiStructuredResponse } from "./types";
 
 afterEach(() => {
   localStorage.clear();
+  vi.restoreAllMocks();
 });
 
 function response(overrides: Partial<KubiStructuredResponse> = {}): KubiStructuredResponse {
@@ -128,5 +130,108 @@ describe("run provenance — loadKubiEvidence → crossCheckKubiResponse", () =>
       knownRefs,
     );
     expect(accepted.response.suggestedActions).toHaveLength(1);
+  });
+
+  it("Case D — 다른 dataset 소속으로 확인된 run의 OPEN_QUALITY를 거부한다", async () => {
+    const context: KubiContext = {
+      page: "quality",
+      datasetId: "air-quality",
+      runId: "population-2026-08-13",
+    };
+    const { evidence, knownRefs } = await loadKubiEvidence(context);
+
+    // dataset과 run은 각각 Builder 응답으로 존재가 확인된다. 다만 run은 population 소속이다.
+    expect(knownRefs.datasetIds.has("air-quality")).toBe(true);
+    expect(knownRefs.runIds.has("population-2026-08-13")).toBe(true);
+
+    const checked = crossCheckKubiResponse(
+      response({
+        suggestedActions: [
+          {
+            type: "OPEN_QUALITY",
+            datasetId: "air-quality",
+            runId: "population-2026-08-13",
+            reason: "품질을 확인하세요",
+          },
+        ],
+      }),
+      evidence,
+      knownRefs,
+    );
+
+    expect(checked.response.suggestedActions).toHaveLength(0);
+    expect(checked.rejectedActions[0]).toContain("소속");
+  });
+
+  it("Case E — recent 10/latest 밖의 old run도 spec snapshot dataset_id가 일치하면 OPEN_QUALITY를 유지한다", async () => {
+    const oldRunId = "old-air-run-outside-recent-window";
+    vi.spyOn(runDetailApi, "getBuildSpecSnapshot").mockResolvedValue({
+      run_id: oldRunId,
+      spec: "dataset_id: air-quality\n",
+      spec_digest: `sha256:${"0".repeat(64)}`,
+    });
+
+    const { evidence, knownRefs } = await loadKubiEvidence({
+      page: "build-detail",
+      datasetId: "air-quality",
+      runId: oldRunId,
+    });
+    expect(evidence.recentRuns?.some((run) => run.runId === oldRunId)).toBe(false);
+    expect(evidence.dataset?.latestRunId).not.toBe(oldRunId);
+
+    const checked = crossCheckKubiResponse(
+      response({
+        suggestedActions: [{ type: "OPEN_QUALITY", datasetId: "air-quality", runId: oldRunId, reason: "품질" }],
+      }),
+      evidence,
+      knownRefs,
+    );
+
+    expect(checked.response.suggestedActions).toHaveLength(1);
+  });
+
+  it("Case F — old run spec snapshot의 dataset_id가 다르면 OPEN_QUALITY를 거부한다", async () => {
+    const oldRunId = "old-population-run-outside-recent-window";
+    vi.spyOn(runDetailApi, "getBuildSpecSnapshot").mockResolvedValue({
+      run_id: oldRunId,
+      spec: "dataset_id: population\n",
+      spec_digest: `sha256:${"1".repeat(64)}`,
+    });
+
+    const { evidence, knownRefs } = await loadKubiEvidence({
+      page: "build-detail",
+      datasetId: "air-quality",
+      runId: oldRunId,
+    });
+    const checked = crossCheckKubiResponse(
+      response({
+        suggestedActions: [{ type: "OPEN_QUALITY", datasetId: "air-quality", runId: oldRunId, reason: "품질" }],
+      }),
+      evidence,
+      knownRefs,
+    );
+
+    expect(checked.response.suggestedActions).toHaveLength(0);
+    expect(checked.rejectedActions[0]).toContain("소속");
+  });
+
+  it("Case G — old run spec lookup 실패이고 다른 membership 근거도 없으면 fail-closed한다", async () => {
+    const oldRunId = "old-run-without-membership-evidence";
+    vi.spyOn(runDetailApi, "getBuildSpecSnapshot").mockRejectedValue(new Error("snapshot unavailable"));
+
+    const { evidence, knownRefs } = await loadKubiEvidence({
+      page: "build-detail",
+      datasetId: "air-quality",
+      runId: oldRunId,
+    });
+    const checked = crossCheckKubiResponse(
+      response({
+        suggestedActions: [{ type: "OPEN_QUALITY", datasetId: "air-quality", runId: oldRunId, reason: "품질" }],
+      }),
+      evidence,
+      knownRefs,
+    );
+
+    expect(checked.response.suggestedActions).toHaveLength(0);
   });
 });

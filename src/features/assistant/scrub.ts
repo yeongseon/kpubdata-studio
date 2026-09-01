@@ -82,6 +82,13 @@ const SCRUBBED_PREFIX = "__SCRUBBED_";
 const SCRUBBED_PATTERN = /__SCRUBBED_[A-Za-z0-9-]+_\d+__/g;
 const SCRUBBED_TEST_PATTERN = /__SCRUBBED_[A-Za-z0-9-]+_\d+__/;
 
+/**
+ * `redactSecrets()`가 시크릿 값을 최종적으로 치환하는 종결 마커. 왕복 복원이 불가능한
+ * 값이므로(placeholder→원문 map이 없음), 복원된 spec/draft에서 이 문자열이 보이면
+ * "시크릿이 이미 제거됨 → 재입력 필요"로 취급해야 한다(#206, S07 리뷰 §1).
+ */
+export const REDACTED_SECRET_MARKER = "[REDACTED]";
+
 export interface ScrubResult {
   scrubbed: unknown;
   placeholders: Map<string, string>;
@@ -260,7 +267,9 @@ export function restoreSecrets(data: unknown, placeholders: Map<string, string>)
 }
 
 export function hasSecretPlaceholder(data: unknown): boolean {
-  if (typeof data === "string") return SCRUBBED_TEST_PATTERN.test(data);
+  if (typeof data === "string") {
+    return SCRUBBED_TEST_PATTERN.test(data) || data.includes(REDACTED_SECRET_MARKER);
+  }
   if (Array.isArray(data)) return data.some(hasSecretPlaceholder);
   if (data && typeof data === "object") {
     return Object.values(data as Record<string, unknown>).some(hasSecretPlaceholder);
@@ -276,7 +285,7 @@ export function redactSecrets(
   const scrubbed = scrubber.scrub(data);
 
   function redact(value: unknown): unknown {
-    if (typeof value === "string" && hasSecretPlaceholder(value)) return "[REDACTED]";
+    if (typeof value === "string" && hasSecretPlaceholder(value)) return REDACTED_SECRET_MARKER;
     if (Array.isArray(value)) return value.map(redact);
     if (value && typeof value === "object") {
       return Object.fromEntries(

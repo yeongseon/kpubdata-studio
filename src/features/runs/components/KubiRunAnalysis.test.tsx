@@ -121,12 +121,20 @@ describe("KubiRunAnalysis", () => {
     expect(cancel).toHaveBeenCalledWith("turn-1");
   });
 
-  it("shows the answer and evidence summary once the turn completes", () => {
+  it("renders the answer as Markdown and surfaces evidence via the shared EvidenceSection (A2)", () => {
     const turn = baseTurn({
       status: "ok",
+      evidence: {
+        fetchedAt: "2026-08-18T00:00:00Z",
+        context: { page: "builds", runId: "run-1" },
+        deepLinks: {},
+        unavailable: [],
+        partial: false,
+        stage: { refId: "run-1::air::silver", stage: "silver", source: "air", status: "failed", available: false, rowCount: null },
+      } as KubiTurn["evidence"],
       response: {
-        answer: "이 Run은 source air의 silver 단계에서 실패했습니다.",
-        evidenceRefs: [{ kind: "stage", id: "air::silver", label: "air / silver" }],
+        answer: "이 Run은 **source air**의 silver 단계에서 실패했습니다.",
+        evidenceRefs: [{ kind: "stage", id: "run-1::air::silver", label: "air / silver" }],
         generatedSql: null,
         suggestedActions: [],
       },
@@ -136,8 +144,41 @@ describe("KubiRunAnalysis", () => {
 
     render(<KubiRunAnalysis onClose={vi.fn()} onAskMore={vi.fn()} />);
 
-    expect(screen.getByText("이 Run은 source air의 silver 단계에서 실패했습니다.")).toBeInTheDocument();
+    // Drawer와 동일한 안전 Markdown 렌더러를 재사용한다 — "**"는 리터럴로 남지 않는다.
+    expect(screen.getByText("source air").tagName).toBe("STRONG");
+    expect(screen.queryByText(/\*\*source air\*\*/)).not.toBeInTheDocument();
+
+    // 근거는 KubiContent와 동일한 EvidenceSection(Disclosure)로 제공된다.
+    fireEvent.click(screen.getByRole("button", { name: /근거 1개/ }));
     expect(screen.getByText("air / silver")).toBeInTheDocument();
+  });
+
+  it("surfaces rejected/hallucinated evidence even when the turn status is ok (A3)", () => {
+    const turn = baseTurn({
+      status: "ok",
+      response: {
+        answer: "요약된 정상 답변입니다.",
+        evidenceRefs: [],
+        generatedSql: null,
+        suggestedActions: [],
+      },
+      error: {
+        kind: "hallucinated_refs",
+        message: "제외된 근거: run:ghost-run",
+        rejectedRefs: ["run:ghost-run"],
+        rejectedActions: [],
+      },
+    });
+    useKubiSessionMock.mockReturnValue(session({ turns: [turn], isStale: () => false }));
+    useAssistConfigMock.mockReturnValue({ isConfigured: true });
+
+    render(<KubiRunAnalysis onClose={vi.fn()} onAskMore={vi.fn()} />);
+
+    // 정상 answer는 그대로 보이고,
+    expect(screen.getByText("요약된 정상 답변입니다.")).toBeInTheDocument();
+    // 제외된 근거가 있었다는 사실은 숨기지 않는다(role="alert").
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("제외된 근거: run:ghost-run");
   });
 
   it("shows an error notice when the turn failed", () => {

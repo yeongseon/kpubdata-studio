@@ -165,11 +165,11 @@ export interface BuildManifest {
   /** 빌드 종료 시각 ISO 문자열(UTC). 제공되지 않으면 undefined */
   finished_at?: string;
   /** 빌드를 생성한 실행 환경. 캡처하지 못했으면 null */
-  build_environment: ManifestBuildEnvironment | null;
+  build_environment?: ManifestBuildEnvironment | null;
   /** 입력 파일 또는 소스 식별자 목록. 제공되지 않으면 undefined */
   inputs?: string[];
   /** 입력 데이터 전체의 재현성 지문("sha256:..."). 입력이 없으면 null */
-  inputs_fingerprint: string | null;
+  inputs_fingerprint?: string | null;
   /** 생성된 결과물 경로 목록. 제공되지 않으면 undefined */
   outputs?: string[];
   /** 치명적이지 않지만 확인이 필요한 경고 목록. 제공되지 않으면 undefined */
@@ -182,6 +182,7 @@ export interface BuildManifest {
   schema_summaries?: Record<string, ManifestSchemaSummary>;
   /** 소스별 상세 출처(fetch 시각/파라미터/레코드 수/체크섬) 목록. 제공되지 않으면 undefined */
   provenance?: ManifestSourceProvenance[];
+  /** Builder가 additive하게 제공하는 manifest 필드를 손실 없이 유지한다. */
 }
 
 export interface BuildDraft {

@@ -14,8 +14,10 @@
  * 저장 형태는 draftStorage와 같은 `{version, data, savedAt}` 봉투 규약을 따른다.
  */
 import { buildSpecSchema } from "@/shared/lib/schemas";
-import type { BuildSpec } from "@/shared/lib/types";
+import type { BuildSpec, JsonValue, SourceRef } from "@/shared/lib/types";
 import { ownedStorageKey } from "@/features/auth/storageOwner";
+import { redactSecrets } from "@/features/assistant/scrub";
+import { redactUrlEndpoint } from "@/features/add-data/urlRedaction";
 
 const SPEC_STORE_KEY = "kpubdata-studio:build-specs";
 
@@ -87,10 +89,42 @@ function writeEnvelope(envelope: SpecStoreEnvelope): void {
 }
 
 /**
+ * persistence boundary(#206, S07): localStorage에 쓰기 직전, API key/token 같은
+ * credential-like 값이 spec에 남지 않도록 redact한 **사본**을 만든다. 인자로 받은
+ * in-memory `spec`은 건드리지 않으므로(진행 중인 Preview/Build 요청은 원본을 그대로 씀)
+ * persistence 경계에서만 fail-safe로 동작한다.
+ *
+ * - `sources[].params`(nested object/array 포함)·`metadata`·`extra`의 secret-named key와
+ *   고엔트로피 값은 `redactSecrets`로 가린다 — Saved BuildSpec(`savedSpecs.ts`)과 동일한
+ *   정책·헬퍼.
+ * - `kind="url"` source의 `endpoint`는 query credential(`?serviceKey=...`, userinfo)만
+ *   Add Data와 같은 `redactUrlEndpoint` 규칙으로 가린다. endpoint 문자열은 `redactSecrets`에
+ *   통과시키지 않는다 — URL 전체가 고엔트로피로 판정되면 host/path까지 통째로 사라져
+ *   복원 시 스키마(https:// 강제)를 깨기 때문이다.
+ */
+function redactSpecForStorage(spec: BuildSpec): BuildSpec {
+  return {
+    ...spec,
+    sources: spec.sources.map((source) => {
+      const safe: SourceRef = {
+        ...source,
+        params: redactSecrets(source.params ?? {}) as Record<string, JsonValue>,
+      };
+      if (source.kind === "url" && source.endpoint) {
+        safe.endpoint = redactUrlEndpoint(source.endpoint).endpoint;
+      }
+      return safe;
+    }),
+    metadata: redactSecrets(spec.metadata) as Record<string, JsonValue>,
+    ...(spec.extra ? { extra: redactSecrets(spec.extra) as Record<string, JsonValue> } : {}),
+  };
+}
+
+/**
  * 실행된 빌드의 스펙을 run_id에 묶어 저장한다.
  *
  * 같은 run_id로 다시 저장하면 덮어쓴다. 항목 수가 상한을 넘으면 `savedAt` 기준으로
- * 오래된 것부터 버린다.
+ * 오래된 것부터 버린다. 저장 직전에 `redactSpecForStorage`로 credential-like 값을 가린다.
  *
  * @param runId - 빌드 실행 식별자.
  * @param spec - 실행에 사용된 빌드 스펙.
@@ -99,7 +133,7 @@ export function saveBuildSpec(runId: string, spec: BuildSpec): void {
   if (!runId) return;
 
   const envelope = readEnvelope();
-  envelope.entries[runId] = { spec, savedAt: new Date().toISOString() };
+  envelope.entries[runId] = { spec: redactSpecForStorage(spec), savedAt: new Date().toISOString() };
 
   const keys = Object.keys(envelope.entries);
   if (keys.length > SPEC_STORE_LIMIT) {
@@ -121,6 +155,12 @@ export function saveBuildSpec(runId: string, spec: BuildSpec): void {
  * 저장 이후 스펙 스키마가 바뀌었을 수 있으므로 zod로 재검증한다. 통과하지 못한
  * 항목은 편집 폼을 깨뜨리기 전에 버린다.
  *
+ * S07 리뷰 §2: 과거 버전(redaction 도입 이전)이 평문 credential을 저장해 둔 항목이 남아
+ * 있을 수 있다. 유효한 항목을 읽은 뒤 현재 저장 경계 정책(`redactSpecForStorage`)을 다시
+ * 적용하고, 결과가 저장 원본과 다르면 정리된 값으로 즉시 rewrite한 뒤 그 값을 반환한다 —
+ * raw credential을 in-memory로 되돌려주지 않는다. 이미 정리된 항목은 deep-equal이라
+ * 불필요한 rewrite를 하지 않는다.
+ *
  * @param runId - 빌드 실행 식별자.
  * @returns 저장된 스펙, 없거나 더 이상 유효하지 않으면 null.
  */
@@ -136,6 +176,13 @@ export function loadBuildSpec(runId: string): BuildSpec | null {
     delete envelope.entries[runId];
     writeEnvelope(envelope);
     return null;
+  }
+
+  const sanitized = redactSpecForStorage(result.data);
+  if (JSON.stringify(sanitized) !== JSON.stringify(result.data)) {
+    envelope.entries[runId] = { ...entry, spec: sanitized };
+    writeEnvelope(envelope);
+    return sanitized;
   }
   return result.data;
 }

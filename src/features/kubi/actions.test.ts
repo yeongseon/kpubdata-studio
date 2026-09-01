@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadBuildSpec, saveBuildSpec } from "@/features/build-spec/specStore";
 import { loadDraft } from "@/features/build-spec/draftStorage";
 import { buildFormValuesSchema } from "@/shared/lib/schemas";
@@ -154,6 +154,69 @@ describe("previewBuildSpecPatch / applyBuildSpecPatch (#256 §10)", () => {
 
     expect(result.valid).toBe(false);
     expect(loadBuildSpec("run-1")).toEqual(BASE_SPEC);
+  });
+
+  describe("복원된 redaction marker는 fail-closed (S07 리뷰 §1)", () => {
+    // 실제 secret이 들어간 spec을 저장하면 specStore가 "[REDACTED]"로 redact해 보관한다.
+    const SPEC_WITH_SECRET: BuildSpec = {
+      ...BASE_SPEC,
+      sources: [
+        {
+          ...BASE_SPEC.sources[0],
+          params: { region: "서울", serviceKey: "A7vK2mQ9xP4rT8yW3nC6dF1hJ5sL0zB4uH8" },
+        },
+      ],
+    };
+
+    it("preview: before spec에 [REDACTED]가 있으면 credential field를 안 건드려도 거부한다", () => {
+      saveBuildSpec("run-x", SPEC_WITH_SECRET);
+      expect(
+        (loadBuildSpec("run-x")?.sources[0].params as Record<string, unknown>).serviceKey,
+      ).toBe("[REDACTED]");
+
+      const action: Extract<KubiAction, { type: "PATCH_BUILDSPEC" }> = {
+        type: "PATCH_BUILDSPEC",
+        runId: "run-x",
+        patch: [{ op: "replace", path: "/metadata/note", value: "updated" }],
+        reason: "test",
+      };
+      const preview = previewBuildSpecPatch(action);
+      expect(preview.ok).toBe(false);
+      if (!preview.ok) expect(preview.reason).toMatch(/시크릿 값이 제거/);
+    });
+
+    it("apply: after spec에 [REDACTED]가 남아 있으면 Builder /validate를 호출하지 않는다", async () => {
+      const validate = vi.fn(async () => ({ valid: true, errors: [] as string[] }));
+      const withRedacted: BuildSpec = {
+        ...BASE_SPEC,
+        sources: [{ ...BASE_SPEC.sources[0], params: { region: "서울", serviceKey: "[REDACTED]" } }],
+      };
+      const result = await applyBuildSpecPatch("run-x", withRedacted, validate);
+      expect(validate).not.toHaveBeenCalled();
+      expect(result.valid).toBe(false);
+    });
+
+    it("apply: marker 없는 실제 credential은 통과시킨다(회귀 방지)", async () => {
+      const validate = vi.fn(async () => ({ valid: true, errors: [] as string[] }));
+      const result = await applyBuildSpecPatch("run-x", SPEC_WITH_SECRET, validate);
+      expect(validate).toHaveBeenCalledTimes(1);
+      expect(result.valid).toBe(true);
+    });
+
+    it.each([
+      { label: "__KPD_PARAMS_SECRET_REDACTED__", value: "__KPD_PARAMS_SECRET_REDACTED__" },
+      { label: "__KPD_URL_SECRET_REDACTED__", value: "__KPD_URL_SECRET_REDACTED__" },
+      { label: "__SCRUBBED_*", value: "__SCRUBBED_abc_0__" },
+    ])("apply: $label marker도 계속 차단한다", async ({ value }) => {
+      const validate = vi.fn(async () => ({ valid: true, errors: [] as string[] }));
+      const spec: BuildSpec = {
+        ...BASE_SPEC,
+        sources: [{ ...BASE_SPEC.sources[0], params: { region: "서울", k: value } }],
+      };
+      const result = await applyBuildSpecPatch("run-x", spec, validate);
+      expect(validate).not.toHaveBeenCalled();
+      expect(result.valid).toBe(false);
+    });
   });
 });
 

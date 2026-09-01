@@ -122,6 +122,23 @@ export const artifactsResponseSchema = z.object({
   files: z.array(z.string()),
 });
 
+/** GET /builds/{run_id}/manifest 응답. Builder 계약은 확장 필드를 허용하므로 보존한다. */
+export const buildManifestResponseSchema = z.object({
+  build_id: z.string(),
+  started_at: z.string(),
+  finished_at: z.string(),
+  schema_version: z.string(),
+  status: z.enum(["ok", "failed", "cancelled"]).optional(),
+  partial: z.boolean().optional(),
+  inputs: z.array(z.string()).optional(),
+  outputs: z.array(z.string()).optional(),
+  warnings: z.array(z.string()).optional(),
+  errors: z.array(z.string()).optional(),
+  row_counts: z.record(z.string(), z.number().int()).optional(),
+  inputs_fingerprint: z.string().nullable().optional(),
+  created_by: z.string().nullable().optional(),
+}).loose();
+
 /**
  * Preview 컬럼 스키마 항목
  */
@@ -206,6 +223,7 @@ export type BuildOk = z.infer<typeof buildOkSchema>;
 export type BuildFailed = z.infer<typeof buildFailedSchema>;
 export type BuildResponse = z.infer<typeof buildResponseSchema>;
 export type ArtifactsResponse = z.infer<typeof artifactsResponseSchema>;
+export type BuildManifestResponse = z.infer<typeof buildManifestResponseSchema>;
 export type PreviewColumn = z.infer<typeof previewColumnSchema>;
 export type PreviewDiffItem = z.infer<typeof previewDiffItemSchema>;
 export type PreviewTransformSummary = z.infer<typeof previewTransformSummarySchema>;

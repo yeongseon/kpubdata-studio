@@ -7,6 +7,7 @@
  * 답변이 실제로 나은(evidence 기반) 부분은 그대로 사용자에게 보여준다.
  */
 import type { KubiEvidence, KubiEvidenceRef, KubiKnownRefs, KubiStructuredResponse } from "./types";
+import { datasetRunMembershipRef } from "./types";
 import type { KubiAction } from "./schema";
 
 export interface CrossCheckResult {
@@ -58,6 +59,12 @@ function isKnownAction(
       }
       if (action.runId && !known.runIds.has(action.runId)) {
         return { ok: false, reason: `OPEN_QUALITY: evidence에 없는 run "${action.runId}"` };
+      }
+      if (action.runId && !known.datasetRunMemberships.has(datasetRunMembershipRef(action.datasetId, action.runId))) {
+        return {
+          ok: false,
+          reason: `OPEN_QUALITY: run "${action.runId}"의 dataset "${action.datasetId}" 소속을 Builder evidence에서 확인할 수 없음`,
+        };
       }
       return { ok: true };
     case "PATCH_BUILDSPEC":

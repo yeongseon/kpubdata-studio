@@ -16,16 +16,30 @@ import {
   listDatasetRuns,
 } from "@/features/datasets/api";
 import { loadBuildSpec } from "@/features/build-spec/specStore";
+import { getBuildSpecSnapshot } from "@/features/runs/api/runDetail";
 import { redactSecrets } from "@/features/assistant/scrub";
 import { builderApi } from "@/shared/lib/builderApi";
+import { parse as parseYaml } from "yaml";
 import type { KubiContext, KubiEvidence, KubiEvidenceSource, KubiKnownRefs } from "./types";
-import { qualityResultRefId, stageEvidenceRefId } from "./types";
+import { datasetRunMembershipRef, qualityResultRefId, stageEvidenceRefId } from "./types";
 
 async function settle<T>(promise: Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
   try {
     return { ok: true, value: await promise };
   } catch {
     return { ok: false };
+  }
+}
+
+/** Builder canonical spec snapshot에서 명시적인 dataset_id만 읽는다. */
+function datasetIdFromSpecSnapshot(spec: string): string | null {
+  try {
+    const parsed = parseYaml(spec) as unknown;
+    if (!parsed || typeof parsed !== "object" || !("dataset_id" in parsed)) return null;
+    const datasetId = (parsed as Record<string, unknown>).dataset_id;
+    return typeof datasetId === "string" && datasetId.length > 0 ? datasetId : null;
+  } catch {
+    return null;
   }
 }
 
@@ -57,6 +71,7 @@ export async function loadKubiEvidence(
   const knownRefs: KubiKnownRefs = {
     datasetIds: new Set(),
     runIds: new Set(),
+    datasetRunMemberships: new Set(),
     providers: new Set(),
     qualityResultIds: new Set(),
     schemaDriftIds: new Set(),
@@ -123,6 +138,9 @@ export async function loadKubiEvidence(
       // getDataset 성공 응답의 latest_run_id — Builder 가 확인한 값이다(schema 상 string 이나
       // 방어적으로 falsy 를 거른다).
       confirmRunId(dataset.latest_run_id);
+      if (dataset.latest_run_id) {
+        knownRefs.datasetRunMemberships.add(datasetRunMembershipRef(dataset.dataset_id, dataset.latest_run_id));
+      }
       evidence.deepLinks.datasetDetail = `/datasets/${encodeURIComponent(dataset.dataset_id)}`;
       evidence.deepLinks.qualityCenter = `/quality?dataset=${encodeURIComponent(dataset.dataset_id)}`;
       runId = runId ?? dataset.latest_run_id;
@@ -138,7 +156,12 @@ export async function loadKubiEvidence(
         finishedAt: run.finished_at,
       }));
       // listDatasetRuns 성공 응답의 run_id — Builder 가 직접 반환한 실제 run 이다.
-      for (const run of runsResult.value.runs) confirmRunId(run.run_id);
+      for (const run of runsResult.value.runs) {
+        confirmRunId(run.run_id);
+        if (datasetResult.ok && datasetResult.value.dataset_id === context.datasetId) {
+          knownRefs.datasetRunMemberships.add(datasetRunMembershipRef(datasetResult.value.dataset_id, run.run_id));
+        }
+      }
     } else {
       unavailable.push("runs");
     }
@@ -150,6 +173,11 @@ export async function loadKubiEvidence(
     // safeRunIds 에는 넣지 않는다 — 아래 getBuildQuality / listBuildStages 는 nonexistent run 에
     // 404 를 주므로(Builder OpenAPI SSOT), 그 요청이 정상 응답할 때만 confirmRunId 로 등록한다.
     evidence.deepLinks.buildDetail = `/builds/${encodeURIComponent(runId)}`;
+
+    // 오래된 run이 recent run-list 범위 밖이어도 Builder canonical spec snapshot은 해당
+    // run이 실행된 dataset_id를 직접 제공한다. 다른 membership 근거와 독립적으로 조회하고,
+    // 실패/파싱 불가는 이 근거만 제외한다.
+    const specSnapshotPromise = settle(getBuildSpecSnapshot(runId, signal));
 
     const storedSpec = loadBuildSpec(runId);
     if (storedSpec) {
@@ -203,6 +231,15 @@ export async function loadKubiEvidence(
       };
     } else {
       unavailable.push("quality");
+    }
+
+    const specSnapshotResult = await specSnapshotPromise;
+    if (specSnapshotResult.ok && specSnapshotResult.value.run_id === runId) {
+      const snapshotDatasetId = datasetIdFromSpecSnapshot(specSnapshotResult.value.spec);
+      if (snapshotDatasetId) {
+        confirmRunId(runId);
+        knownRefs.datasetRunMemberships.add(datasetRunMembershipRef(snapshotDatasetId, runId));
+      }
     }
 
     // stage evidence는 source/stage 둘 다 문맥에 있을 때만 의미가 있다. source가 없으면

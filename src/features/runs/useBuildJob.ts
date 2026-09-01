@@ -7,9 +7,19 @@
  * 상태(queued/running/...)를 builderStatus로 노출한다(#245).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { executeBuild, type BuilderJobStatus } from "@/features/runs/api";
-import { ApiError, extractErrorMessage } from "@/shared/lib/builderApi";
-import type { BuildRun, BuildSpec } from "@/shared/lib/types";
+import { executeBuild, type BuildExecutionHandle, type BuilderJobStatus } from "@/features/runs/api";
+import { ApiError, builderApi, extractErrorMessage } from "@/shared/lib/builderApi";
+import type { BuildRun, BuildRunStatus, BuildSpec } from "@/shared/lib/types";
+
+/**
+ * executeBuild가 돌려준 terminal BuildRun.status(succeeded/failed/cancelled)를 hook
+ * 상태로 옮긴다. cancelled를 failed로 붕괴시키지 않는다(#S04).
+ */
+function toJobStatus(runStatus: BuildRunStatus): BuildJobStatus {
+  if (runStatus === "succeeded") return "succeeded";
+  if (runStatus === "cancelled") return "cancelled";
+  return "failed";
+}
 
 export type BuildJobStatus = "idle" | "running" | "succeeded" | "failed" | "cancelled";
 
@@ -22,6 +32,15 @@ export interface BuildJob {
   run?: BuildRun;
   /** 실패 시 오류 메시지 */
   error?: string;
+  /**
+   * 사용자가 진행 중인 요청을 클라이언트에서 중단했음을 나타내는 local-only 표식.
+   *
+   * sync `POST /build`(file source, ADR 0014)는 server-side 협조적 취소 경로가 없어,
+   * fetch abort는 Builder 실행을 멈추지 않는다 — 서버에서는 빌드가 계속 성공/실패할 수
+   * 있다. 그래서 이 경우 status를 canonical `cancelled`로 확정하지 않고, "요청 중단"이라는
+   * 클라이언트 관점 사실만 이 플래그로 노출한다. wire/canonical BuildRun status는 아니다.
+   */
+  interrupted: boolean;
   /** 빌드 실행을 시작한다. */
   start: (spec: BuildSpec) => Promise<void>;
   /** 진행 중인 실행을 취소한다. */
@@ -38,27 +57,47 @@ export function useBuildJob(): BuildJob {
   const [builderStatus, setBuilderStatus] = useState<BuilderJobStatus>();
   const [run, setRun] = useState<BuildRun>();
   const [error, setError] = useState<string>();
+  const [interrupted, setInterrupted] = useState(false);
+  // 언마운트/재시작(lifecycle) 취소 전용 컨트롤러. 사용자 "취소"와는 의미가 다르다.
   const controllerRef = useRef<AbortController | null>(null);
+  // 진행 중인 실행이 어떤 Builder 표면(sync/async)을 타는지와 그 run_id. 사용자 취소가
+  // async job에 대해 POST /builds/{run_id}/cancel을 호출할 수 있게 한다.
+  const handleRef = useRef<BuildExecutionHandle | null>(null);
 
   const start = useCallback(async (spec: BuildSpec) => {
     if (controllerRef.current) return;
     const controller = new AbortController();
     controllerRef.current = controller;
+    handleRef.current = null;
     setStatus("running");
     setBuilderStatus(undefined);
     setError(undefined);
     setRun(undefined);
+    setInterrupted(false);
     try {
-      const result = await executeBuild(spec, controller.signal, (jobStatus) => {
-        if (!controller.signal.aborted) setBuilderStatus(jobStatus);
-      });
+      const result = await executeBuild(
+        spec,
+        controller.signal,
+        (jobStatus) => {
+          if (!controller.signal.aborted) setBuilderStatus(jobStatus);
+        },
+        (handle) => {
+          handleRef.current = handle;
+        },
+      );
       if (controller.signal.aborted) return;
       setRun(result);
-      setStatus(result.status === "succeeded" ? "succeeded" : "failed");
-      if (result.status !== "succeeded") setError(result.error ?? "일부 소스 빌드가 실패했습니다.");
+      // succeeded/failed/cancelled를 그대로 보존한다 — cancelled를 failed로 덮지 않는다(#S04).
+      setStatus(toJobStatus(result.status));
+      if (result.status === "failed") setError(result.error ?? "일부 소스 빌드가 실패했습니다.");
     } catch (cause) {
       if (controller.signal.aborted) {
-        setStatus("cancelled");
+        // AbortController.abort()는 (a) sync build의 사용자 취소, (b) 언마운트
+        // lifecycle cleanup에서만 온다(async 취소는 컨트롤러를 abort하지 않는다).
+        // 어느 쪽이든 fetch abort는 Builder server-side 실행 결과를 알 수 없으므로
+        // succeeded/failed/cancelled 어느 terminal도 확정하지 않는다 — running에서만
+        // 벗어난다. "요청 중단" 사실은 cancel()이 setInterrupted(true)로 이미 남겼다.
+        setStatus((current) => (current === "running" ? "idle" : current));
         return;
       }
       setStatus("failed");
@@ -72,16 +111,31 @@ export function useBuildJob(): BuildJob {
     } finally {
       // 실행이 끝나면(성공/실패/취소) 더 이상 유효하지 않은 컨트롤러 참조를 정리한다.
       if (controllerRef.current === controller) controllerRef.current = null;
+      handleRef.current = null;
     }
   }, []);
 
   const cancel = useCallback(() => {
+    const handle = handleRef.current;
+    if (handle?.mode === "async") {
+      // 실제 Builder에 협조적 취소를 요청하고 polling은 그대로 둔다 — "취소된 척"
+      // 하며 polling을 끊지 않고, Builder가 cancelling → cancelled terminal에 도달하는
+      // 것을 관찰해 최종 상태(result.status)로 판정한다(#S03). 이미 terminal이거나
+      // 네트워크 오류면 polling 결과가 authoritative하므로 여기서는 삼킨다 —
+      // cancel 요청 실패를 local `cancelled`로 바꾸지 않는다.
+      void builderApi.cancelBuildJob(handle.runId).catch(() => {});
+      return;
+    }
+    // sync `POST /build`(file source, ADR 0014) 또는 아직 run_id를 모르는 상태:
+    // server-side 협조적 취소 경로가 없다. fetch abort는 클라이언트 요청만 중단할 뿐
+    // Builder 실행을 취소하지 않으므로, 성공/실패/취소 중 무엇도 확정하지 않고
+    // "요청을 클라이언트에서 중단했다"는 사실만 남긴다.
     controllerRef.current?.abort();
-    setStatus((current) => (current === "running" ? "cancelled" : current));
+    setInterrupted(true);
   }, []);
 
   // 언마운트 시 진행 중인 실행을 중단해 unmount 이후 setState를 방지한다(#73).
   useEffect(() => () => controllerRef.current?.abort(), []);
 
-  return { status, builderStatus, run, error, start, cancel };
+  return { status, builderStatus, run, error, interrupted, start, cancel };
 }

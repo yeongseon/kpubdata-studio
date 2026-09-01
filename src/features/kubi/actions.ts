@@ -11,6 +11,7 @@ import { loadBuildSpec, saveBuildSpec } from "@/features/build-spec/specStore";
 import { saveDraft } from "@/features/build-spec/draftStorage";
 import { validateSpec } from "@/features/validation/api";
 import { hasSecretPlaceholder, isSecretKey, redactSecrets } from "@/features/assistant/scrub";
+import { jsonValueHasRedactedSecret } from "@/features/add-data/paramsRedaction";
 import { buildFormValuesSchema } from "@/shared/lib/schemas";
 import type { BuildSpec, JsonValue } from "@/shared/lib/types";
 import type { KubiAction, BuildSpecPatchOp } from "./schema";
@@ -87,6 +88,16 @@ export function previewBuildSpecPatch(
     };
   }
 
+  // 로컬 보관 정책상 저장된 spec에서 secret 값이 이미 redaction marker로 지워져 있으면
+  // fail-closed — marker가 남은 채로 patch를 적용하면 validate 단계에서 literal placeholder가
+  // Builder로 제출된다(S07 리뷰 §1). credential 재입력은 Provider 설정 화면 몫이다.
+  if (jsonValueHasRedactedSecret(before)) {
+    return {
+      ok: false,
+      reason: "저장된 BuildSpec에서 시크릿 값이 제거되어 있어(로컬 보관 정책) Kubi가 patch할 수 없습니다. serviceKey/apiKey/token 등은 Provider 설정 화면에서 다시 입력하세요.",
+    };
+  }
+
   const invalidPath = action.patch.find((op) => !ALLOWED_PATCH_PATH.test(op.path));
   if (invalidPath) {
     return {
@@ -108,6 +119,12 @@ export function previewBuildSpecPatch(
   try {
     const clone = structuredClone(before) as unknown as Record<string, unknown>;
     for (const op of action.patch) applyPointerOp(clone, op);
+    if (jsonValueHasRedactedSecret(clone)) {
+      return {
+        ok: false,
+        reason: "patch 결과에 redaction marker가 남아 있어 적용할 수 없습니다. 해당 credential을 실제 값으로 다시 입력하세요.",
+      };
+    }
     return { ok: true, before, after: clone as unknown as BuildSpec };
   } catch (cause) {
     return { ok: false, reason: cause instanceof Error ? cause.message : "patch를 적용할 수 없습니다." };
@@ -126,7 +143,9 @@ export async function applyBuildSpecPatch(
   after: BuildSpec,
   validate: typeof validateSpec = validateSpec,
 ): Promise<{ valid: boolean; errors: string[] }> {
-  if (hasSecretPlaceholder(after)) {
+  // `[REDACTED]`(specStore/savedSpecs) · `__KPD_*_REDACTED__`(draft) · `__SCRUBBED_*` 모두
+  // 차단한다 — 어느 marker든 남은 채로 validate하면 literal placeholder가 Builder로 간다.
+  if (jsonValueHasRedactedSecret(after)) {
     return { valid: false, errors: ["해결되지 않은 시크릿 플레이스홀더가 포함되어 있습니다."] };
   }
   const result = await validate(after);

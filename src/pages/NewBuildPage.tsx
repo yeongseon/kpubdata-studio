@@ -11,6 +11,11 @@ import { useForm } from "react-hook-form";
 import { useParams, useSearchParams } from "react-router-dom";
 import { clearDraft, hasDraft, loadDraft, saveDraft } from "@/features/build-spec/draftStorage";
 import { parseSourceParams } from "@/features/build-spec/paramsInput";
+import {
+  jsonValueHasRedactedSecret,
+  redactSourceParamsText,
+  sourceParamsHasRedactedSecret,
+} from "@/features/add-data/paramsRedaction";
 import { previewBuild } from "@/features/preview/api";
 import { useBuild } from "@/features/runs/useBuild";
 import { useBuildJob } from "@/features/runs/useBuildJob";
@@ -158,6 +163,14 @@ function toBuildSpec(
   values: BuildFormValues,
   base?: BuildSpec | null,
 ): { spec?: BuildSpec; error?: string } {
+  // 저장된 초안/스펙을 복원했는데 sourceParams의 secret 값이 이미 redaction marker로 지워져
+  // 있으면 fail-closed — marker를 실제 파라미터처럼 Builder에 제출하지 않는다(S07, Add Data
+  // Workbench의 `buildSpecFromDraft`와 동일 정책). 사용자가 값을 다시 입력해야 한다.
+  // `[REDACTED]`(specStore/savedSpecs) · `__KPD_*_REDACTED__`(draft) · `__SCRUBBED_*` 모두 포함.
+  if (sourceParamsHasRedactedSecret(values.sourceParams)) {
+    return { error: "저장된 초안에서 시크릿이 포함된 파라미터 값이 제거되었습니다. 파라미터를 다시 입력해주세요." };
+  }
+
   const parsedParams = parseSourceParams(values.sourceParams);
   if (parsedParams.error) {
     return { error: parsedParams.error };
@@ -179,6 +192,12 @@ function toBuildSpec(
     // 원본 메타데이터를 먼저 펼쳐 폼이 다루지 않는 키를 유지하고, outputPath만 덮어쓴다.
     metadata: { ...base?.metadata, outputPath: values.outputPath },
   };
+
+  // 폼이 편집하지 않는 영역(base의 sources[1+], 원본 metadata)에 redaction marker가 남아
+  // 있으면 여기서 fail-closed — sources[0] sourceParams 검사만으로는 놓치는 경로다.
+  if (jsonValueHasRedactedSecret(candidate)) {
+    return { error: "저장된 스펙에서 시크릿 값이 제거되었습니다. 해당 credential을 다시 입력해주세요." };
+  }
 
   const result = buildSpecSchema.safeParse(candidate);
   if (!result.success) {
@@ -209,6 +228,16 @@ function toFormValues(spec: BuildSpec): BuildFormValues {
     exportFormats: spec.exports.map((e) => e.format),
     outputPath: typeof spec.metadata.outputPath === "string" ? spec.metadata.outputPath : "",
   };
+}
+
+/**
+ * localStorage 초안 저장 경계 정책(S07): sourceParams JSON에 credential-like 값이 들어와도
+ * 평문으로 남지 않도록 redact한다. 저장 직전(saveCurrentDraft)과 복원 직후(restoreDraft의
+ * read-time rewrite) 양쪽에서 같은 함수를 써 초안 저장본이 항상 이 불변식을 만족하게 한다.
+ * Add Data draft(`saveAddDataDraft`)와 동일한 `paramsRedaction` 헬퍼·sentinel을 재사용한다.
+ */
+function redactDraftForStorage(values: BuildFormValues): BuildFormValues {
+  return { ...values, sourceParams: redactSourceParamsText(values.sourceParams).text };
 }
 
 interface PreviewState {
@@ -418,7 +447,10 @@ export function NewBuildPage() {
   // 뜨지 않도록 draftAvailable은 건드리지 않는다(배너는 새 마운트 시 복원용).
   function saveCurrentDraft() {
     const current = getValues();
-    saveDraft(current);
+    // persistence boundary(S07): credential-like 값이 localStorage 초안에 평문으로 남지
+    // 않도록 저장 직전에 redact한다. 화면의 in-memory 폼 상태(current)는 그대로 두므로
+    // 진행 중인 Preview/Build는 영향이 없다.
+    saveDraft(redactDraftForStorage(current));
     reset(current);
     setDraftSaved(true);
   }
@@ -426,7 +458,10 @@ export function NewBuildPage() {
   // 저장된 초안을 복원해 기본 정보 단계로 이동한다.
   function restoreDraft() {
     // 저장된 초안을 버전·스키마로 검증해 복원한다. 버전 불일치/손상 시 null을 받는다(#84).
-    const saved = loadDraft<BuildFormValues>(buildFormValuesSchema);
+    // 과거 버전이 평문 secret을 저장해 둔 초안이면 복원 시점에 redact본으로 다시 저장되고
+    // (loadDraft의 sanitize rewrite), 반환값도 redact된 상태다 — 아래 toBuildSpec 가드가
+    // marker를 감지해 재입력을 요구한다.
+    const saved = loadDraft<BuildFormValues>(buildFormValuesSchema, undefined, redactDraftForStorage);
     if (!saved) {
       // 깨진 값이 남아 배너가 반복되지 않도록 정리하고, 이동/숨김은 하지 않는다.
       clearDraft();
@@ -930,6 +965,11 @@ export function NewBuildPage() {
                 ) : null}
                 {job.status === "cancelled" ? (
                   <span className="text-sm text-muted-foreground">실행이 취소되었습니다.</span>
+                ) : null}
+                {job.interrupted && job.status !== "cancelled" ? (
+                  <span className="text-sm text-muted-foreground">
+                    요청을 중단했습니다. 서버 빌드 결과는 확인되지 않았습니다.
+                  </span>
                 ) : null}
               </div>
 

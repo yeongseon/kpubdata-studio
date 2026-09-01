@@ -2,16 +2,20 @@
  * 빌드 결과 아티팩트/manifest 조회 API 진입점.
  *
  * mock 모드에서는 결정적 mock manifest를 반환해 뷰어 UI를 개발/검증할 수 있게 한다.
- * 실연동 모드(`VITE_USE_REAL_BUILDER=true`)에서는 Builder `GET /artifacts/{run_id}`를
- * 호출하고, 실제 와이어 형태 `{files, run_id}`를 페이지가 렌더링하는 `BuildManifest`로
- * 매핑한다. /artifacts가 제공하지 않는 필드(recordCount/sources 등)는 안전한 기본값으로
- * 채워 페이지가 누락 필드로 깨지지 않게 한다(#75).
+ * 실연동 모드(`VITE_USE_REAL_BUILDER=true`)에서는 Builder
+ * `GET /builds/{run_id}/manifest`의 authoritative manifest 본문을 그대로 반환한다.
+ * mock 모드에서만 결정적 fixture manifest를 사용한다.
  */
 import { findDemoDataset } from "@/shared/lib/demoDatasets";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type { BuildManifest } from "@/shared/lib/types";
 
 import type { ExportTarget } from "@/shared/lib/types";
+
+/** Builder manifest의 additive field를 API 경계에서만 보존하는 응답 타입. */
+export type AuthoritativeBuildManifest =
+  | BuildManifest
+  | (BuildManifest & Record<string, unknown>);
 
 /**
  * export 형식별 산출물 파일 확장자. specMapping의 output_path 규칙과 동일하게 맞춰
@@ -94,34 +98,10 @@ function mockManifest(buildId: string): BuildManifest {
 }
 
 /**
- * Builder의 실제 `/artifacts` 응답({files, run_id})을 페이지가 쓰는 BuildManifest로
- * 매핑한다. /artifacts가 제공하지 않는 메타 필드는 undefined로 남겨 미제공 상태를 표현한다.
- *
- * 실연동 모드에서는 Builder `/build` 응답 manifest가 연동되지 않아, 메타 필드(시간/환경/
- * 지문/레코드 수/스키마/출처)는 Builder 완성 후 연동할 수 있다. UI에서는 이를 명확히
- * "미제공"으로 표시하도록 처리해야 한다(#119).
- *
- * @param runId - 빌드 실행 ID.
- * @param files - Builder가 반환한 산출물 파일 경로 목록.
- * @returns BuildManifest(제공되지 않은 필드는 undefined).
- */
-function artifactsToManifest(runId: string, files: string[]): BuildManifest {
-  return {
-    schema_version: "1.0.0",
-    build_id: runId,
-    build_environment: null,
-    inputs_fingerprint: null,
-    outputs: files,
-    // 제공되지 않은 필드는 undefined로 남겨서 미제공 상태를 표현
-    // started_at, finished_at, inputs, warnings, errors, row_counts, schema_summaries, provenance
-  };
-}
-
-/**
  * 특정 빌드 실행의 manifest 정보를 조회한다.
  *
- * 실연동 모드면 Builder `/artifacts/{run_id}`의 파일 목록을 BuildManifest로 매핑하고,
- * 아니면 결정적 mock manifest를 반환한다.
+ * 실연동 모드면 Builder `GET /builds/{run_id}/manifest`의 authoritative 본문을,
+ * mock 모드면 결정적 fixture manifest를 반환한다.
  *
  * @param buildId - 조회 대상 빌드 실행 ID.
  * @param signal - 취소용 AbortSignal(선택).
@@ -130,11 +110,11 @@ function artifactsToManifest(runId: string, files: string[]): BuildManifest {
 export async function getBuildManifest(
   buildId: string,
   signal?: AbortSignal,
-): Promise<BuildManifest> {
+): Promise<AuthoritativeBuildManifest> {
   if (!isRealBuilderEnabled()) {
     return mockManifest(buildId);
   }
 
-  const result = await builderApi.artifacts(buildId, signal);
-  return artifactsToManifest(result.run_id, result.files);
+  const result = await builderApi.getBuildManifest(buildId, signal);
+  return result as AuthoritativeBuildManifest;
 }

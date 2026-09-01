@@ -36,6 +36,10 @@ function ContextBar({ context, pageLabel, qualityLabel, sources, onContextChange
     { label: "RUN", value: context.runId ?? "—" },
     { label: "QUALITY", value: qualityLabel },
   ];
+  // Stage 근거 조회는 run이 있어야 하고, multi-source run에서는 source가 확정돼야 가능하다
+  // (source 미선택이면 evidence 로더가 stage를 fail-closed로 비운다 — evidence.ts). 단일 소스
+  // run은 Builder가 유일 소스를 자동 선택하므로 source 미선택이어도 Stage를 쓸 수 있다.
+  const stageSelectDisabled = !context.runId || (sources.length > 1 && !context.source);
   return (
     <div>
       <p className="mb-1.5 text-[10px] text-muted-foreground">현재 화면 · {pageLabel}</p>
@@ -48,7 +52,7 @@ function ContextBar({ context, pageLabel, qualityLabel, sources, onContextChange
             </p>
           </div>
         ))}
-        <label className="rounded-lg border border-border bg-muted/40 px-2.5 py-2"><span className="block text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">STAGE</span><select aria-label="Kubi 분석 Stage" className="mt-0.5 w-full bg-transparent text-xs font-medium" value={context.stage ?? ""} onChange={(event) => onContextChange("stage", event.target.value || undefined)} disabled={!context.runId}><option value="">{context.runId ? "Run 전체" : "사용 불가"}</option><option value="bronze">Bronze</option><option value="silver">Silver</option><option value="gold">Gold</option></select></label>
+        <label className="rounded-lg border border-border bg-muted/40 px-2.5 py-2"><span className="block text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">STAGE</span><select aria-label="Kubi 분석 Stage" className="mt-0.5 w-full bg-transparent text-xs font-medium" value={context.stage ?? ""} onChange={(event) => onContextChange("stage", event.target.value || undefined)} disabled={stageSelectDisabled}><option value="">{context.runId ? "Run 전체" : "사용 불가"}</option><option value="bronze">Bronze</option><option value="silver">Silver</option><option value="gold">Gold</option></select></label>
       </div>
       {context.runId && sources.length > 1 ? <label className="mt-2 block text-xs text-muted-foreground">분석 Source<select aria-label="Kubi 분석 Source" className="ml-2 rounded border border-input bg-card px-2 py-1 text-foreground" value={context.source ?? ""} onChange={(event) => onContextChange("source", event.target.value || undefined)}><option value="">먼저 선택하세요</option>{sources.map((source) => <option key={source} value={source}>{source}</option>)}</select></label> : null}
       <p className="mt-2 text-[11px] text-muted-foreground">{!context.runId ? "Run을 선택하면 Run 및 Stage 근거를 분석할 수 있습니다." : sources.length > 1 && !context.source ? "이 Run에는 source가 여러 개 있습니다. 분석할 source를 먼저 선택하세요." : !context.stage ? "Run 전체를 분석 중입니다. SQL을 생성하려면 Silver 또는 Gold를 선택하세요." : context.stage === "bronze" ? "Bronze에서는 Generated SQL을 실행할 수 없습니다. Silver 또는 Gold를 선택하세요." : `${context.stage === "gold" ? "Gold" : "Silver"} schema 기반 질문 및 SQL 생성 가능`}</p>
@@ -402,7 +406,7 @@ export function evidenceHref(turn: KubiTurn, ref: KubiEvidenceRef): string | nul
   return null;
 }
 
-function EvidenceSection({ turn }: { turn: KubiTurn }) {
+export function EvidenceSection({ turn }: { turn: KubiTurn }) {
   const [selected, setSelected] = useState<KubiEvidenceRef | null>(null);
   const refs = turn.response?.evidenceRefs ?? [];
   const rejected = turn.error?.kind === "hallucinated_refs" ? turn.error.rejectedRefs : [];
