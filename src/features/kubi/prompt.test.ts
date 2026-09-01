@@ -51,6 +51,7 @@ describe("buildKubiMessages (#256 프롬프트)", () => {
     const evidence = baseEvidence({
       context: { page: "quality", datasetId: "air-quality", runId: "r1", stage: "gold", source: "datago__air_quality" },
       stage: {
+        refId: "r1::datago__air_quality::gold",
         stage: "gold",
         source: "datago__air_quality",
         status: "completed",
@@ -68,7 +69,7 @@ describe("buildKubiMessages (#256 프롬프트)", () => {
 
   it("keeps evidence and user question isolated as separate untrusted-data messages", () => {
     const evidence = baseEvidence({
-      stage: { stage: "silver", source: "datago__air", status: "completed", available: true, rowCount: 10 },
+      stage: { refId: "r1::datago__air::silver", stage: "silver", source: "datago__air", status: "completed", available: true, rowCount: 10 },
     });
     const messages = buildKubiMessages("서울 데이터 보여줘", evidence);
     expect(messages).toHaveLength(3);

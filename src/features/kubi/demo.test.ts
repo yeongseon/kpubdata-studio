@@ -103,7 +103,7 @@ describe("buildKubiDemoResponse (#256 데모)", () => {
     const withStage = baseEvidence({
       ...datasetOnly,
       context: { page: "dataset-detail", datasetId: "air-quality", stage: "silver" },
-      stage: { stage: "silver", source: "datago__air", status: "completed", available: true, rowCount: 1000 },
+      stage: { refId: "run-1::datago__air::silver", stage: "silver", source: "datago__air", status: "completed", available: true, rowCount: 1000 },
     });
     const response = buildKubiDemoResponse(withStage);
     expect(response.generatedSql).toEqual({
@@ -111,13 +111,13 @@ describe("buildKubiDemoResponse (#256 데모)", () => {
       stage: "silver",
       source: "datago__air",
     });
-    expect(response.evidenceRefs).toContainEqual({ kind: "stage", id: "datago__air:silver", label: "datago__air · silver" });
+    expect(response.evidenceRefs).toContainEqual({ kind: "stage", id: "run-1::datago__air::silver", label: "datago__air · silver" });
   });
 
   it("demo SQL never uses the source_key as a FROM table name — only the logical relation \"dataset\"", () => {
     const evidence = baseEvidence({
       context: { page: "dataset-detail", datasetId: "air-quality", stage: "gold" },
-      stage: { stage: "gold", source: "datago__air", status: "completed", available: true, rowCount: 1000 },
+      stage: { refId: "run-1::datago__air::gold", stage: "gold", source: "datago__air", status: "completed", available: true, rowCount: 1000 },
     });
     const response = buildKubiDemoResponse(evidence);
     expect(response.generatedSql?.sql).toMatch(/FROM dataset\b/);

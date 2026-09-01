@@ -140,6 +140,7 @@ export function useKubiSession(): UseKubiSessionResult {
         context,
         createdAt: new Date().toISOString(),
         status: "loading",
+        phase: "collecting_evidence",
         query: { status: "idle" },
         actionStates: {},
       };
@@ -168,6 +169,8 @@ export function useKubiSession(): UseKubiSessionResult {
         );
         updateTurn(turnId, (t) => ({ ...t, evidence }));
 
+        updateTurn(turnId, (t) => ({ ...t, phase: "generating" }));
+
         const provider = createProvider({ apiKey, model, baseUrl });
         const messages = buildKubiMessages(trimmed, evidence);
         let rawOutput = "";
@@ -182,6 +185,7 @@ export function useKubiSession(): UseKubiSessionResult {
           rawOutput += chunk;
         }
 
+        updateTurn(turnId, (t) => ({ ...t, phase: "validating" }));
         const parsed = parseKubiResponse(rawOutput);
         if (!parsed.ok) {
           updateTurn(turnId, (t) => ({
@@ -212,6 +216,7 @@ export function useKubiSession(): UseKubiSessionResult {
         updateTurn(turnId, (t) => ({
           ...t,
           status: "ok",
+          phase: undefined,
           rawOutput,
           response: checked.response,
           actionStates,
@@ -262,6 +267,7 @@ export function useKubiSession(): UseKubiSessionResult {
         context,
         createdAt: new Date().toISOString(),
         status: "loading",
+        phase: "collecting_evidence",
         query: { status: "idle" },
         actionStates: {},
         isDemo: true,
@@ -272,8 +278,9 @@ export function useKubiSession(): UseKubiSessionResult {
       controllersRef.current.set(turnId, controller);
       try {
         const { evidence } = await loadKubiEvidence(context, controller.signal);
+        updateTurn(turnId, (t) => ({ ...t, evidence, phase: "validating" }));
         const response = buildKubiDemoResponse(evidence);
-        updateTurn(turnId, (t) => ({ ...t, status: "ok", evidence, response }));
+        updateTurn(turnId, (t) => ({ ...t, status: "ok", phase: undefined, evidence, response }));
       } catch (cause) {
         if (controller.signal.aborted) {
           updateTurn(turnId, (t) => ({ ...t, status: "error", error: { kind: "cancelled" } }));

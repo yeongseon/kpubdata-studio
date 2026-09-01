@@ -19,7 +19,7 @@ import { loadBuildSpec } from "@/features/build-spec/specStore";
 import { redactSecrets } from "@/features/assistant/scrub";
 import { builderApi } from "@/shared/lib/builderApi";
 import type { KubiContext, KubiEvidence, KubiEvidenceSource, KubiKnownRefs } from "./types";
-import { qualityResultRefId } from "./types";
+import { qualityResultRefId, stageEvidenceRefId } from "./types";
 
 async function settle<T>(promise: Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
   try {
@@ -60,6 +60,7 @@ export async function loadKubiEvidence(
     providers: new Set(),
     qualityResultIds: new Set(),
     schemaDriftIds: new Set(),
+    stageIds: new Set(),
     sourceKeys: new Set(),
   };
 
@@ -235,8 +236,11 @@ export async function loadKubiEvidence(
           );
           if (detailResult.ok) {
             const detail = detailResult.value;
+            const refId = stageEvidenceRefId(runId, chosenSource.source_key, detail.stage);
             const rowCount = detail.stage === "bronze" ? detail.record_count : detail.row_count;
             knownRefs.sourceKeys.add(chosenSource.source_key);
+            knownRefs.stageIds.add(refId);
+            safeEvidenceIds.add(refId);
             // Generated SQL이 컬럼명/타입을 추측하지 않도록, Builder가 이미 반환한 stage
             // schema만 canonical하게 노출한다. silver는 {name,dtype}까지, gold는 이름만
             // (contract상 dtype이 없다), bronze는 없다. sample row는 여전히 읽지 않는다.
@@ -249,6 +253,7 @@ export async function loadKubiEvidence(
               columns = [...detail.columns];
             }
             evidence.stage = {
+              refId,
               stage: context.stage,
               source: chosenSource.source_key,
               status: detail.status,

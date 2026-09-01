@@ -32,7 +32,7 @@ function isKnownEvidenceRef(ref: KubiEvidenceRef, known: KubiKnownRefs, evidence
     case "schema_drift":
       return known.schemaDriftIds.has(ref.id);
     case "stage":
-      return Boolean(evidence.stage) && ref.id === `${evidence.stage!.source}:${evidence.stage!.stage}`;
+      return known.stageIds.has(ref.id) && evidence.stage?.refId === ref.id;
     default:
       return false;
   }

@@ -57,9 +57,12 @@ describe("loadKubiEvidence (#256)", () => {
       stage: "silver",
       source: "datago__air",
     };
-    const { evidence } = await loadKubiEvidence(context);
+    const { evidence, knownRefs, safeEvidenceIds } = await loadKubiEvidence(context);
     expect(evidence.stage?.stage).toBe("silver");
     expect(evidence.stage?.source).toBe("datago__air");
+    expect(evidence.stage?.refId).toBe("air-2026-08-14::datago__air::silver");
+    expect(knownRefs.stageIds.has(evidence.stage!.refId)).toBe(true);
+    expect(safeEvidenceIds.has(evidence.stage!.refId)).toBe(true);
     // 원본 sample row는 evidence 타입 자체에 존재하지 않는다 — 최소 데이터 원칙(#256 리뷰 §3).
     expect(evidence.stage).not.toHaveProperty("sample");
   });
