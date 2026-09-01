@@ -7,10 +7,13 @@ import { SUGGESTED_QUESTIONS } from "@/features/kubi/suggestedQuestions";
 import { useKubiStore } from "@/features/kubi/useKubiSession";
 import { HomePage } from "@/pages/HomePage";
 import { builderApi } from "@/shared/lib/builderApi";
+import { API_BASE } from "@/shared/config/env";
 import { useUIStore } from "@/shared/hooks/useUIStore";
 import { mswServer } from "../vitest.setup";
 
-const BUILDER_BASE = "http://localhost:8000";
+// 클라이언트가 실제로 부르는 base와 동일해야 한다(로컬 .env.local이 127.0.0.1로
+// 덮어써도 msw 핸들러가 매칭되도록 하드코딩 대신 API_BASE에서 파생).
+const BUILDER_BASE = API_BASE;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -23,14 +26,33 @@ function mockEmptyBuilds() {
 }
 
 /**
+ * dataset total / quality summary aggregate를 미지원(구버전 Builder)으로 고정한다.
+ * 두 KPI는 "확인 불가"가 되어야 하며 임의 0/PASS로 합성되면 안 된다. real 모드에서
+ * HomePage가 항상 이 둘을 조회하므로, 다른 KPI를 검증하는 테스트도 명시적으로 stub한다.
+ */
+function mockDashboardAggregatesUnsupported() {
+  mswServer.use(
+    http.get(`${BUILDER_BASE}/datasets`, () => HttpResponse.json({ datasets: [] })),
+    http.get(`${BUILDER_BASE}/quality/summary`, () => new HttpResponse(null, { status: 404 })),
+  );
+}
+
+/**
  * mock 모드(`VITE_USE_REAL_BUILDER` 미설정)의 `listBuilds()`는 결정적 데모 데이터
  * (DEMO_DATASETS, 항상 succeeded 빌드 포함)를 반환하고 msw를 아예 거치지 않는다
  * (features/runs/api/index.ts) — 그래서 신규 사용자(빌드 0개) 상태를 결정적으로 재현하려면
  * 실제 Builder 연동 모드로 전환해 `/builds` 응답 자체를 msw로 통제해야 한다.
+ *
+ * 신규 사용자 = 빌드 0개 **그리고** authoritative dataset total 0. real 모드에서는
+ * dataset total이 확인돼야(GET /datasets `total: 0`) NewUserHome이 렌더된다 —
+ * total을 확인할 수 없으면 빈 build만으로 신규 사용자로 추측하지 않기 때문이다.
  */
 function useEmptyBuildsRealMode() {
   vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
   mockEmptyBuilds();
+  mswServer.use(
+    http.get(`${BUILDER_BASE}/datasets`, () => HttpResponse.json({ datasets: [], total: 0 })),
+  );
 }
 
 function configureKey() {
@@ -118,13 +140,16 @@ describe("HomePage", () => {
         artifact_store: { availability: "available", last_write_at: null },
       })),
     );
+    mockDashboardAggregatesUnsupported();
 
     render(<MemoryRouter><HomePage /></MemoryRouter>);
 
     expect(await screen.findByText("7")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getAllByText("확인 불가")).toHaveLength(2);
-    expect(screen.getByText("품질 경고 집계 확인 불가")).toBeInTheDocument();
+    expect(
+      screen.getByText("개별 품질 경고 목록은 아직 제공되지 않습니다"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("품질 경고가 없습니다")).not.toBeInTheDocument();
     expect(screen.queryByText("모든 빌드가 정상적으로 완료되었습니다")).not.toBeInTheDocument();
   });
@@ -140,6 +165,7 @@ describe("HomePage", () => {
       http.get(`${BUILDER_BASE}/monitoring/builds`, () => monitoringBuilds.promise),
       http.get(`${BUILDER_BASE}/monitoring/summary`, () => monitoringSummary.promise),
     );
+    mockDashboardAggregatesUnsupported();
     render(<MemoryRouter><HomePage /></MemoryRouter>);
     expect(await screen.findByText("deferred-run")).toBeInTheDocument();
     expect(screen.queryByText(/빌드 목록을 불러오지 못했습니다/)).not.toBeInTheDocument();
@@ -156,6 +182,7 @@ describe("HomePage", () => {
     mswServer.use(
       http.get(`${BUILDER_BASE}/builds`, () => HttpResponse.json({ builds: [{ run_id: "still-visible", status: "ok", started_at: "2026-08-31T00:00:00Z", finished_at: null }] })),
     );
+    mockDashboardAggregatesUnsupported();
     vi.spyOn(builderApi, "getMonitoringBuilds").mockRejectedValue(new Error("monitoring down"));
     vi.spyOn(builderApi, "getMonitoringSummary").mockRejectedValue(new Error("monitoring down"));
     render(<MemoryRouter><HomePage /></MemoryRouter>);

@@ -5,8 +5,12 @@
  * contract/builder-api.yaml의 SSOT와 정합하도록 작성.
  */
 import { http, HttpResponse } from "msw";
+import { API_BASE } from "@/shared/config/env";
 
-const BASE = "http://localhost:8000";
+// builderApi가 실제로 요청을 보내는 base와 동일하게 파생한다(로컬 .env.local의
+// VITE_BUILDER_API_URL 유무와 무관하게 핸들러가 매칭되도록). 특정 host 문자열에
+// 다시 종속시키지 않는다.
+const BASE = API_BASE;
 
 export const handlers = [
   http.get(`${BASE}/healthz`, () =>

@@ -45,6 +45,7 @@ const EXPECTED_OPERATIONS = [
   "getBuildEvents",
   "getMonitoringSummary",
   "getMonitoringBuilds",
+  "getQualitySummary",
   "listProviders",
   "testProviderConnection",
   "getProviderStatus",

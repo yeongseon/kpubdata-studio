@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ApiError,
   builderApi,
   isRealBuilderEnabled,
   type ProviderSummary,
@@ -58,6 +59,13 @@ interface CredentialForm {
 type CredentialMetaState =
   | { status: "idle" | "loading" }
   | { status: "not_applicable" }
+  /**
+   * 운영자가 encrypted credential store(master key)를 구성하지 않았다 —
+   * Builder가 `GET /providers/{provider}/credential`에 503
+   * `credential store is not configured`로 답한 경우. "사용자가 아직 credential을
+   * 등록하지 않음"(200 `configured:false`)이나 일반 조회 실패와 구분한다.
+   */
+  | { status: "store_unavailable" }
   | { status: "error"; message: string }
   | {
       status: "loaded";
@@ -87,7 +95,14 @@ export function ProviderPage() {
   const [showCredentialForm, setShowCredentialForm] = useState(false);
   const [credentialForm, setCredentialForm] = useState<CredentialForm>({ credential: "" });
   const [credentialMeta, setCredentialMeta] = useState<CredentialMetaState>({ status: "idle" });
+  // credential 메타 조회/갱신 race guard는 두 축을 함께 본다:
+  // (1) request-generation — 더 나중에 시작한 조회가 항상 이긴다.
+  // (2) selectedProviderIdRef — 그 조회의 대상 provider가 "지금 화면에 선택된"
+  //     provider와 같아야 한다. mutation(save/delete) 완료 후의 늦은
+  //     loadCredentialMeta(A)가 generation을 최신으로 올려도, 그 사이 사용자가
+  //     B로 옮겼다면 A의 결과/loading/error가 B 패널을 절대 덮지 못한다(#324, #322).
   const credentialRequestGeneration = useRef(0);
+  const selectedProviderIdRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -130,6 +145,13 @@ export function ProviderPage() {
     void loadProviders();
   }, [loadProviders]);
 
+  // selectedProvider가 바뀔 때(특히 loadProviders 새로고침으로 선택 provider가
+  // 목록에서 사라져 null이 될 때) ref를 정렬 상태로 유지한다. 네트워크 응답은
+  // 항상 이 커밋/effect 이후에 도착하므로, 진행 중이던 조회의 stale 판정 기준이 된다.
+  useEffect(() => {
+    selectedProviderIdRef.current = selectedProvider?.id ?? null;
+  }, [selectedProvider]);
+
   /**
    * 선택된 provider의 "사용자 저장 credential" 메타데이터를 authoritative하게 다시 읽는다.
    * requires_credential=false면 조회 자체를 하지 않는다(등록/삭제할 credential이 없음).
@@ -137,15 +159,20 @@ export function ProviderPage() {
   const loadCredentialMeta = useCallback(
     async (provider: ProviderConfig) => {
       const generation = ++credentialRequestGeneration.current;
+      // 이 조회 결과를 화면에 반영해도 되는지: 가장 최신 조회이면서, 그 대상이
+      // 여전히 선택된 provider일 때만. loading/error/loaded 커밋 전에 항상 확인한다.
+      const stillCurrent = () =>
+        generation === credentialRequestGeneration.current &&
+        provider.id === selectedProviderIdRef.current;
       if (!provider.requiresCredential) {
-        if (generation === credentialRequestGeneration.current) setCredentialMeta({ status: "not_applicable" });
+        if (stillCurrent()) setCredentialMeta({ status: "not_applicable" });
         return;
       }
-      setCredentialMeta({ status: "loading" });
+      if (stillCurrent()) setCredentialMeta({ status: "loading" });
       try {
         if (isRealBuilderEnabled()) {
           const meta = await builderApi.getProviderCredential(provider.id);
-          if (generation !== credentialRequestGeneration.current) return;
+          if (!stillCurrent()) return;
           setCredentialMeta({
             status: "loaded",
             configured: meta.configured,
@@ -153,11 +180,15 @@ export function ProviderPage() {
             updatedAt: meta.updated_at,
           });
         } else {
-          if (generation !== credentialRequestGeneration.current) return;
+          if (!stillCurrent()) return;
           setCredentialMeta(mockCredentialMeta(provider));
         }
-      } catch {
-        if (generation !== credentialRequestGeneration.current) return;
+      } catch (cause) {
+        if (!stillCurrent()) return;
+        if (cause instanceof ApiError && cause.status === 503) {
+          setCredentialMeta({ status: "store_unavailable" });
+          return;
+        }
         setCredentialMeta({ status: "error", message: "자격 증명 상태를 불러오지 못했습니다" });
       }
     },
@@ -165,6 +196,10 @@ export function ProviderPage() {
   );
 
   const handleProviderSelect = (provider: ProviderConfig) => {
+    // 선택 전환은 동기적으로 ref에 반영한다 — 직후의 loadCredentialMeta가
+    // 즉시 이 값을 기준으로 삼아야 하고, 진행 중이던 다른 provider의 조회는
+    // 여기서부터 stale로 판정된다.
+    selectedProviderIdRef.current = provider.id;
     ++credentialRequestGeneration.current;
     setSelectedProvider(provider);
     setShowCredentialForm(false);
@@ -223,12 +258,22 @@ export function ProviderPage() {
         // response로 기대하지 않고, 선택된 provider의 canonical id를 URL에 쓴다(#S02).
         await builderApi.putProviderCredential(provider.id, credentialForm.credential);
       }
-      setCredentialForm({ credential: "" });
-      setShowCredentialForm(false);
-      // 저장 후 metadata와 provider 요약을 다시 authoritative하게 갱신한다.
+      // 저장이 진행되는 동안 사용자가 다른 provider로 옮겼다면, 이 mutation의 후속
+      // form 리셋/에러가 현재 화면(B)을 오염시키면 안 된다(#322/#324와 같은 축).
+      if (selectedProviderIdRef.current === provider.id) {
+        setCredentialForm({ credential: "" });
+        setShowCredentialForm(false);
+      }
+      // metadata/provider 요약은 provider 전환 여부와 무관하게 authoritative하게
+      // 갱신한다 — loadCredentialMeta는 내부 guard로 stale 결과를 반영하지 않는다.
       await Promise.all([loadProviders(), loadCredentialMeta(provider)]);
-    } catch {
-      setError("Credential 저장에 실패했습니다");
+    } catch (cause) {
+      if (selectedProviderIdRef.current !== provider.id) return;
+      setError(
+        cause instanceof ApiError && cause.status === 503
+          ? "Builder에 자격 증명 저장소(master key)가 구성되어 있지 않아 저장할 수 없습니다."
+          : "Credential 저장에 실패했습니다",
+      );
     }
   };
 
@@ -242,8 +287,14 @@ export function ProviderPage() {
       }
       // 삭제 후 metadata와 provider 요약을 다시 authoritative하게 갱신한다.
       await Promise.all([loadProviders(), loadCredentialMeta(provider)]);
-    } catch {
-      setError("Credential 삭제에 실패했습니다");
+    } catch (cause) {
+      // 삭제 도중 다른 provider로 옮겼다면 이 실패를 현재 화면 에러로 노출하지 않는다.
+      if (selectedProviderIdRef.current !== provider.id) return;
+      setError(
+        cause instanceof ApiError && cause.status === 503
+          ? "Builder에 자격 증명 저장소(master key)가 구성되어 있지 않아 삭제할 수 없습니다."
+          : "Credential 삭제에 실패했습니다",
+      );
     }
   };
 
@@ -430,6 +481,19 @@ export function ProviderPage() {
                   <p className="mt-4 text-sm text-muted-foreground">
                     자격 증명 상태를 불러오는 중…
                   </p>
+                ) : credentialMeta.status === "store_unavailable" ? (
+                  <div className="mt-4 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">
+                      자격 증명 저장소가 아직 구성되지 않았습니다
+                    </p>
+                    <p className="mt-2">
+                      Builder에 암호화된 자격 증명 저장소(master key)가 설정되어 있지 않아 사용자
+                      자격 증명을 등록·조회할 수 없습니다. 이는 &ldquo;아직 자격 증명을 등록하지
+                      않음&rdquo;과는 다른 상태입니다. 운영자가 Builder에
+                      <code className="mx-1">KPUBDATA_BUILDER_CREDENTIAL_MASTER_KEY</code>를 설정한
+                      뒤 다시 시도하세요.
+                    </p>
+                  </div>
                 ) : credentialMeta.status === "error" ? (
                   <p className="mt-4 text-sm text-red-600 dark:text-red-400">
                     {credentialMeta.message}

@@ -3,9 +3,11 @@ import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BuildPublishPage } from "@/pages/BuildPublishPage";
+import { API_BASE } from "@/shared/config/env";
 import { mswServer } from "../vitest.setup";
 
-const BUILDER_BASE = "http://localhost:8000";
+// builderApi가 실제로 쓰는 API base와 동일하게 파생한다(하드코딩된 host에 종속되지 않도록).
+const BUILDER_BASE = API_BASE;
 
 afterEach(() => vi.unstubAllEnvs());
 

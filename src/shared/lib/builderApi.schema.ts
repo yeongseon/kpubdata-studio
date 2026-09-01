@@ -375,6 +375,11 @@ export const datasetDetailResponseSchema = datasetSummarySchema.extend({
 
 export const datasetsResponseSchema = z.object({
   datasets: z.array(datasetSummarySchema),
+  // `total`은 Builder 1.22.0에서 추가된 additive 필드다(canonical grouping +
+  // ownership 이후, pagination 이전의 distinct dataset 수). 1.21.0 이하 Builder는
+  // 이 필드를 보내지 않으므로 optional로 둔다 — 없으면 Studio는 "확인 불가"로
+  // 표시하고, items.length/limit을 total로 대신 쓰지 않는다.
+  total: z.number().int().nonnegative().optional(),
 });
 
 export const datasetRunSummarySchema = z.object({
@@ -572,6 +577,22 @@ export const datasetQualityHistoryResponseSchema = z.object({
 });
 
 /**
+ * GET /quality/summary — 최근 24h cross-run quality aggregate (Builder 1.22.0, #486 후속).
+ * Home의 "QUALITY WARN (24H)" KPI가 임의 숫자 합성 없이 authoritative 값을 읽는다.
+ * per-run quality_results/dataset/owner는 포함하지 않는다.
+ */
+export const qualitySummaryResponseSchema = z.object({
+  window: z.literal("24h"),
+  generated_at: z.string(),
+  availability: z.enum(["available", "unavailable"]),
+  total_runs: z.number().int().nonnegative(),
+  evaluated_runs: z.number().int().nonnegative(),
+  pass_runs: z.number().int().nonnegative(),
+  warn_runs: z.number().int().nonnegative(),
+  fail_runs: z.number().int().nonnegative(),
+});
+
+/**
  * ============================================
  * Build Publish API (1.17.0, builder #491 / PR #547)
  * ============================================
@@ -696,6 +717,7 @@ export type QualityAvailability = z.infer<typeof qualityAvailabilitySchema>;
 export type BuildQualityResponse = z.infer<typeof buildQualityResponseSchema>;
 export type DatasetQualityHistoryEntry = z.infer<typeof datasetQualityHistoryEntrySchema>;
 export type DatasetQualityHistoryResponse = z.infer<typeof datasetQualityHistoryResponseSchema>;
+export type QualitySummaryResponse = z.infer<typeof qualitySummaryResponseSchema>;
 
 /**
  * Monitoring (#516) — Builder 실제 wire 계약(GET /monitoring/summary,

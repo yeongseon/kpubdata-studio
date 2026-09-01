@@ -12,7 +12,13 @@
  * 실제 예시 데이터셋이 없는 상태에서 서비스가 미완성인 인상을 줬다. 같은 CTA는 이미
  * "공공데이터 탐색 → /discover" 카드가 담당한다.
  */
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type SetStateAction,
+} from "react";
 import { useAssistConfig } from "@/features/assistant/config";
 import { listBuilds } from "@/features/runs/api";
 import { SUGGESTED_QUESTIONS } from "@/features/kubi/suggestedQuestions";
@@ -32,98 +38,178 @@ import {
 interface DashboardStats {
   datasetCount: number | null;
   buildSuccess: number | null;
-  validationWarn: number | null;
+  qualityWarn: number | null;
   running: number | null;
 }
 
-interface LoadingState {
-  builds: boolean;
-  stats: boolean;
+/**
+ * 각 KPI aggregate는 독립적인 API 경계다 — 하나가 실패해도 나머지 KPI 값과
+ * Recent Builds는 영향받지 않는다. "loading"은 skeleton, "unavailable"은
+ * "확인 불가"(임의 숫자 합성 없음)로 렌더된다.
+ */
+type KpiPhase = "loading" | "ready" | "unavailable";
+
+interface KpiPhases {
+  /** DATASETS — GET /datasets의 authoritative `total` (Builder 1.22.0). */
+  datasets: KpiPhase;
+  /** SUCCEEDED (24H) + RUNNING — GET /monitoring/* 공유 경계. */
+  monitoring: KpiPhase;
+  /** QUALITY WARN (24H) — GET /quality/summary (Builder 1.22.0). */
+  quality: KpiPhase;
 }
 
-interface ApiState {
-  builds: "loading" | "error" | "success";
-  stats: "loading" | "error" | "success";
+/**
+ * DATASETS KPI + 신규 사용자 판정을 위한 authoritative dataset total만 독립적으로
+ * 조회한다 — monitoring/quality 경계는 건드리지 않는다.
+ *
+ * 1.21.0 이하 Builder는 `total`을 보내지 않으므로 그때는 items.length/limit로
+ * 대체하지 않고 "확인 불가"(kpi.datasets="unavailable", datasetCount=null)로 둔다.
+ * 호출부는 이 상태를 "dataset 없음"으로 오해하지 않는다.
+ */
+function loadDatasetTotal(
+  isActive: () => boolean,
+  setStats: Dispatch<SetStateAction<DashboardStats>>,
+  setKpi: Dispatch<SetStateAction<KpiPhases>>,
+): void {
+  builderApi
+    .listDatasets(1)
+    .then((res) => {
+      if (!isActive()) return;
+      setStats((prev) => ({ ...prev, datasetCount: res.total ?? null }));
+      setKpi((prev) => ({ ...prev, datasets: res.total === undefined ? "unavailable" : "ready" }));
+    })
+    .catch(() => {
+      if (!isActive()) return;
+      setStats((prev) => ({ ...prev, datasetCount: null }));
+      setKpi((prev) => ({ ...prev, datasets: "unavailable" }));
+    });
+}
+
+/**
+ * 실연동 모드에서 Home KPI 3개 경계를 각각 독립적으로 로드한다.
+ *
+ * 세 요청은 서로를, 그리고 이미 커밋된 Recent Builds를 절대 block하지 않는다.
+ * 한 aggregate가 실패/미지원이면 해당 KPI만 "확인 불가"가 되고 값을 지어내지 않는다.
+ */
+function loadRealKpis(
+  isActive: () => boolean,
+  setStats: Dispatch<SetStateAction<DashboardStats>>,
+  setKpi: Dispatch<SetStateAction<KpiPhases>>,
+): void {
+  // (1) DATASETS — dataset total.
+  loadDatasetTotal(isActive, setStats, setKpi);
+
+  // (2) SUCCEEDED (24H) + RUNNING — monitoring. 각 endpoint 실패는 그 값만 null로.
+  void Promise.all([
+    builderApi.getMonitoringBuilds().catch(() => null),
+    builderApi.getMonitoringSummary().catch(() => null),
+  ]).then(([monitoring, summary]) => {
+    if (!isActive()) return;
+    const monitoredSuccess =
+      monitoring?.availability === "available"
+        ? monitoring.buckets.reduce((sum, bucket) => sum + bucket.success, 0)
+        : null;
+    setStats((prev) => ({
+      ...prev,
+      buildSuccess: monitoredSuccess,
+      // GET /builds의 real 계약은 terminal summary만 제공하므로 active 수로 해석하지 않는다.
+      running: summary?.queue.running ?? null,
+    }));
+    setKpi((prev) => ({ ...prev, monitoring: "ready" }));
+  });
+
+  // (3) QUALITY WARN (24H) — quality summary. 미지원(1.21.0 이하 → 404)/실패면 "확인 불가".
+  builderApi
+    .getQualitySummary()
+    .then((res) => {
+      if (!isActive()) return;
+      setStats((prev) => ({
+        ...prev,
+        qualityWarn: res.availability === "available" ? res.warn_runs : null,
+      }));
+      setKpi((prev) => ({ ...prev, quality: "ready" }));
+    })
+    .catch(() => {
+      if (!isActive()) return;
+      setStats((prev) => ({ ...prev, qualityWarn: null }));
+      setKpi((prev) => ({ ...prev, quality: "unavailable" }));
+    });
 }
 
 /**
  * 신규 사용자 여부를 판단한다.
- * dataset/build이 하나도 없으면 신규 사용자로 간주한다.
+ *
+ * 신규 사용자는 "빌드도 dataset도 없음"이 실제로 확인됐을 때만 확정한다. 빈 build
+ * 목록만으로는 부족하다 — dataset은 있는데 아직 build를 돌리지 않은 사용자를 신규로
+ * 오판할 수 있기 때문이다. real 모드에서는 Builder GET /datasets의 authoritative
+ * `total`(1.22.0)을 함께 확인하고, total이 unavailable(구버전 Builder / 404·5xx)이면
+ * 신규로 추측하지 않고 기존 대시보드를 보여준다(DATASETS만 "확인 불가").
  */
 export function HomePage() {
+  const realBuilder = isRealBuilderEnabled();
   const [builds, setBuilds] = useState<BuildListItem[]>([]);
+  const [buildsState, setBuildsState] = useState<"loading" | "error" | "success">("loading");
   const [stats, setStats] = useState<DashboardStats>({
-    datasetCount: 0,
-    buildSuccess: 0,
-    validationWarn: null,
-    running: 0,
+    datasetCount: null,
+    buildSuccess: null,
+    qualityWarn: null,
+    running: null,
   });
-  const [loading, setLoading] = useState<LoadingState>({
-    builds: true,
-    stats: true,
-  });
-  const [apiState, setApiState] = useState<ApiState>({
-    builds: "loading",
-    stats: "loading",
+  const [kpi, setKpi] = useState<KpiPhases>({
+    datasets: "loading",
+    monitoring: "loading",
+    quality: "loading",
   });
 
   useEffect(() => {
     let active = true;
 
-    const fetchData = async () => {
-      try {
-        const realBuilder = isRealBuilderEnabled();
-        const buildList = await listBuilds();
-        // Recent builds and monitoring have independent authority and latency.
-        if (active) {
-          setBuilds(buildList);
-          setApiState((prev) => ({ ...prev, builds: "success" }));
-          setLoading((prev) => ({ ...prev, builds: false }));
-        }
-        // 비어 있는 목록은 신규 사용자 분기에 충분하며, 불필요한 monitoring 호출로 막지 않는다.
-        const [monitoring, summary] = realBuilder && buildList.length > 0
-          ? await Promise.all([
-              builderApi.getMonitoringBuilds().catch(() => null),
-              builderApi.getMonitoringSummary().catch(() => null),
-            ])
-          : [null, null];
-        if (active) {
-          setBuilds(buildList);
-          setApiState((prev) => ({ ...prev, builds: "success" }));
+    // Recent Builds는 KPI 요청과 완전히 독립이다 — 받는 즉시 커밋하고, 실패하면
+    // KPI와 무관하게 그 섹션만 에러 상태로 둔다.
+    listBuilds()
+      .then((list) => {
+        if (!active) return;
+        setBuilds(list);
+        setBuildsState("success");
 
-          const succeeded = buildList.filter((b) => b.status === "succeeded").length;
-          const running = buildList.filter((b) => b.status === "running" || b.status === "queued").length;
+        // 빌드가 없다 — monitoring/quality aggregate는 여기서 부르지 않는다. 다만
+        // 신규 사용자 판정에는 authoritative dataset total이 필요하므로 real 모드에서는
+        // 그것만 독립적으로 조회한다(total 없음/실패 시 신규로 확정하지 않는다).
+        if (list.length === 0) {
+          if (realBuilder) {
+            setKpi({ datasets: "loading", monitoring: "unavailable", quality: "unavailable" });
+            loadDatasetTotal(() => active, setStats, setKpi);
+          } else {
+            setKpi({ datasets: "unavailable", monitoring: "unavailable", quality: "unavailable" });
+          }
+          return;
+        }
 
-          const monitoredSuccess = monitoring?.availability === "available"
-            ? monitoring.buckets.reduce((sum, bucket) => sum + bucket.success, 0)
-            : null;
-          setStats({
-            // /datasets has no total; a paginated response length is not a dataset count.
-            datasetCount: null,
-            buildSuccess: realBuilder ? monitoredSuccess : succeeded,
-            validationWarn: null,
-            // GET /builds의 real 계약은 terminal summary만 제공하므로 active 수로 해석하지 않는다.
-            running: realBuilder ? summary?.queue.running ?? null : running,
-          });
-          setApiState((prev) => ({ ...prev, stats: "success" }));
+        if (realBuilder) {
+          loadRealKpis(() => active, setStats, setKpi);
+          return;
         }
-      } catch {
-        if (active) {
-          setApiState((prev) => ({ ...prev, builds: "error", stats: "error" }));
-        }
-      } finally {
-        if (active) {
-          setLoading((prev) => ({ ...prev, builds: false, stats: false }));
-        }
-      }
-    };
 
-    fetchData();
+        // mock/demo: 기존 demo 의미 유지 — mock 목록에서 직접 계산한다. 여기는
+        // 애초에 mock 모드이므로 real 실패를 mock 숫자로 대체하는 경로가 아니다.
+        const succeeded = list.filter((b) => b.status === "succeeded").length;
+        const running = list.filter(
+          (b) => b.status === "running" || b.status === "queued",
+        ).length;
+        setStats({ datasetCount: null, buildSuccess: succeeded, qualityWarn: null, running });
+        setKpi({ datasets: "unavailable", monitoring: "ready", quality: "unavailable" });
+      })
+      .catch(() => {
+        if (!active) return;
+        setBuildsState("error");
+        // 빌드 목록을 못 받으면 KPI 근거도 없다 — 임의값 대신 전부 "확인 불가".
+        setKpi({ datasets: "unavailable", monitoring: "unavailable", quality: "unavailable" });
+      });
 
     return () => {
       active = false;
     };
-  }, []);
+  }, [realBuilder]);
 
   const recentBuilds = [...builds]
     .sort((a, b) => {
@@ -133,11 +219,28 @@ export function HomePage() {
     })
     .slice(0, 5);
 
-  const isNew = apiState.builds === "success" && builds.length === 0;
+  // real 모드: 빌드 0개 + dataset total 조회 성공(kpi.datasets="ready") + total===0
+  // 이 모두 충족될 때만 신규 사용자로 확정한다. total이 unavailable이면 빈 build만으로
+  // 추측하지 않는다. mock/demo 모드에는 dataset aggregate 권위가 없으므로 기존
+  // build 기반 판정을 그대로 유지한다.
+  const datasetsConfirmedEmpty = kpi.datasets === "ready" && stats.datasetCount === 0;
+  const isNew =
+    buildsState === "success" &&
+    builds.length === 0 &&
+    (realBuilder ? datasetsConfirmedEmpty : true);
 
   return (
     <main className="flex flex-1 flex-col gap-8 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
-      {isNew ? <NewUserHome /> : <ExistingUserHome stats={stats} recentBuilds={recentBuilds} loading={loading} apiState={apiState} />}
+      {isNew ? (
+        <NewUserHome />
+      ) : (
+        <ExistingUserHome
+          stats={stats}
+          recentBuilds={recentBuilds}
+          buildsState={buildsState}
+          kpi={kpi}
+        />
+      )}
     </main>
   );
 }
@@ -251,13 +354,13 @@ function KubiHero() {
 function ExistingUserHome({
   stats,
   recentBuilds,
-  loading,
-  apiState,
+  buildsState,
+  kpi,
 }: {
   stats: DashboardStats;
   recentBuilds: BuildListItem[];
-  loading: LoadingState;
-  apiState: ApiState;
+  buildsState: "loading" | "error" | "success";
+  kpi: KpiPhases;
 }) {
   return (
     <>
@@ -267,36 +370,42 @@ function ExistingUserHome({
         description="최근 데이터셋, 빌드 상태, 품질 경고를 모니터링합니다"
       />
 
-      <KpiCards stats={stats} loading={loading.stats} apiState={apiState.stats} />
+      <KpiCards stats={stats} kpi={kpi} />
 
       <section className="grid gap-6 xl:grid-cols-2">
-        <RecentBuildsSection recentBuilds={recentBuilds} loading={loading.builds} apiState={apiState.builds} />
+        <RecentBuildsSection
+          recentBuilds={recentBuilds}
+          loading={buildsState === "loading"}
+          apiState={buildsState}
+        />
         <QualitySection />
       </section>
     </>
   );
 }
 
-function KpiCards({ stats, loading, apiState }: { stats: DashboardStats; loading: boolean; apiState: ApiState["stats"] }) {
-  if (apiState === "error") {
-    return (
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {["DATASETS", "SUCCEEDED (24H)", "VALIDATION WARN", "RUNNING"].map((label) => (
-          <Card key={label} variant="error" className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">{label}</span>
-            <span className="text-xl font-semibold tracking-tight text-muted-foreground">—</span>
-          </Card>
-        ))}
-      </section>
-    );
-  }
-
+/**
+ * KPI 4칸. 각 칸은 자기 aggregate 경계의 phase만 본다 — 한 aggregate가 실패해도
+ * 다른 칸은 정상 값을 유지하고, 전체를 한꺼번에 에러로 덮지 않는다. null 값은
+ * KpiCard가 "확인 불가"로 렌더한다(임의 숫자 합성 없음).
+ */
+function KpiCards({ stats, kpi }: { stats: DashboardStats; kpi: KpiPhases }) {
   return (
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <KpiCard label="DATASETS" value={stats.datasetCount} loading={loading} />
-      <KpiCard label="SUCCEEDED (24H)" value={stats.buildSuccess} loading={loading} variant="success" />
-      <KpiCard label="VALIDATION WARN" value={stats.validationWarn} loading={loading} variant="error" />
-      <KpiCard label="RUNNING" value={stats.running} loading={loading} />
+      <KpiCard label="DATASETS" value={stats.datasetCount} loading={kpi.datasets === "loading"} />
+      <KpiCard
+        label="SUCCEEDED (24H)"
+        value={stats.buildSuccess}
+        loading={kpi.monitoring === "loading"}
+        variant="success"
+      />
+      <KpiCard
+        label="QUALITY WARN (24H)"
+        value={stats.qualityWarn}
+        loading={kpi.quality === "loading"}
+        variant="error"
+      />
+      <KpiCard label="RUNNING" value={stats.running} loading={kpi.monitoring === "loading"} />
     </section>
   );
 }
@@ -335,7 +444,15 @@ function KpiCard({
   );
 }
 
-function RecentBuildsSection({ recentBuilds, loading, apiState }: { recentBuilds: BuildListItem[]; loading: boolean; apiState: ApiState["builds"] }) {
+function RecentBuildsSection({
+  recentBuilds,
+  loading,
+  apiState,
+}: {
+  recentBuilds: BuildListItem[];
+  loading: boolean;
+  apiState: "loading" | "error" | "success";
+}) {
   return (
     <section>
       <PageHeader eyebrow="최근 빌드" title="최근 실행" className="mb-4" />
@@ -395,8 +512,8 @@ function QualitySection() {
       <PageHeader eyebrow="품질" title="품질 경고" className="mb-4" />
       <Card className="p-0">
         <EmptyState
-          title="품질 경고 집계 확인 불가"
-          description="Builder monitoring API는 validation warning 집계를 제공하지 않습니다. 각 빌드의 품질 화면에서 확인하세요."
+          title="개별 품질 경고 목록은 아직 제공되지 않습니다"
+          description="최근 24시간 WARN run 수는 위의 QUALITY WARN (24H) KPI에서 확인할 수 있습니다. 어떤 run이 경고인지는 각 빌드의 품질 화면에서 확인하세요."
         />
       </Card>
     </section>

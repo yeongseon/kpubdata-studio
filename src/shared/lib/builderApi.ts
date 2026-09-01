@@ -432,6 +432,7 @@ export type SchemaDriftFinding = schemas.SchemaDriftFinding;
 export type BuildQualityResponse = schemas.BuildQualityResponse;
 export type DatasetQualityHistoryEntry = schemas.DatasetQualityHistoryEntry;
 export type DatasetQualityHistoryResponse = schemas.DatasetQualityHistoryResponse;
+export type QualitySummaryResponse = schemas.QualitySummaryResponse;
 export type QueryStage = schemas.QueryStage;
 export type QueryRequest = schemas.QueryRequest;
 export type QueryResponse = schemas.QueryResponse;
@@ -670,6 +671,19 @@ export const builderApi = {
       "/monitoring/builds?window=24h&bucket=hour",
       { signal },
       schemas.monitoringBuildsResponseSchema,
+    ),
+
+  /**
+   * GET /quality/summary — 최근 24h cross-run quality aggregate (Builder 1.22.0, #486 후속).
+   * Home "QUALITY WARN (24H)" KPI가 이 값을 authoritative하게 읽는다. 1.21.0 이하
+   * Builder에서는 404이므로 호출부가 이 KPI만 독립적으로 "확인 불가" 처리한다 —
+   * 다른 KPI/Recent Builds는 영향받지 않는다.
+   */
+  getQualitySummary: (signal?: AbortSignal) =>
+    apiFetch(
+      "/quality/summary?window=24h",
+      { signal },
+      schemas.qualitySummaryResponseSchema,
     ),
 
   /**
