@@ -142,11 +142,15 @@ export function normalizeBuildContextSearch(
     const requestedStageAvailable =
       (requestedStage === "bronze" || requestedStage === "silver" || requestedStage === "gold") &&
       Boolean(selectedSourceEntry && selectedSourceEntry[requestedStage].status !== "not_run");
-    const stage = requestedStageAvailable
-      ? requestedStage
-      : failureEvidence.length === 1
+    // 실패가 정확히 하나일 때만 그 failedStage를 안전한 문맥으로 쓰되, 선택된 source가
+    // 있으면 반드시 그 source의 실패여야 한다 — 다른 source의 stage를 현재 source에
+    // 붙여 불가능한 source/stage 조합(unverified evidence)을 만들지 않는다.
+    const failureFallback =
+      failureEvidence.length === 1 &&
+      (!selectedSource || failureEvidence[0].sourceKey === selectedSource)
         ? failureEvidence[0].failedStage
         : null;
+    const stage = requestedStageAvailable ? requestedStage : failureFallback;
 
     if (stage) next.set("stage", stage);
     else next.delete("stage");

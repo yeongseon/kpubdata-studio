@@ -487,7 +487,7 @@ function TurnCard({ turn, session, collapsed = false, onToggle }: { turn: KubiTu
 
             {turn.response.generatedSql ? (
               <div className="min-w-0">
-                <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Generated SQL · {turn.response.generatedSql.stage}</p><Button size="sm" variant="ghost" aria-label="Generated SQL 복사" onClick={() => void navigator.clipboard.writeText(turn.response!.generatedSql!.sql)}>복사</Button></div>
+                <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Generated SQL · {turn.response.generatedSql.stage}</p><Button size="sm" variant="ghost" aria-label="Generated SQL 복사" onClick={() => void navigator.clipboard?.writeText(turn.response!.generatedSql!.sql).catch(() => {})}>복사</Button></div>
                 <pre className="mt-1 max-w-full overflow-x-auto whitespace-pre rounded-lg bg-muted/70 p-2 font-mono text-[11px]">{formatSqlForDisplay(turn.response.generatedSql.sql)}</pre>
                 <Button
                   size="sm"

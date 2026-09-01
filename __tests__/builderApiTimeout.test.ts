@@ -4,8 +4,8 @@
  * Builder 응답 지연 시 UI가 무한 대기에 빠지지 않도록 자동 타임아웃이 걸리는지, 네트워크
  * 일시 장애와 5xx에 제한 재시도(지수 백오프)가 동작하는지, 호출자 취소는 즉시 전파되는지 검증한다.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch } from "@/shared/lib/builderApi";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError, apiFetch, setAuthTokenProvider } from "@/shared/lib/builderApi";
 
 function okResponse(body: unknown): Response {
   return {
@@ -23,7 +23,12 @@ function serverError(): Response {
   } as unknown as Response;
 }
 
+beforeEach(() => {
+  setAuthTokenProvider(null);
+});
+
 afterEach(() => {
+  setAuthTokenProvider(null);
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -107,6 +112,7 @@ describe("apiFetch retry (#94)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const promise = apiFetch("/version", { signal: controller.signal, retries: 2, timeoutMs: 0 });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     controller.abort(new DOMException("Aborted", "AbortError"));
 
     await expect(promise).rejects.toMatchObject({ name: "AbortError" });

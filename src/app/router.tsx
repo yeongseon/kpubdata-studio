@@ -7,6 +7,7 @@ import type { ReactElement } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import { FeatureErrorBoundary, RouteErrorBoundary } from "@/app/ErrorBoundary";
 import { Layout } from "@/app/Layout";
+import { LoginGate } from "@/features/auth/LoginGate";
 import { AddDataPage } from "@/pages/AddDataPage";
 import { ArtifactsPage } from "@/pages/ArtifactsPage";
 import { BuildArtifactsPage } from "@/pages/BuildArtifactsPage";
@@ -64,7 +65,7 @@ export const router = createBrowserRouter([
     },
     {
       path: "/",
-      element: <Layout />,
+      element: <LoginGate><Layout /></LoginGate>,
       errorElement: <RouteErrorBoundary />,
       children: [
       {

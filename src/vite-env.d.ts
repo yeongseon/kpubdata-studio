@@ -11,6 +11,12 @@ interface ImportMetaEnv {
   readonly VITE_BUILDER_API_URL?: string;
   /** "true"이면 mock 대신 실제 Builder API를 호출한다. */
   readonly VITE_USE_REAL_BUILDER?: string;
+  /** Development-server-only real Builder login-gate bypass. */
+  readonly VITE_DEV_BYPASS_AUTH?: string;
+  /** OIDC issuer URL (예: http://localhost:8080/realms/kpubdata). public 값. */
+  readonly VITE_OIDC_ISSUER?: string;
+  /** OIDC public SPA client id (예: kpubdata-studio). public 값 — client secret 아님. */
+  readonly VITE_OIDC_CLIENT_ID?: string;
   /** Google OAuth Client ID (GIS 로그인, #187). public 값 — 번들 포함 무방. */
   readonly VITE_GOOGLE_CLIENT_ID?: string;
 }

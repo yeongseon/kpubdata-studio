@@ -8,7 +8,7 @@
  */
 
 /** 어떤 provider가 이 세션을 만들었는지 표시하는 태그. */
-export type AuthProviderId = "google" | "mock";
+export type AuthProviderId = "google" | "mock" | "keycloak";
 
 /**
  * 로그인 성공 후 Studio가 들고 있는 세션 정보.
