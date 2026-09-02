@@ -140,6 +140,7 @@ describe("HomePage", () => {
         workers: { availability: "available", active: 1, capacity: 1, utilization: 1 },
         artifact_store: { availability: "available", last_write_at: null },
       })),
+      http.get(`${BUILDER_BASE}/builds/ok-run/quality`, () => new HttpResponse(null, { status: 404 })),
     );
     mockDashboardAggregatesUnsupported();
 
