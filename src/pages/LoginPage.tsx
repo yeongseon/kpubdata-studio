@@ -22,13 +22,30 @@ import { getOidcConfig } from "@/shared/config/env";
 import { isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import { Button, Card, DemoBadge, ErrorMessage, FormField, TextInput } from "@/shared/ui";
 
+const darkLogoUrl = new URL("../../assets/logo/kpubdata-brand-assets/svg/horizontal_dark.svg", import.meta.url).href;
+const lightLogoUrl = new URL("../../assets/logo/kpubdata-brand-assets/svg/horizontal_light.svg", import.meta.url).href;
+
 /** Auth 화면에 표시하는 짧은 제품 소개. */
-function ProductIntro() {
+function BrandPanel() {
   return (
-    <div className="mb-6 text-center">
-      <h1 className="text-2xl font-bold tracking-tight">KPubData</h1>
-      <p className="mt-1 text-sm text-muted-foreground">공공데이터를 AI-ready Dataset으로</p>
-    </div>
+    <section className="hidden min-h-screen flex-col bg-sidebar px-8 py-10 text-sidebar-foreground lg:flex lg:w-[48%] lg:px-12 xl:px-16" aria-label="KPubData Studio 소개">
+      <img alt="KPubData Studio" className="w-[160px] self-start xl:w-[192px]" src={darkLogoUrl} />
+      <div className="my-auto max-w-xl">
+        <p className="text-xs font-semibold tracking-[0.16em] text-sidebar-muted">PUBLIC DATA → AI-READY DATASET</p>
+        <h1 className="mt-5 max-w-xl break-keep text-balance text-4xl font-semibold leading-tight tracking-tight text-sidebar-active-foreground xl:text-5xl">
+          공공데이터를 신뢰할 수 있는 데이터셋으로
+        </h1>
+        <p className="mt-6 max-w-lg text-base leading-7 text-sidebar-foreground">
+          다양한 공공데이터를 연결하고, 검증 룰과 품질 관리까지 하나의 흐름으로 관리하세요.
+        </p>
+        <div aria-hidden="true" className="mt-8 flex flex-wrap gap-2">
+          {["Source", "BuildSpec", "Preview", "Validate", "Build", "Quality", "AI"].map((item) => (
+            <span className="rounded-full border border-sidebar-border bg-sidebar-hover px-3 py-1.5 text-xs font-medium text-sidebar-foreground" key={item}>{item}</span>
+          ))}
+        </div>
+      </div>
+      <p className="text-xs text-sidebar-muted">© 2026 KPubData Studio</p>
+    </section>
   );
 }
 
@@ -71,10 +88,19 @@ export function LoginPage() {
   }, [demoMode, oidcStatus, navigate, returnTo]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-5 py-12">
-      <div className="w-full max-w-md">
-        <ProductIntro />
-        <Card>
+    <main className="min-h-screen bg-background lg:flex">
+      <BrandPanel />
+      <section className="flex min-h-screen flex-1 items-center justify-center px-5 py-12 sm:px-8 lg:px-12" aria-label="로그인">
+        <div className="w-full max-w-md">
+          <div className="mb-8 lg:hidden">
+            <img alt="KPubData Studio" className="w-[160px] max-w-full" src={lightLogoUrl} />
+          </div>
+          <div className="mb-7">
+            <p className="text-xs font-semibold tracking-[0.16em] text-accent-subtle-foreground">WELCOME</p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight">KPubData Studio에<br className="hidden sm:block" /> 오신 것을 환영합니다</h1>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">로그인하거나 새 계정을 만들고 공공데이터 작업을 시작하세요.</p>
+          </div>
+          <Card>
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-xl font-semibold tracking-tight">로그인</h2>
             {demoMode ? <DemoBadge /> : null}
@@ -170,8 +196,9 @@ export function LoginPage() {
               </p>
             </div>
           )}
-        </Card>
-      </div>
+          </Card>
+        </div>
+      </section>
     </main>
   );
 }

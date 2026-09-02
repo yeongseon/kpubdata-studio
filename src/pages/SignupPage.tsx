@@ -5,6 +5,8 @@ import { getSafeReturnTo } from "@/features/auth/returnTo";
 import { getOidcConfig } from "@/shared/config/env";
 import { Button, Card } from "@/shared/ui";
 
+const lightLogoUrl = new URL("../../assets/logo/kpubdata-brand-assets/svg/horizontal_light.svg", import.meta.url).href;
+
 export function SignupPage() {
   const location = useLocation();
   const oidc = getOidcConfig();
@@ -12,7 +14,9 @@ export function SignupPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-5 py-12">
-      <Card className="w-full max-w-md text-center">
+      <div className="w-full max-w-md text-center">
+        <img alt="KPubData Studio" className="mx-auto mb-7 h-8 w-auto" src={lightLogoUrl} />
+        <Card>
         <h1 className="text-2xl font-semibold tracking-tight">KPubData 계정 만들기</h1>
         <p className="mt-3 text-sm text-muted-foreground">
           회원가입, 이메일 인증, 비밀번호 정책은 안전한 Keycloak 화면에서 처리합니다.
@@ -27,7 +31,8 @@ export function SignupPage() {
         <Link to="/login" className="mt-6 inline-block font-medium text-accent-subtle-foreground underline">
           로그인으로 돌아가기
         </Link>
-      </Card>
+        </Card>
+      </div>
     </main>
   );
 }

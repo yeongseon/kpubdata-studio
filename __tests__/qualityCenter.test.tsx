@@ -44,10 +44,10 @@ describe("Quality Center P0 (#254)", () => {
   it("shows N/A (not 0% or PASS) when evaluated_checks is 0", async () => {
     renderQuality("/quality?dataset=population");
     await waitFor(() => expect(screen.getByLabelText("Run 선택")).toHaveValue("population-2026-08-13"));
-    const naValues = await screen.findAllByText("N/A");
+    expect(await screen.findByText("평가 없음")).toBeInTheDocument();
+    expect(await screen.findByText("unavailable")).toBeInTheDocument();
+    const naValues = screen.getAllByText("N/A");
     expect(naValues.length).toBeGreaterThan(0);
-    expect(screen.getByText("평가 없음")).toBeInTheDocument();
-    expect(screen.getByText("unavailable")).toBeInTheDocument();
   });
 
   it("shows a real no-rule empty state distinct from the all-pass empty state", async () => {

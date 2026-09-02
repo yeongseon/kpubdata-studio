@@ -10,6 +10,12 @@ import { App } from "@/app/App";
 import { initAuth } from "@/features/auth/init";
 import "./globals.css";
 
+const faviconUrl = new URL("../assets/logo/kpubdata-brand-assets/svg/favicon.svg", import.meta.url).href;
+const faviconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]') ?? document.createElement("link");
+faviconLink.rel = "icon";
+faviconLink.href = faviconUrl;
+if (!faviconLink.parentNode) document.head.append(faviconLink);
+
 const container = document.getElementById("root");
 
 if (!container) {
