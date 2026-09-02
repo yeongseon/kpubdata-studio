@@ -9,11 +9,18 @@ export function onboardingStorageKey(userId: string): string {
   return `${ONBOARDING_STORAGE_KEY_PREFIX}:${userId}`;
 }
 
-const steps = [
+const emptyWorkspaceSteps = [
   { target: "sidebar", title: "작업 공간 둘러보기", copy: "왼쪽 메뉴에서 데이터 탐색, Build·Quality 확인, Kubi와 Provider 설정으로 이동할 수 있습니다." },
   { target: "workflow", title: "데이터가 이렇게 만들어집니다", copy: "데이터를 찾고 가져오기 설정을 준비한 뒤 Preview로 실제 데이터를 확인·검증하고 Build합니다. 이후 Quality 결과를 확인하고 활용할 수 있습니다." },
   { target: "start-actions", title: "여기서 시작하세요", copy: "카탈로그에서 데이터를 찾으려면 Discover, API·파일·URL을 직접 가져오려면 Add Data를 사용하세요." },
   { target: "kubi-helper", title: "막히면 Kubi에게 물어보세요", copy: "Kubi는 현재 화면의 Dataset·Run·Stage와 Builder Evidence를 바탕으로 분석을 돕습니다." },
+] as const;
+
+const dashboardSteps = [
+  { target: "sidebar", title: "작업 공간 둘러보기", copy: "왼쪽 메뉴에서 데이터 탐색, Build·Quality 확인, Kubi와 Provider 설정으로 이동할 수 있습니다." },
+  { target: "dashboard-overview", title: "작업 현황 확인", copy: "현재 Dataset과 Build 실행 현황을 이 Dashboard에서 확인할 수 있습니다." },
+  { target: "dashboard-builds", title: "최근 Build 확인", copy: "최근 실행과 진행 상태를 확인하고 필요하면 Build 상세 화면으로 이동하세요." },
+  { target: "dashboard-quality", title: "품질 결과 확인", copy: "최근 Quality 경고를 확인하고 필요한 조치를 이어갈 수 있습니다." },
 ] as const;
 
 function hasCompletedTour(userId: string) {
@@ -25,8 +32,17 @@ export function resetFirstRunTour(userId?: unknown) {
   window.dispatchEvent(new CustomEvent("kpubdata:onboarding:replay", { detail: userId }));
 }
 
-export function FirstRunTour({ userId }: { userId: string }) {
-  const [open, setOpen] = useState(() => !hasCompletedTour(userId));
+export function FirstRunTour({
+  userId,
+  autoStart = true,
+  variant = "empty-workspace",
+}: {
+  userId: string;
+  autoStart?: boolean;
+  variant?: "empty-workspace" | "dashboard";
+}) {
+  const steps = variant === "dashboard" ? dashboardSteps : emptyWorkspaceSteps;
+  const [open, setOpen] = useState(() => autoStart && !hasCompletedTour(userId));
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -71,7 +87,7 @@ export function FirstRunTour({ userId }: { userId: string }) {
       window.removeEventListener("scroll", update, true);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open, step]);
+  }, [open, step, steps]);
 
   function close() {
     try { localStorage.setItem(ONBOARDING_STORAGE_KEY, "complete"); } catch { /* 비필수 저장소 */ }

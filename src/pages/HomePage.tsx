@@ -294,6 +294,7 @@ export function HomePage() {
         <EmptyWorkspaceHome userId={userId} />
       ) : (
         <ExistingUserHome
+          userId={userId}
           stats={stats}
           recentBuilds={recentBuilds}
           buildsState={buildsState}
@@ -485,12 +486,14 @@ function KubiHero() {
 }
 
 function ExistingUserHome({
+  userId,
   stats,
   recentBuilds,
   buildsState,
   kpi,
   recentQuality,
 }: {
+  userId: string | null;
   stats: DashboardStats;
   recentBuilds: BuildListItem[];
   buildsState: "loading" | "error" | "success";
@@ -503,19 +506,20 @@ function ExistingUserHome({
         eyebrow="대시보드"
         title="작업 현황을 한눈에 확인하세요"
         description="최근 데이터셋, 빌드 상태, 품질 경고를 모니터링합니다"
-        actions={<LinkButton variant="secondary" to="/discover">사용 가이드</LinkButton>}
+        actions={userId ? <Button variant="secondary" onClick={() => resetFirstRunTour(userId)}>사용 가이드</Button> : undefined}
       />
 
-      <KpiCards stats={stats} kpi={kpi} />
+      <section data-tour="dashboard-overview"><KpiCards stats={stats} kpi={kpi} /></section>
 
       <section className="grid gap-6 xl:grid-cols-2">
-        <RecentBuildsSection
+        <div data-tour="dashboard-builds"><RecentBuildsSection
           recentBuilds={recentBuilds}
           loading={buildsState === "loading"}
           apiState={buildsState}
-        />
-        <QualitySection state={recentQuality} />
+        /></div>
+        <div data-tour="dashboard-quality"><QualitySection state={recentQuality} /></div>
       </section>
+      {userId ? <FirstRunTour userId={userId} autoStart={false} variant="dashboard" /> : null}
     </>
   );
 }

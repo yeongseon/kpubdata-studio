@@ -9,12 +9,13 @@
  * - `total`을 안 보내는 (구버전) Builder에서는 DATASETS만 "확인 불가"
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { http, HttpResponse, delay } from "msw";
 import { mswServer } from "../../vitest.setup";
 import { API_BASE } from "@/shared/config/env";
 import { HomePage } from "./HomePage";
+import { useAuthStore } from "@/features/auth/store";
 
 const BUILDS = [
   { run_id: "r1", status: "ok", started_at: "2026-09-01T08:00:00+00:00", finished_at: "2026-09-01T08:05:00+00:00" },
@@ -102,8 +103,13 @@ function renderHome() {
   return render(
     <MemoryRouter>
       <HomePage />
+      <CurrentPath />
     </MemoryRouter>,
   );
+}
+
+function CurrentPath() {
+  return <output data-testid="current-path">{useLocation().pathname}</output>;
 }
 
 /** KPI 라벨이 들어 있는 카드(라벨 span의 부모)를 돌려준다. */
@@ -113,6 +119,23 @@ function kpiCard(label: string) {
 
 beforeEach(() => {
   vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
+});
+
+describe("Existing Dashboard 사용 가이드", () => {
+  it("navigating to Discover 없이 현재 계정의 guide tour를 수동으로 연다", async () => {
+    useAuthStore.setState({ userId: "keycloak-subject-existing" });
+    baseHandlers();
+    renderHome();
+
+    const guide = await screen.findByRole("button", { name: "사용 가이드" });
+    expect(screen.queryByRole("link", { name: "사용 가이드" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(guide);
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("current-path")).toHaveTextContent("/");
+    useAuthStore.getState().clear();
+  });
 });
 
 afterEach(() => {
