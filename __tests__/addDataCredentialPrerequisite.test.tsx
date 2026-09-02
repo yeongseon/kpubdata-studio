@@ -66,8 +66,14 @@ async function selectAirQuality() {
   fireEvent.click(screen.getByRole("button", { name: /Public API/ }));
   next();
   await screen.findByText("API 사용 준비");
+  // "API 사용 준비" heading은 catalog loading 중에도 렌더된다. 느린 러너(Node 20)에서
+  // provider option이 아직 DOM에 없을 때 select value를 바꾸면 무시되어 Dataset select가
+  // 계속 disabled로 남는다. sleep 대신 실제 selectable state — datago option이 렌더된
+  // 것 — 를 기준으로 기다린다.
+  await screen.findByRole("option", { name: "datago" });
   fireEvent.change(screen.getByLabelText(/제공자 \(Provider\)/), { target: { value: "datago" } });
-  await waitFor(() => expect(screen.getByLabelText(/데이터셋 \(Dataset\)/)).not.toBeDisabled());
+  // provider 선택이 반영되면 Dataset select가 열리고 해당 provider의 dataset option이 붙는다.
+  await screen.findByRole("option", { name: "대기오염 (air_quality)" });
   fireEvent.change(screen.getByLabelText(/데이터셋 \(Dataset\)/), { target: { value: "air_quality" } });
   await screen.findByText("이 Dataset의 요청 파라미터");
 }
