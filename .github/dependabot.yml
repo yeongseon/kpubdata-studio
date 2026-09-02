@@ -7,6 +7,11 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # main은 의도적으로 typescript를 ^6에 고정한다 (commit f9ffd26).
+      # typescript-eslint peer 요구와 충돌하므로 major 업그레이드를 무시한다 (#327).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       dev-dependencies:
         dependency-type: "development"
