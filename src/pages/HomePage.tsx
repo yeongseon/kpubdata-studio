@@ -26,6 +26,7 @@ import { listBuilds } from "@/features/runs/api";
 import { getSuggestedQuestions } from "@/features/kubi/suggestedQuestions";
 import { useKubiStore } from "@/features/kubi/useKubiSession";
 import { FirstRunTour, resetFirstRunTour } from "@/features/onboarding/FirstRunTour";
+import { useAuthStore } from "@/features/auth/store";
 import { builderApi, isRealBuilderEnabled } from "@/shared/lib/builderApi";
 import type { BuildQualityResponse, QualityCheckResult } from "@/shared/lib/builderApi.schema";
 import type { BuildListItem } from "@/shared/lib/types";
@@ -151,6 +152,7 @@ function loadRealKpis(
  */
 export function HomePage() {
   const realBuilder = isRealBuilderEnabled();
+  const userId = useAuthStore((state) => state.userId);
   const [builds, setBuilds] = useState<BuildListItem[]>([]);
   const [buildsState, setBuildsState] = useState<"loading" | "error" | "success">("loading");
   const [stats, setStats] = useState<DashboardStats>({
@@ -289,7 +291,7 @@ export function HomePage() {
   return (
     <main className="flex flex-1 flex-col gap-8 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
       {isNew ? (
-        <NewUserHome />
+        <EmptyWorkspaceHome userId={userId} />
       ) : (
         <ExistingUserHome
           stats={stats}
@@ -303,7 +305,7 @@ export function HomePage() {
   );
 }
 
-function NewUserHome() {
+function EmptyWorkspaceHome({ userId }: { userId: string | null }) {
   return (
     <>
       <PageHeader
@@ -337,7 +339,7 @@ function NewUserHome() {
         </Card>
       </section>
       <div data-tour="kubi-helper"><KubiHero /></div>
-      <FirstRunTour />
+      {userId ? <FirstRunTour userId={userId} /> : null}
     </>
   );
 }
@@ -501,6 +503,7 @@ function ExistingUserHome({
         eyebrow="대시보드"
         title="작업 현황을 한눈에 확인하세요"
         description="최근 데이터셋, 빌드 상태, 품질 경고를 모니터링합니다"
+        actions={<LinkButton variant="secondary" to="/discover">사용 가이드</LinkButton>}
       />
 
       <KpiCards stats={stats} kpi={kpi} />

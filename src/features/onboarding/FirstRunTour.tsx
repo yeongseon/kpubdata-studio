@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/shared/ui/Button";
 
-export const ONBOARDING_STORAGE_KEY = "kpubdata:onboarding:v1";
+export const ONBOARDING_STORAGE_KEY_PREFIX = "kpubdata:onboarding:v2";
+const ONBOARDING_STORAGE_KEY = "kpubdata:onboarding:v1";
+
+export function onboardingStorageKey(userId: string): string {
+  return `${ONBOARDING_STORAGE_KEY_PREFIX}:${userId}`;
+}
 
 const steps = [
   { target: "sidebar", title: "작업 공간 둘러보기", copy: "왼쪽 메뉴에서 데이터 탐색, Build·Quality 확인, Kubi와 Provider 설정으로 이동할 수 있습니다." },
@@ -11,27 +16,31 @@ const steps = [
   { target: "kubi-helper", title: "막히면 Kubi에게 물어보세요", copy: "Kubi는 현재 화면의 Dataset·Run·Stage와 Builder Evidence를 바탕으로 분석을 돕습니다." },
 ] as const;
 
-function hasCompletedTour() {
-  try { return localStorage.getItem(ONBOARDING_STORAGE_KEY) === "complete"; } catch { return false; }
+function hasCompletedTour(userId: string) {
+  try { return localStorage.getItem(onboardingStorageKey(userId)) === "complete"; } catch { return false; }
 }
 
-export function resetFirstRunTour() {
+export function resetFirstRunTour(userId?: unknown) {
   try { localStorage.removeItem(ONBOARDING_STORAGE_KEY); } catch { /* storage를 사용할 수 없어도 수동 재생은 가능하다. */ }
-  window.dispatchEvent(new CustomEvent("kpubdata:onboarding:replay"));
+  window.dispatchEvent(new CustomEvent("kpubdata:onboarding:replay", { detail: userId }));
 }
 
-export function FirstRunTour() {
-  const [open, setOpen] = useState(() => !hasCompletedTour());
+export function FirstRunTour({ userId }: { userId: string }) {
+  const [open, setOpen] = useState(() => !hasCompletedTour(userId));
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const replay = () => { setStep(0); setOpen(true); };
+    const replay = (event: Event) => {
+      const requestedUserId = (event as CustomEvent<string | Event>).detail;
+      if (typeof requestedUserId === "string" && requestedUserId !== userId) return;
+      setStep(0); setOpen(true);
+    };
     window.addEventListener("kpubdata:onboarding:replay", replay);
     return () => window.removeEventListener("kpubdata:onboarding:replay", replay);
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (!open) return;
@@ -66,6 +75,7 @@ export function FirstRunTour() {
 
   function close() {
     try { localStorage.setItem(ONBOARDING_STORAGE_KEY, "complete"); } catch { /* 비필수 저장소 */ }
+    try { localStorage.setItem(onboardingStorageKey(userId), "complete"); } catch { /* storage unavailable */ }
     setOpen(false);
   }
 

@@ -39,6 +39,7 @@ interface AuthState {
   email: string | null;
   /** 표시용 이름. Google 로그인은 이름을 제공하지 않아 null(#263). */
   name: string | null;
+  userId: string | null;
   /** 이 세션을 만든 provider. 미로그인이면 null(#263). */
   providerId: AuthProviderId | null;
   /** OIDC 부트스트랩 상태. mock/데모에서는 "disabled". */
@@ -51,7 +52,7 @@ interface AuthState {
    * Keycloak 세션에서 확인한 사용자 신원(표시용)만 저장한다. raw access token은
    * store에 넣지 않는다(위 `token` 주석 참고).
    */
-  setOidcIdentity: (identity: { email: string | null; name: string | null }) => void;
+  setOidcIdentity: (identity: { email: string | null; name: string | null; userId: string | null }) => void;
   /** OIDC 부트스트랩 상태 전이. */
   setOidcStatus: (status: OidcStatus) => void;
   /** 로그아웃 — 세션 전체를 폐기(OIDC 부트스트랩 상태는 호출부가 별도로 관리). */
@@ -62,21 +63,23 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   email: null,
   name: null,
+  userId: null,
   providerId: null,
   oidcStatus: "disabled",
   setToken: (token, email = null) =>
-    set({ token, email, name: null, providerId: token ? "google" : null }),
+    set({ token, email, name: null, userId: null, providerId: token ? "google" : null }),
   setSession: (session) =>
     set({
       token: session.token,
       email: session.email,
       name: session.name,
+      userId: null,
       providerId: session.provider,
     }),
-  setOidcIdentity: ({ email, name }) =>
-    set({ token: null, email, name, providerId: "keycloak" }),
+  setOidcIdentity: ({ email, name, userId }) =>
+    set({ token: null, email, name, userId, providerId: "keycloak" }),
   setOidcStatus: (oidcStatus) => set({ oidcStatus }),
-  clear: () => set({ token: null, email: null, name: null, providerId: null }),
+  clear: () => set({ token: null, email: null, name: null, userId: null, providerId: null }),
 }));
 
 /**

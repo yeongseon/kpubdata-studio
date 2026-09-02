@@ -83,11 +83,12 @@ function syncIdentity(authenticated: boolean): void {
   }
 
   const claims = getKeycloak().tokenParsed as
-    | { email?: string; name?: string; preferred_username?: string }
+    | { sub?: string; email?: string; name?: string; preferred_username?: string }
     | undefined;
   store.setOidcIdentity({
     email: claims?.email ?? null,
     name: claims?.name ?? claims?.preferred_username ?? null,
+    userId: claims?.sub ?? null,
   });
   store.setOidcStatus("authenticated");
 }
