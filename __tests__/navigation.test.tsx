@@ -47,7 +47,7 @@ describe("grouped sidebar navigation (#247)", () => {
       "Quality (품질)": "/quality",
       Kubi: "/kubi",
       "Reports (리포트)": "/reports",
-      "Provider (제공기관)": "/provider",
+      "Provider / API 연결": "/provider",
       "Monitoring (모니터링)": "/monitoring",
       "Settings (설정)": "/settings",
     };

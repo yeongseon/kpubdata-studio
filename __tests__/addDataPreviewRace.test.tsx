@@ -82,7 +82,7 @@ describe("Add Data Workbench — Preview latest-request race (#283 후속 리뷰
 
     fireEvent.click(screen.getByRole("button", { name: /Public API/ }));
     next();
-    await screen.findByText("제공자 연결");
+    await screen.findByLabelText("제공자 (Provider)");
     await screen.findByRole("option", { name: "datago" });
     fireEvent.change(screen.getByLabelText(/제공자 \(Provider\)/), { target: { value: "datago" } });
     await waitFor(() => expect(screen.getByLabelText(/데이터셋 \(Dataset\)/)).not.toBeDisabled());
