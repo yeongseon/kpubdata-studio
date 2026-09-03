@@ -24,7 +24,7 @@ import type {
   RunStagesResponse,
   StageDetailResponse,
 } from "@/shared/lib/builderApi";
-import { Button, Card, EmptyState, ErrorState, LinkButton, PageHeader, Skeleton } from "@/shared/ui";
+import { Button, Card, EmptyState, ErrorState, LinkButton, PageHeader, Skeleton, StageLegend } from "@/shared/ui";
 
 type DetailTab = "overview" | "schema" | "preview" | "quality" | "builds" | "ai";
 
@@ -278,6 +278,7 @@ export function DatasetDetailPage() {
         <label className="min-w-44 flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Stage<select aria-label="Stage 선택" className={`mt-1 w-full ${selectClassName}`} value={selectedStage} disabled={!sourceStageEntry} onChange={(event) => updateContext({ stage: event.target.value })}>{DATASET_STAGES.map((stageName) => <option key={stageName} value={stageName}>{stageName} · {sourceStageEntry?.[stageName].status ?? "unavailable"}</option>)}</select></label>
         <div title="선택된 source/stage가 아니라 이 run 전체(모든 source)의 결과입니다" className="flex min-h-9 items-center gap-2 px-2 text-xs text-muted-foreground"><span>Run 상태</span><strong className="text-foreground">{runStatus}</strong></div>
       </Card>
+      <StageLegend />
 
       {stagesState.status === "error" ? <Card variant="error" role="alert">{stagesState.error}</Card> : invalidSource ? <Card variant="error" role="alert">URL의 source `{requestedSource}`는 선택한 run에 존재하지 않습니다.</Card> : null}
       {runFailedButSelectedStageOk ? (

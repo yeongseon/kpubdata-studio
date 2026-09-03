@@ -3,7 +3,9 @@
  *
  * - real mode는 GET /providers를 canonical source로 쓰고, 실패를 mock 성공으로
  *   위장하지 않는다(명시적 error + 빈 목록).
- * - 연결 테스트는 GET /providers/{provider}/status(임의 POST /test 아님).
+ * - generic Provider probe(POST /test · GET /status)는 임의의 첫 Dataset을 필수
+ *   파라미터 없이 호출하므로 신뢰할 수 없어 화면에서 제거됐다 — 실제 사용 가능
+ *   여부는 Preview가 확인한다(#S-provider-probe).
  * - "사용자 저장 credential" 유무/마스킹은 GET /providers/{provider}/credential
  *   메타데이터로만 판정한다 — GET /providers 요약의 `configured`(effective provider
  *   configuration)와 분리한다.
@@ -25,14 +27,6 @@ function renderPage() {
     </MemoryRouter>,
   );
 }
-
-const STATUS_OK = {
-  provider: "datago",
-  status: "connected" as const,
-  configured: true,
-  latency_ms: 120,
-  checked_at: "2026-08-31T00:00:00.000Z",
-};
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -71,25 +65,26 @@ describe("ProviderPage real mode (#S01)", () => {
     expect(screen.getByText("등록된 Provider가 없습니다")).toBeInTheDocument();
   });
 
-  it("connection test calls GET /providers/{provider}/status (not POST /test)", async () => {
+  it("does NOT call the generic Provider probe (POST /test or GET /status)", async () => {
     vi.spyOn(builderApi, "listProviders").mockResolvedValue({
       providers: [{ provider: "datago", requires_credential: true, configured: true }],
     });
     vi.spyOn(builderApi, "getProviderCredential").mockResolvedValue({
-      configured: false,
-      masked: null,
+      configured: true,
+      masked: "dg••••99",
       updated_at: null,
     });
-    const statusSpy = vi
-      .spyOn(builderApi, "getProviderStatus")
-      .mockResolvedValue(STATUS_OK);
+    const statusSpy = vi.spyOn(builderApi, "getProviderStatus");
+    const testSpy = vi.spyOn(builderApi, "testProviderConnection");
 
     renderPage();
     fireEvent.click(await screen.findByText("datago"));
-    fireEvent.click(screen.getByRole("button", { name: "연결 테스트" }));
 
-    await waitFor(() => expect(statusSpy).toHaveBeenCalledWith("datago"));
-    expect((await screen.findAllByText("연결됨")).length).toBeGreaterThan(0);
+    // credential readiness만 표시하고 generic live probe 버튼은 없다.
+    expect(await screen.findByText("dg••••99")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "연결 테스트" })).not.toBeInTheDocument();
+    expect(statusSpy).not.toHaveBeenCalled();
+    expect(testSpy).not.toHaveBeenCalled();
   });
 
   it("requires_credential=false → no masked key, no Delete, no register form", async () => {

@@ -1,16 +1,20 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAssistConfig } from "@/features/assistant/config";
-import { SUGGESTED_QUESTIONS } from "@/features/kubi/suggestedQuestions";
+import { START_QUESTIONS } from "@/features/kubi/suggestedQuestions";
 import { useKubiStore } from "@/features/kubi/useKubiSession";
 import { HomePage } from "@/pages/HomePage";
+import { KubiPage } from "@/pages/KubiPage";
 import { builderApi } from "@/shared/lib/builderApi";
+import { API_BASE } from "@/shared/config/env";
 import { useUIStore } from "@/shared/hooks/useUIStore";
 import { mswServer } from "../vitest.setup";
 
-const BUILDER_BASE = "http://localhost:8000";
+// 클라이언트가 실제로 부르는 base와 동일해야 한다(로컬 .env.local이 127.0.0.1로
+// 덮어써도 msw 핸들러가 매칭되도록 하드코딩 대신 API_BASE에서 파생).
+const BUILDER_BASE = API_BASE;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -23,14 +27,33 @@ function mockEmptyBuilds() {
 }
 
 /**
+ * dataset total / quality summary aggregate를 미지원(구버전 Builder)으로 고정한다.
+ * 두 KPI는 "확인 불가"가 되어야 하며 임의 0/PASS로 합성되면 안 된다. real 모드에서
+ * HomePage가 항상 이 둘을 조회하므로, 다른 KPI를 검증하는 테스트도 명시적으로 stub한다.
+ */
+function mockDashboardAggregatesUnsupported() {
+  mswServer.use(
+    http.get(`${BUILDER_BASE}/datasets`, () => HttpResponse.json({ datasets: [] })),
+    http.get(`${BUILDER_BASE}/quality/summary`, () => new HttpResponse(null, { status: 404 })),
+  );
+}
+
+/**
  * mock 모드(`VITE_USE_REAL_BUILDER` 미설정)의 `listBuilds()`는 결정적 데모 데이터
  * (DEMO_DATASETS, 항상 succeeded 빌드 포함)를 반환하고 msw를 아예 거치지 않는다
  * (features/runs/api/index.ts) — 그래서 신규 사용자(빌드 0개) 상태를 결정적으로 재현하려면
  * 실제 Builder 연동 모드로 전환해 `/builds` 응답 자체를 msw로 통제해야 한다.
+ *
+ * 신규 사용자 = 빌드 0개 **그리고** authoritative dataset total 0. real 모드에서는
+ * dataset total이 확인돼야(GET /datasets `total: 0`) NewUserHome이 렌더된다 —
+ * total을 확인할 수 없으면 빈 build만으로 신규 사용자로 추측하지 않기 때문이다.
  */
 function useEmptyBuildsRealMode() {
   vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
   mockEmptyBuilds();
+  mswServer.use(
+    http.get(`${BUILDER_BASE}/datasets`, () => HttpResponse.json({ datasets: [], total: 0 })),
+  );
 }
 
 function configureKey() {
@@ -117,14 +140,16 @@ describe("HomePage", () => {
         workers: { availability: "available", active: 1, capacity: 1, utilization: 1 },
         artifact_store: { availability: "available", last_write_at: null },
       })),
+      http.get(`${BUILDER_BASE}/builds/ok-run/quality`, () => new HttpResponse(null, { status: 404 })),
     );
+    mockDashboardAggregatesUnsupported();
 
     render(<MemoryRouter><HomePage /></MemoryRouter>);
 
     expect(await screen.findByText("7")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getAllByText("확인 불가")).toHaveLength(2);
-    expect(screen.getByText("품질 경고 집계 확인 불가")).toBeInTheDocument();
+    expect(await screen.findByText("일부 품질 정보를 확인할 수 없습니다")).toBeInTheDocument();
     expect(screen.queryByText("품질 경고가 없습니다")).not.toBeInTheDocument();
     expect(screen.queryByText("모든 빌드가 정상적으로 완료되었습니다")).not.toBeInTheDocument();
   });
@@ -140,6 +165,7 @@ describe("HomePage", () => {
       http.get(`${BUILDER_BASE}/monitoring/builds`, () => monitoringBuilds.promise),
       http.get(`${BUILDER_BASE}/monitoring/summary`, () => monitoringSummary.promise),
     );
+    mockDashboardAggregatesUnsupported();
     render(<MemoryRouter><HomePage /></MemoryRouter>);
     expect(await screen.findByText("deferred-run")).toBeInTheDocument();
     expect(screen.queryByText(/빌드 목록을 불러오지 못했습니다/)).not.toBeInTheDocument();
@@ -156,6 +182,7 @@ describe("HomePage", () => {
     mswServer.use(
       http.get(`${BUILDER_BASE}/builds`, () => HttpResponse.json({ builds: [{ run_id: "still-visible", status: "ok", started_at: "2026-08-31T00:00:00Z", finished_at: null }] })),
     );
+    mockDashboardAggregatesUnsupported();
     vi.spyOn(builderApi, "getMonitoringBuilds").mockRejectedValue(new Error("monitoring down"));
     vi.spyOn(builderApi, "getMonitoringSummary").mockRejectedValue(new Error("monitoring down"));
     render(<MemoryRouter><HomePage /></MemoryRouter>);
@@ -165,9 +192,21 @@ describe("HomePage", () => {
   });
 });
 
-const HERO_HEADING = "Kubi에게 필요한 데이터를 물어보세요";
+const HERO_HEADING = "어디서 시작할지 모르겠다면 Kubi에게 물어보세요";
 
-describe("Home Kubi Hero (#Phase2 UI polish)", () => {
+/** Home과 /kubi를 함께 마운트해 Home hero의 이동 대상을 관측한다. */
+function renderHomeWithKubiRoute() {
+  return render(
+    <MemoryRouter initialEntries={["/"]}>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/kubi" element={<div>KUBI ROUTE STUB</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("Home Kubi Hero (#Phase2 UI polish, #S-kubi-suggest)", () => {
   beforeEach(() => {
     useKubiStore.setState({ turns: [], onboarded: false, pendingSeed: null });
     useAssistConfig.getState().clear();
@@ -200,66 +239,78 @@ describe("Home Kubi Hero (#Phase2 UI polish)", () => {
     expect(await screen.findAllByRole("heading", { name: HERO_HEADING })).toHaveLength(1);
   });
 
-  it("configured: submitting a question seeds it into the shared Kubi store and opens the drawer", async () => {
+  it("configured: submitting a question seeds it and navigates to /kubi (not the drawer)", async () => {
     useEmptyBuildsRealMode();
     configureKey();
-    render(
-      <MemoryRouter>
-        <HomePage />
-      </MemoryRouter>,
-    );
+    renderHomeWithKubiRoute();
     const input = await screen.findByLabelText("Kubi에게 자연어로 데이터 물어보기");
     fireEvent.change(input, { target: { value: "서울 대기오염 데이터로 뭘 할 수 있어?" } });
     fireEvent.submit(input.closest("form")!);
 
+    expect(await screen.findByText("KUBI ROUTE STUB")).toBeInTheDocument();
     expect(useKubiStore.getState().pendingSeed).toBe("서울 대기오염 데이터로 뭘 할 수 있어?");
-    expect(useUIStore.getState().isKubiDrawerOpen).toBe(true);
+    expect(useUIStore.getState().isKubiDrawerOpen).toBe(false);
   });
 
-  it("not configured: submitting opens the drawer but does not seed a question or create a no_key turn", async () => {
+  it("not configured: navigates to /kubi without seeding a question or creating a no_key turn", async () => {
     useEmptyBuildsRealMode();
-    render(
-      <MemoryRouter>
-        <HomePage />
-      </MemoryRouter>,
-    );
+    renderHomeWithKubiRoute();
     const input = await screen.findByLabelText("Kubi에게 자연어로 데이터 물어보기");
     fireEvent.change(input, { target: { value: "서울 대기오염 데이터로 뭘 할 수 있어?" } });
     fireEvent.submit(input.closest("form")!);
 
-    expect(useUIStore.getState().isKubiDrawerOpen).toBe(true);
+    expect(await screen.findByText("KUBI ROUTE STUB")).toBeInTheDocument();
+    expect(useUIStore.getState().isKubiDrawerOpen).toBe(false);
     expect(useKubiStore.getState().pendingSeed).toBeNull();
     expect(useKubiStore.getState().turns).toHaveLength(0);
   });
 
-  it("configured: clicking a suggested-question chip seeds that shared question and opens the drawer", async () => {
+  it("configured: clicking a suggested-question chip seeds it and navigates to /kubi", async () => {
     useEmptyBuildsRealMode();
     configureKey();
+    renderHomeWithKubiRoute();
+    const chip = await screen.findByRole("button", { name: START_QUESTIONS[0] });
+    fireEvent.click(chip);
+
+    expect(await screen.findByText("KUBI ROUTE STUB")).toBeInTheDocument();
+    expect(useKubiStore.getState().pendingSeed).toBe(START_QUESTIONS[0]);
+    expect(useUIStore.getState().isKubiDrawerOpen).toBe(false);
+  });
+
+  it("hero chips no longer surface Quality/Build-failure/SQL questions with no context", async () => {
+    useEmptyBuildsRealMode();
     render(
       <MemoryRouter>
         <HomePage />
       </MemoryRouter>,
     );
-    const chip = await screen.findByRole("button", { name: SUGGESTED_QUESTIONS[0] });
-    fireEvent.click(chip);
-
-    expect(useKubiStore.getState().pendingSeed).toBe(SUGGESTED_QUESTIONS[0]);
-    expect(useUIStore.getState().isKubiDrawerOpen).toBe(true);
+    await screen.findByRole("heading", { name: HERO_HEADING });
+    expect(screen.queryByRole("button", { name: /Build.*실패/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Quality 이슈/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: START_QUESTIONS[0] })).toBeInTheDocument();
   });
 
   it("empty/whitespace query: does not seed a question or create a turn", async () => {
     useEmptyBuildsRealMode();
     configureKey();
-    render(
-      <MemoryRouter>
-        <HomePage />
-      </MemoryRouter>,
-    );
+    renderHomeWithKubiRoute();
     const input = await screen.findByLabelText("Kubi에게 자연어로 데이터 물어보기");
     fireEvent.change(input, { target: { value: "   " } });
     fireEvent.submit(input.closest("form")!);
 
     expect(useKubiStore.getState().pendingSeed).toBeNull();
     expect(useKubiStore.getState().turns).toHaveLength(0);
+  });
+
+  it("seeded question renders as a user turn once the Kubi page mounts", async () => {
+    useEmptyBuildsRealMode();
+    useKubiStore.setState({ turns: [], onboarded: false, pendingSeed: "서울 대기오염 데이터로 뭘 할 수 있어?" });
+    render(
+      <MemoryRouter initialEntries={["/kubi"]}>
+        <KubiPage />
+      </MemoryRouter>,
+    );
+    // BYOK 미설정이라 no_key 에러 turn이 되지만, 질문 자체는 user turn으로 표시된다(네트워크 없음).
+    expect(await screen.findByText("서울 대기오염 데이터로 뭘 할 수 있어?")).toBeInTheDocument();
   });
 });

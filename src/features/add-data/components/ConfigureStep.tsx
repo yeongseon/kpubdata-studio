@@ -9,8 +9,9 @@
  * metadata" collapsible을 연다. Output은 기존처럼 kind와 무관하게 항상 함께 보여준다.
  */
 import { useState } from "react";
-import type { ProviderTestResponse } from "@/shared/lib/builderApi";
 import { exportFormatSchema } from "@/shared/lib/schemas";
+import { exampleParamsText, hasExampleParams, mergeExampleParams } from "@/features/add-data/requiredParams";
+import { CREDENTIAL_PREREQUISITE_MESSAGE, checkCredentialPrerequisite } from "@/features/add-data/credentialPrerequisite";
 import { findDataset, findProvider } from "@/features/add-data/identity";
 import type { AddDataDraft } from "@/features/add-data/model";
 import type { SourceFormat } from "@/shared/lib/types";
@@ -26,12 +27,6 @@ export type CatalogState =
   | { status: "loaded"; providers: readonly CatalogProvider[]; error?: undefined }
   | { status: "error"; providers: readonly CatalogProvider[]; error: string };
 
-export interface ProviderTestState {
-  status: "idle" | "testing" | "tested";
-  result?: ProviderTestResponse;
-  error?: string;
-}
-
 export interface UploadState {
   status: "idle" | "uploading" | "done" | "error";
   error?: string;
@@ -41,10 +36,12 @@ export interface ConfigureStepProps {
   draft: AddDataDraft;
   updateDraft: (patch: Partial<AddDataDraft>) => void;
   catalog: CatalogState;
-  providerTest: ProviderTestState;
-  onTestProvider: () => void;
   upload: UploadState;
   onUploadFile: (file: File) => void;
+  /** GET /providers 요약의 effective 구성 여부(provider -> configured). null = 아직 알 수 없음. */
+  providerConfigured: Record<string, boolean> | null;
+  /** "API 연결하기" CTA — draft를 저장하고 Provider 화면(returnTo=/add)으로 이동한다. */
+  onConnectProvider: (provider: string) => void;
   specError?: string;
   yamlText: string;
   yamlEditError?: string;
@@ -55,10 +52,10 @@ export function ConfigureStep({
   draft,
   updateDraft,
   catalog,
-  providerTest,
-  onTestProvider,
   upload,
   onUploadFile,
+  providerConfigured,
+  onConnectProvider,
   specError,
   yamlText,
   yamlEditError,
@@ -68,15 +65,29 @@ export function ConfigureStep({
   const [yamlDraft, setYamlDraft] = useState(yamlText);
 
   const selectedDataset = findDataset(catalog.providers, draft.publicApi.provider, draft.publicApi.dataset);
+  const requestParameters = selectedDataset?.request_parameters ?? [];
+  const credentialPrerequisite = checkCredentialPrerequisite(
+    selectedDataset,
+    providerConfigured,
+    draft.publicApi.provider,
+  );
+  const application = selectedDataset?.application ?? null;
+  // generic Provider probe는 임의의 첫 Dataset을 필수 파라미터 없이 호출하므로
+  // "연결 성공 여부"로 쓰지 않는다(#S-provider-probe). authoritative prerequisite
+  // (requires credential AND configured === false)만 사용하고, 실제 사용 가능
+  // 여부는 Preview가 확인한다.
+  const providerReady =
+    !!selectedDataset?.requires_service_key &&
+    providerConfigured?.[draft.publicApi.provider] === true;
 
   return (
     <div className="space-y-6">
-      <h3 className="text-xl font-semibold tracking-tight">설정 (Configure)</h3>
+      <h3 className="text-xl font-semibold tracking-tight">가져오기 설정</h3>
 
       {draft.sourceKind === "public_api" ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-4">
-            <div className="section-title text-sm font-semibold text-muted-foreground">제공자 연결</div>
+            <div className="section-title text-sm font-semibold text-muted-foreground">API 사용 준비</div>
             {catalog.status === "loading" ? (
               <p className="text-sm text-muted-foreground">Builder catalog를 불러오는 중입니다...</p>
             ) : null}
@@ -91,11 +102,22 @@ export function ConfigureStep({
                 <Select
                   {...field}
                   value={draft.publicApi.provider}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    // canonical Provider selection이 실제로 바뀌면 기존 Dataset도
+                    // 무효가 되므로, 같은 update에서 dataset과 이전 Dataset 전용
+                    // 요청 파라미터까지 atomic하게 초기화한다(후행 effect에 의존하지
+                    // 않는다 — #S-stale-params).
+                    const nextProvider = e.target.value;
+                    const providerChanged = nextProvider !== draft.publicApi.provider;
                     updateDraft({
-                      publicApi: { ...draft.publicApi, provider: e.target.value, dataset: "" },
-                    })
-                  }
+                      publicApi: {
+                        ...draft.publicApi,
+                        provider: nextProvider,
+                        dataset: "",
+                        sourceParams: providerChanged ? "{}" : draft.publicApi.sourceParams,
+                      },
+                    });
+                  }}
                 >
                   <option value="">제공자 선택…</option>
                   {catalog.providers.map((p) => (
@@ -110,7 +132,20 @@ export function ConfigureStep({
                   {...field}
                   disabled={!draft.publicApi.provider}
                   value={draft.publicApi.dataset}
-                  onChange={(e) => updateDraft({ publicApi: { ...draft.publicApi, dataset: e.target.value } })}
+                  onChange={(e) => {
+                    // 실제 다른 Dataset을 고르는 순간 이전 Dataset 전용 요청 파라미터를
+                    // 같은 update에서 비운다 — 새 Dataset의 request_parameters 안내/
+                    // 예시는 이 초기화된 값 위에서 렌더된다(#S-stale-params).
+                    const nextDataset = e.target.value;
+                    const datasetChanged = nextDataset !== draft.publicApi.dataset;
+                    updateDraft({
+                      publicApi: {
+                        ...draft.publicApi,
+                        dataset: nextDataset,
+                        sourceParams: datasetChanged ? "{}" : draft.publicApi.sourceParams,
+                      },
+                    });
+                  }}
                 >
                   <option value="">Dataset 선택…</option>
                   {findProvider(catalog.providers, draft.publicApi.provider)?.datasets.map((d) => (
@@ -119,24 +154,22 @@ export function ConfigureStep({
                 </Select>
               )}
             </FormField>
-            {draft.publicApi.provider ? (
-              <div className="flex items-center gap-3">
-                <Button variant="secondary" size="sm" loading={providerTest.status === "testing"} onClick={onTestProvider}>
-                  연결 테스트
+            {credentialPrerequisite.blocked ? (
+              <Card variant="error" className="space-y-3">
+                <p className="font-semibold">{CREDENTIAL_PREREQUISITE_MESSAGE.title}</p>
+                <p className="whitespace-pre-line text-sm">{CREDENTIAL_PREREQUISITE_MESSAGE.body}</p>
+                <Button size="sm" onClick={() => onConnectProvider(draft.publicApi.provider)}>
+                  {CREDENTIAL_PREREQUISITE_MESSAGE.cta}
                 </Button>
-                {providerTest.status === "tested" && providerTest.result?.status === "connected" ? (
-                  <span className="text-sm text-accent-subtle-foreground">연결됨 ({providerTest.result.latency_ms}ms)</span>
-                ) : null}
-                {providerTest.status === "tested" && providerTest.result?.status === "not_configured" ? (
-                  <span role="alert" className="text-sm text-amber-700 dark:text-amber-300">
-                    이 provider는 자격 증명이 필요합니다. Provider 설정에서 연결하세요.
-                  </span>
-                ) : null}
-                {providerTest.status === "tested" && providerTest.result?.status === "failed" ? (
-                  <span role="alert" className="text-sm text-red-700 dark:text-red-300">연결 실패</span>
-                ) : null}
-                {providerTest.error ? <span role="alert" className="text-sm text-red-700 dark:text-red-300">{providerTest.error}</span> : null}
-              </div>
+              </Card>
+            ) : providerReady ? (
+              <Card variant="dashed" className="space-y-1 p-3 text-sm">
+                <p className="font-semibold text-foreground">인증 정보 준비됨</p>
+                <p className="text-muted-foreground">
+                  이 Provider를 사용하는 인증 정보가 설정되어 있습니다. 실제 데이터 인출 가능 여부는
+                  다음 단계 Preview에서 확인합니다.
+                </p>
+              </Card>
             ) : null}
           </div>
 
@@ -154,15 +187,74 @@ export function ConfigureStep({
                 ) : null}
               </Card>
             ) : null}
-            <FormField id="add-data-params" label="요청 파라미터 (JSON)" help='예: {"region": "seoul"}'>
+            {requestParameters.length > 0 ? (
+              <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs">
+                <p className="font-semibold text-foreground">이 Dataset의 요청 파라미터</p>
+                <ul className="mt-1.5 space-y-1">
+                  {requestParameters.map((p) => (
+                    <li key={p.name} className="text-muted-foreground">
+                      <span className="font-medium text-foreground">{p.name}</span>
+                      {p.required ? (
+                        <span className="ml-1 font-medium text-red-600 dark:text-red-400">필수</span>
+                      ) : (
+                        <span className="ml-1">선택</span>
+                      )}
+                      {p.description ? <span> — {p.description}</span> : null}
+                      {p.example ? <span className="ml-1 text-muted-foreground">예: {p.example}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {application?.required ? (
+              <Card variant="dashed" className="space-y-2 p-3 text-xs">
+                <p className="font-semibold text-foreground">데이터 활용신청을 확인해주세요</p>
+                <p className="text-muted-foreground">
+                  API Key 등록과 별도로 이 Dataset은 제공기관에서 활용신청 또는 승인이 필요할 수
+                  있습니다. 신청 상태는 KPubData가 자동으로 확인하지 않습니다.
+                </p>
+                <a
+                  href={application.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex text-sm font-medium text-accent-subtle-foreground underline underline-offset-2"
+                >
+                  공식 페이지에서 확인 · 신청 ↗
+                </a>
+              </Card>
+            ) : null}
+            <FormField
+              id="add-data-params"
+              label="요청 파라미터 (JSON)"
+              help={`예: ${exampleParamsText(requestParameters)}`}
+            >
               {(field) => (
-                <Textarea
-                  {...field}
-                  mono
-                  rows={6}
-                  value={draft.publicApi.sourceParams}
-                  onChange={(e) => updateDraft({ publicApi: { ...draft.publicApi, sourceParams: e.target.value } })}
-                />
+                <div className="space-y-2">
+                  {hasExampleParams(requestParameters) ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        updateDraft({
+                          publicApi: {
+                            ...draft.publicApi,
+                            sourceParams: mergeExampleParams(draft.publicApi.sourceParams, requestParameters),
+                          },
+                        })
+                      }
+                    >
+                      예시값 적용
+                    </Button>
+                  ) : null}
+                  <Textarea
+                    {...field}
+                    mono
+                    rows={6}
+                    value={draft.publicApi.sourceParams}
+                    onChange={(e) => updateDraft({ publicApi: { ...draft.publicApi, sourceParams: e.target.value } })}
+                  />
+                </div>
               )}
             </FormField>
           </div>

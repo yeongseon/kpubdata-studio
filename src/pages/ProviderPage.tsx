@@ -10,15 +10,20 @@
  * - "이 사용자가 저장한 credential"의 유무/마스킹 값은 GET /providers/{provider}/credential
  *   메타데이터(`{ configured, masked, updated_at }`, raw secret 없음)로만 판정한다.
  * - requires_credential=false여도 요약 configured=true일 수 있다(무인증 provider).
- * - 세 축을 화면에서 분리한다: (1) provider 사용 가능 여부, (2) 사용자 저장 credential
- *   존재 여부, (3) 연결 테스트 결과.
+ * - 두 축을 화면에서 분리한다: (1) effective credential readiness(요약 configured),
+ *   (2) 사용자 저장 credential 존재 여부(마스킹 값·삭제의 근거).
+ * - generic Provider probe(`POST /providers/{provider}/test` · `GET .../status`)는
+ *   임의의 첫 Dataset을 필수 파라미터 없이 호출하므로 신뢰할 수 없다. 이 화면은
+ *   probe 결과를 "연결 성공 여부"로 노출하지 않는다 — 실제 사용 가능 여부는 선택한
+ *   Dataset의 Preview가 확인한다(#S-provider-probe).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
+  ApiError,
   builderApi,
   isRealBuilderEnabled,
   type ProviderSummary,
-  type ProviderTestResponse,
 } from "@/shared/lib/builderApi";
 import {
   Card,
@@ -28,6 +33,19 @@ import {
   EmptyState,
   Skeleton,
 } from "@/shared/ui";
+import { describeCredentialReadiness } from "@/shared/lib/providerStatus";
+
+/**
+ * `returnTo` query param을 안전한 내부 경로일 때만 신뢰한다(#S-add-data, §4).
+ * 절대 URL/프로토콜-상대(`//evil.com`) 경로로의 open redirect를 막는다 — 이 값은
+ * Add Data 같은 내부 화면이 이어서 편집을 재개할 안전한 복귀 지점으로만 쓴다.
+ */
+export function isSafeReturnTo(value: string | null): value is string {
+  if (!value) return false;
+  if (!value.startsWith("/") || value.startsWith("//")) return false;
+  if (value.startsWith("/\\")) return false;
+  return true;
+}
 
 interface ProviderConfig {
   id: string;
@@ -40,11 +58,6 @@ interface ProviderConfig {
    * (user credential > server default > 없음). 사용자 저장 credential 유무가 아니다.
    */
   summaryConfigured: boolean;
-  /** 연결 테스트 결과. `unknown` = 아직 점검하지 않음. */
-  status: "connected" | "failed" | "not_configured" | "unknown";
-  latency?: number;
-  checkedAt?: string;
-  errorCategory?: string;
 }
 
 interface CredentialForm {
@@ -58,6 +71,13 @@ interface CredentialForm {
 type CredentialMetaState =
   | { status: "idle" | "loading" }
   | { status: "not_applicable" }
+  /**
+   * 운영자가 encrypted credential store(master key)를 구성하지 않았다 —
+   * Builder가 `GET /providers/{provider}/credential`에 503
+   * `credential store is not configured`로 답한 경우. "사용자가 아직 credential을
+   * 등록하지 않음"(200 `configured:false`)이나 일반 조회 실패와 구분한다.
+   */
+  | { status: "store_unavailable" }
   | { status: "error"; message: string }
   | {
       status: "loaded";
@@ -65,6 +85,13 @@ type CredentialMetaState =
       masked: string | null;
       updatedAt: string | null;
     };
+
+/** Builder가 명시한 credential store 미구성 응답만 operator remediation으로 분류한다. */
+export function isCredentialStoreUnavailable(cause: unknown): boolean {
+  if (!(cause instanceof ApiError) || cause.status !== 503) return false;
+  if (!cause.details || typeof cause.details !== "object" || Array.isArray(cause.details)) return false;
+  return (cause.details as { error?: unknown }).error === "credential store is not configured";
+}
 
 /** Builder GET /providers 요약을 화면 모델로 변환한다(연결 상태는 별도 status 점검으로 채운다). */
 function mapProviderSummary(summary: ProviderSummary): ProviderConfig {
@@ -76,18 +103,35 @@ function mapProviderSummary(summary: ProviderSummary): ProviderConfig {
     description: summary.requires_credential
       ? "자격 증명이 필요한 제공 기관입니다."
       : "자격 증명 없이 사용할 수 있는 제공 기관입니다.",
-    status: "unknown",
   };
 }
 
 export function ProviderPage() {
+  const [searchParams] = useSearchParams();
+  // Add Data 등에서 `?provider=datago&returnTo=/add`로 넘어온 경우(#S-add-data, §4).
+  // URL에는 provider id와 safe return destination만 싣는다 — credential/BuildSpec은
+  // 절대 담지 않는다. providerParam은 목록이 로딩된 뒤 딱 한 번만 자동 선택에 쓴다.
+  const providerParam = searchParams.get("provider");
+  const returnToParam = searchParams.get("returnTo");
+  const safeReturnTo = isSafeReturnTo(returnToParam) ? returnToParam : null;
+  const providerParamAppliedRef = useRef(false);
+
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<ProviderConfig | null>(null);
-  const [isTesting, setIsTesting] = useState(false);
   const [showCredentialForm, setShowCredentialForm] = useState(false);
   const [credentialForm, setCredentialForm] = useState<CredentialForm>({ credential: "" });
   const [credentialMeta, setCredentialMeta] = useState<CredentialMetaState>({ status: "idle" });
+  // credential을 이번 화면 방문에서 방금 저장했는지 — returnTo CTA는 저장 성공
+  // 이후에만 보여준다(§4). provider 전환 시 reset한다.
+  const [justSavedCredential, setJustSavedCredential] = useState(false);
+  // credential 메타 조회/갱신 race guard는 두 축을 함께 본다:
+  // (1) request-generation — 더 나중에 시작한 조회가 항상 이긴다.
+  // (2) selectedProviderIdRef — 그 조회의 대상 provider가 "지금 화면에 선택된"
+  //     provider와 같아야 한다. mutation(save/delete) 완료 후의 늦은
+  //     loadCredentialMeta(A)가 generation을 최신으로 올려도, 그 사이 사용자가
+  //     B로 옮겼다면 A의 결과/loading/error가 B 패널을 절대 덮지 못한다(#324, #322).
   const credentialRequestGeneration = useRef(0);
+  const selectedProviderIdRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,19 +145,18 @@ export function ProviderPage() {
         const response = await builderApi.listProviders();
         const mapped = response.providers.map(mapProviderSummary);
         setProviders(mapped);
-        setSelectedProvider((current) => {
-          if (!current) return null;
-          const next = mapped.find((p) => p.id === current.id);
-          if (!next) return null;
-          // 연결 테스트 결과는 목록 새로고침으로 잃지 않도록 보존한다.
-          return {
-            ...next,
-            status: current.status,
-            latency: current.latency,
-            checkedAt: current.checkedAt,
-            errorCategory: current.errorCategory,
-          };
-        });
+        // ref는 사용자 선택의 동기적 source of truth다. state updater/effect가 늦게
+        // 실행되며 이미 B로 바뀐 ref를 A로 되돌리면 stale mutation refresh가 시작될 수
+        // 있으므로, 목록 응답으로 선택을 재결정하지 않는다. 실제 목록에서 사라진 경우만
+        // 명시적으로 선택을 해제한다.
+        const selectedId = selectedProviderIdRef.current;
+        const next = selectedId ? mapped.find((provider) => provider.id === selectedId) : undefined;
+        if (!next) {
+          if (selectedId) selectedProviderIdRef.current = null;
+          setSelectedProvider(null);
+        } else {
+          setSelectedProvider(next);
+        }
       } else {
         // 명시적 mock/demo mode에서만 mock 목록을 쓴다.
         setProviders(getMockProviders());
@@ -137,15 +180,20 @@ export function ProviderPage() {
   const loadCredentialMeta = useCallback(
     async (provider: ProviderConfig) => {
       const generation = ++credentialRequestGeneration.current;
+      // 이 조회 결과를 화면에 반영해도 되는지: 가장 최신 조회이면서, 그 대상이
+      // 여전히 선택된 provider일 때만. loading/error/loaded 커밋 전에 항상 확인한다.
+      const stillCurrent = () =>
+        generation === credentialRequestGeneration.current &&
+        provider.id === selectedProviderIdRef.current;
       if (!provider.requiresCredential) {
-        if (generation === credentialRequestGeneration.current) setCredentialMeta({ status: "not_applicable" });
+        if (stillCurrent()) setCredentialMeta({ status: "not_applicable" });
         return;
       }
-      setCredentialMeta({ status: "loading" });
+      if (stillCurrent()) setCredentialMeta({ status: "loading" });
       try {
         if (isRealBuilderEnabled()) {
           const meta = await builderApi.getProviderCredential(provider.id);
-          if (generation !== credentialRequestGeneration.current) return;
+          if (!stillCurrent()) return;
           setCredentialMeta({
             status: "loaded",
             configured: meta.configured,
@@ -153,11 +201,15 @@ export function ProviderPage() {
             updatedAt: meta.updated_at,
           });
         } else {
-          if (generation !== credentialRequestGeneration.current) return;
+          if (!stillCurrent()) return;
           setCredentialMeta(mockCredentialMeta(provider));
         }
-      } catch {
-        if (generation !== credentialRequestGeneration.current) return;
+      } catch (cause) {
+        if (!stillCurrent()) return;
+        if (isCredentialStoreUnavailable(cause)) {
+          setCredentialMeta({ status: "store_unavailable" });
+          return;
+        }
         setCredentialMeta({ status: "error", message: "자격 증명 상태를 불러오지 못했습니다" });
       }
     },
@@ -165,52 +217,27 @@ export function ProviderPage() {
   );
 
   const handleProviderSelect = (provider: ProviderConfig) => {
+    // 선택 전환은 동기적으로 ref에 반영한다 — 직후의 loadCredentialMeta가
+    // 즉시 이 값을 기준으로 삼아야 하고, 진행 중이던 다른 provider의 조회는
+    // 여기서부터 stale로 판정된다.
+    selectedProviderIdRef.current = provider.id;
     ++credentialRequestGeneration.current;
     setSelectedProvider(provider);
     setShowCredentialForm(false);
     setCredentialForm({ credential: "" });
+    setJustSavedCredential(false);
     void loadCredentialMeta(provider);
   };
 
-  /** status 점검/테스트 응답을 목록과 선택 상태에 반영한다. */
-  const applyStatus = useCallback((res: ProviderTestResponse) => {
-    const patch: Partial<ProviderConfig> = {
-      status: res.status,
-      latency: res.latency_ms,
-      checkedAt: res.checked_at,
-      errorCategory: res.error_category,
-    };
-    setProviders((list) => list.map((p) => (p.id === res.provider ? { ...p, ...patch } : p)));
-    setSelectedProvider((current) =>
-      current && current.id === res.provider ? { ...current, ...patch } : current,
-    );
-  }, []);
-
-  const handleConnectionTest = async () => {
-    if (!selectedProvider) return;
-    const provider = selectedProvider.id;
-
-    setIsTesting(true);
-    setError(null);
-    try {
-      if (isRealBuilderEnabled()) {
-        // 연결 테스트는 GET /providers/{provider}/status를 쓴다 — 임의 POST /test가 아니다(#S02).
-        applyStatus(await builderApi.getProviderStatus(provider));
-      } else {
-        applyStatus({
-          provider,
-          status: "connected",
-          configured: true,
-          latency_ms: 42,
-          checked_at: new Date().toISOString(),
-        });
-      }
-    } catch {
-      setError("연결 테스트에 실패했습니다");
-    } finally {
-      setIsTesting(false);
-    }
-  };
+  // `?provider=`로 넘어온 경우 목록이 로딩된 뒤 해당 provider를 한 번만 자동
+  // 선택한다(#S-add-data, §4) — Discover의 catalog preselection과 같은 패턴
+  // (한 번만 적용, 목록에 없으면 조용히 넘어간다).
+  useEffect(() => {
+    if (providerParamAppliedRef.current || loading || !providerParam) return;
+    providerParamAppliedRef.current = true;
+    const match = providers.find((p) => p.id === providerParam);
+    if (match) handleProviderSelect(match);
+  }, [providers, loading, providerParam]);
 
   const handleCredentialSubmit = async () => {
     if (!selectedProvider || !credentialForm.credential) return;
@@ -223,12 +250,27 @@ export function ProviderPage() {
         // response로 기대하지 않고, 선택된 provider의 canonical id를 URL에 쓴다(#S02).
         await builderApi.putProviderCredential(provider.id, credentialForm.credential);
       }
-      setCredentialForm({ credential: "" });
-      setShowCredentialForm(false);
-      // 저장 후 metadata와 provider 요약을 다시 authoritative하게 갱신한다.
-      await Promise.all([loadProviders(), loadCredentialMeta(provider)]);
-    } catch {
-      setError("Credential 저장에 실패했습니다");
+      // 저장이 진행되는 동안 사용자가 다른 provider로 옮겼다면, 이 mutation의 후속
+      // form 리셋/에러가 현재 화면(B)을 오염시키면 안 된다(#322/#324와 같은 축).
+      if (selectedProviderIdRef.current === provider.id) {
+        setCredentialForm({ credential: "" });
+        setShowCredentialForm(false);
+        setJustSavedCredential(true);
+      }
+      // 목록은 authoritative하게 갱신하되, 다른 provider를 보고 있으면 A의
+      // provider-specific refresh를 시작하지 않는다. 시작 자체가 global generation을
+      // 올려 B의 pending GET을 stale로 만들 수 있기 때문이다.
+      await loadProviders();
+      if (selectedProviderIdRef.current === provider.id) {
+        await loadCredentialMeta(provider);
+      }
+    } catch (cause) {
+      if (selectedProviderIdRef.current !== provider.id) return;
+      setError(
+        isCredentialStoreUnavailable(cause)
+          ? "Builder에 자격 증명 저장소(master key)가 구성되어 있지 않아 저장할 수 없습니다."
+          : "Credential 저장에 실패했습니다",
+      );
     }
   };
 
@@ -240,32 +282,46 @@ export function ProviderPage() {
       if (isRealBuilderEnabled()) {
         await builderApi.deleteProviderCredential(provider.id);
       }
-      // 삭제 후 metadata와 provider 요약을 다시 authoritative하게 갱신한다.
-      await Promise.all([loadProviders(), loadCredentialMeta(provider)]);
-    } catch {
-      setError("Credential 삭제에 실패했습니다");
+      // 저장과 동일하게, 선택을 떠난 provider의 metadata refresh는 시작하지 않는다.
+      await loadProviders();
+      if (selectedProviderIdRef.current === provider.id) {
+        await loadCredentialMeta(provider);
+      }
+    } catch (cause) {
+      // 삭제 도중 다른 provider로 옮겼다면 이 실패를 현재 화면 에러로 노출하지 않는다.
+      if (selectedProviderIdRef.current !== provider.id) return;
+      setError(
+        isCredentialStoreUnavailable(cause)
+          ? "Builder에 자격 증명 저장소(master key)가 구성되어 있지 않아 삭제할 수 없습니다."
+          : "Credential 삭제에 실패했습니다",
+      );
     }
-  };
-
-  const getStatusBadge = (status: ProviderConfig["status"]) => {
-    const styles = {
-      connected: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
-      failed: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300",
-      not_configured: "bg-muted text-muted-foreground",
-      unknown: "bg-muted text-muted-foreground",
-    };
-    const labels = {
-      connected: "연결됨",
-      failed: "연결 실패",
-      not_configured: "미설정",
-      unknown: "연결 확인 필요",
-    };
-    return { className: styles[status], label: labels[status] };
   };
 
   // 사용자 본인이 저장한 credential이 있는지(삭제 버튼/마스킹 값 표시의 유일한 근거).
   const userCredentialConfigured =
     credentialMeta.status === "loaded" && credentialMeta.configured;
+
+  // Provider 상태 배지는 generic live probe가 아니라 credential readiness로 표현한다
+  // (#S-provider-probe). 실제 Dataset API 사용 가능 여부는 Preview가 확인한다.
+  // `userCredentialConfigured`는 지금 선택된 provider에서만 알 수 있으므로 목록
+  // 배지에는 전달하지 않는다(요약 `configured`만 사용).
+  const readinessToneClass: Record<"success" | "warning" | "neutral", string> = {
+    success: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
+    warning: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
+    neutral: "bg-muted text-muted-foreground",
+  };
+  const getReadinessPresentation = (
+    provider: ProviderConfig,
+    userConfigured?: boolean,
+  ) => {
+    const readiness = describeCredentialReadiness({
+      requiresCredential: provider.requiresCredential,
+      summaryConfigured: provider.summaryConfigured,
+      userCredentialConfigured: userConfigured,
+    });
+    return { className: readinessToneClass[readiness.tone], label: readiness.label, detail: readiness.detail };
+  };
   const canRegisterCredential =
     !!selectedProvider &&
     selectedProvider.requiresCredential &&
@@ -279,6 +335,15 @@ export function ProviderPage() {
         description="공공데이터 제공 기관과 연결하고 자격 증명(credential)을 관리합니다."
         actions={<LinkButton to="/settings">설정으로 이동</LinkButton>}
       />
+      <p className="-mt-6 text-xs text-muted-foreground">
+        공공데이터 API Key와 Provider 자격 증명은 이곳에서 연결합니다. Kubi AI 요청에 사용하는 API Key와는 별개입니다.
+      </p>
+
+      {safeReturnTo ? (
+        <Card variant="dashed" className="text-sm">
+          데이터 추가를 계속하려면 API 연결을 완료하세요.
+        </Card>
+      ) : null}
 
       {error && (
         <Card variant="error">
@@ -325,10 +390,10 @@ export function ProviderPage() {
                       <div className="flex items-center gap-2 mt-1">
                         <span
                           className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                            getStatusBadge(provider.status).className
+                            getReadinessPresentation(provider).className
                           }`}
                         >
-                          {getStatusBadge(provider.status).label}
+                          {getReadinessPresentation(provider).label}
                         </span>
                       </div>
                     </div>
@@ -350,66 +415,31 @@ export function ProviderPage() {
           ) : (
             <div className="space-y-6">
               <Card>
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-semibold">{selectedProvider.name}</h3>
+                    <h3 className="text-lg font-semibold">연결 상태</h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {selectedProvider.description}
+                      {getReadinessPresentation(selectedProvider, userCredentialConfigured).detail}
                     </p>
                   </div>
                   <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                      getStatusBadge(selectedProvider.status).className
+                    className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                      getReadinessPresentation(selectedProvider, userCredentialConfigured).className
                     }`}
                   >
-                    {getStatusBadge(selectedProvider.status).label}
+                    {getReadinessPresentation(selectedProvider, userCredentialConfigured).label}
                   </span>
                 </div>
-
-                {selectedProvider.status === "connected" && (
-                  <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">확인 시각</span>
-                      <p className="font-medium">
-                        {selectedProvider.checkedAt
-                          ? new Date(selectedProvider.checkedAt).toLocaleString("ko-KR")
-                          : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">지연 시간</span>
-                      <p className="font-medium">
-                        {selectedProvider.latency
-                          ? `${selectedProvider.latency}ms`
-                          : "—"}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {selectedProvider.status === "failed" && (
-                  <div className="mt-4">
-                    <span className="text-sm text-muted-foreground">에러 분류:</span>
-                    <p className="mt-1 text-sm font-medium text-red-600 dark:text-red-400">
-                      {selectedProvider.errorCategory || "알 수 없음"}
-                    </p>
-                  </div>
-                )}
-
-                <div className="mt-6">
-                  <Button
-                    variant="secondary"
-                    onClick={handleConnectionTest}
-                    disabled={isTesting}
-                  >
-                    {isTesting ? "테스트 중..." : "연결 테스트"}
-                  </Button>
-                </div>
+                <p className="mt-4 text-xs text-muted-foreground">
+                  선택한 Dataset에서 API Key가 실제 유효한지, 활용신청·필수 요청
+                  파라미터가 맞는지는 Add Data의 Preview 단계에서 확인합니다. 이
+                  화면은 Provider 인증 정보 등록 상태만 관리합니다.
+                </p>
               </Card>
 
               <Card>
                 <div className="flex items-center justify-between">
-                  <h4 className="font-semibold">자격 증명 (Credential)</h4>
+                  <h4 className="font-semibold">자격 증명 (Credential) 상태</h4>
                   {userCredentialConfigured ? (
                     <Button size="sm" variant="danger" onClick={handleCredentialDelete}>
                       삭제
@@ -430,6 +460,19 @@ export function ProviderPage() {
                   <p className="mt-4 text-sm text-muted-foreground">
                     자격 증명 상태를 불러오는 중…
                   </p>
+                ) : credentialMeta.status === "store_unavailable" ? (
+                  <div className="mt-4 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">
+                      자격 증명 저장소가 아직 구성되지 않았습니다
+                    </p>
+                    <p className="mt-2">
+                      Builder에 암호화된 자격 증명 저장소(master key)가 설정되어 있지 않아 사용자
+                      자격 증명을 등록·조회할 수 없습니다. 이는 &ldquo;아직 자격 증명을 등록하지
+                      않음&rdquo;과는 다른 상태입니다. 운영자가 Builder에
+                      <code className="mx-1">KPUBDATA_BUILDER_CREDENTIAL_MASTER_KEY</code>를 설정한
+                      뒤 다시 시도하세요.
+                    </p>
+                  </div>
                 ) : credentialMeta.status === "error" ? (
                   <p className="mt-4 text-sm text-red-600 dark:text-red-400">
                     {credentialMeta.message}
@@ -483,6 +526,11 @@ export function ProviderPage() {
                     <p className="mt-2 text-xs text-muted-foreground">
                       Builder가 마스킹한 값이며 원문은 표시되지 않습니다.
                     </p>
+                    {justSavedCredential && safeReturnTo ? (
+                      <div className="mt-4">
+                        <LinkButton to={safeReturnTo}>데이터 설정으로 돌아가기</LinkButton>
+                      </div>
+                    ) : null}
                   </div>
                 ) : selectedProvider.summaryConfigured ? (
                   <p className="mt-4 text-sm text-muted-foreground">
@@ -506,7 +554,7 @@ export function ProviderPage() {
 /** mock/demo 모드에서 선택된 provider의 사용자 credential 상태를 시뮬레이션한다. */
 function mockCredentialMeta(provider: ProviderConfig): CredentialMetaState {
   if (!provider.requiresCredential) return { status: "not_applicable" };
-  const configured = provider.status === "connected";
+  const configured = provider.summaryConfigured;
   return {
     status: "loaded",
     configured,
@@ -523,7 +571,6 @@ function getMockProviders(): ProviderConfig[] {
       description: "대한민국 대표 공공데이터 포털",
       requiresCredential: true,
       summaryConfigured: false,
-      status: "not_configured",
     },
     {
       id: "kosis",
@@ -531,9 +578,6 @@ function getMockProviders(): ProviderConfig[] {
       description: "한국 통계청 통계포털",
       requiresCredential: true,
       summaryConfigured: true,
-      status: "connected",
-      latency: 150,
-      checkedAt: new Date(Date.now() - 3600000).toISOString(),
     },
     {
       id: "g2b",
@@ -541,9 +585,6 @@ function getMockProviders(): ProviderConfig[] {
       description: "국가과학기술정보원",
       requiresCredential: true,
       summaryConfigured: false,
-      status: "failed",
-      errorCategory: "AUTH_ERROR",
-      checkedAt: new Date(Date.now() - 86400000).toISOString(),
     },
   ];
 }

@@ -138,7 +138,7 @@ const navGroups: NavGroup[] = [
       {
         to: "/datasets",
         label: "Dataset Catalog (데이터셋)",
-        description: "발행된 데이터셋 검색",
+        description: "빌드된 데이터셋 검색",
         icon: (
           <SidebarIcon name="datasets">
             <ellipse cx="12" cy="5" rx="7" ry="3" />
@@ -202,8 +202,8 @@ const navGroups: NavGroup[] = [
     items: [
       {
         to: "/provider",
-        label: "Provider (제공기관)",
-        description: "Provider 연결·자격 증명",
+        label: "Provider / API 연결",
+        description: "API Key·자격 증명 등록",
         icon: (
           <SidebarIcon name="provider">
             <path d="M4 21V7l8-4 8 4v14M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01" />
@@ -323,7 +323,8 @@ export function Layout() {
           />
         ) : null}
 
-        <aside
+          <aside
+            data-tour="sidebar"
           className={[
             "fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border bg-card px-4 py-5 transition-all lg:static lg:translate-x-0",
             isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
@@ -346,14 +347,8 @@ export function Layout() {
                   KPubData Studio
                 </Link>
               </div>
-              <p
-                className={[
-                  "mt-3 text-sm leading-relaxed text-muted-foreground",
-                  isDesktopSidebarCollapsed ? "lg:sr-only" : "",
-                ].join(" ")}
-              >
-                데이터 탐색부터 빌드, 품질, Kubi 분석까지 한 흐름으로 진행하세요.
-              </p>
+              {/* tagline은 Topbar가 workspace/product context를 담당하므로 Sidebar에서는
+                  제품명/로고만 유지한다(중복 제거). */}
             </div>
             <button
               aria-label="사이드바 닫기"
@@ -463,7 +458,7 @@ export function Layout() {
                     KPubData Studio
                   </p>
                   <h1 className="truncate text-base font-semibold tracking-tight">
-                    공공데이터 탐색·빌드·품질·Kubi 워크플로
+                    공공데이터를 데이터셋으로 만드는 워크스페이스
                   </h1>
                 </div>
               </div>

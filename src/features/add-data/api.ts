@@ -23,6 +23,7 @@ const MOCK_CATALOG: CatalogResponse = {
           operations: ["list"],
           query_support: null,
           requires_service_key: true,
+          request_parameters: [],
         },
         {
           name: "air_quality",
@@ -34,6 +35,13 @@ const MOCK_CATALOG: CatalogResponse = {
           operations: ["list"],
           query_support: null,
           requires_service_key: true,
+          request_parameters: [
+            { name: "sidoName", required: true, description: "조회할 시·도", example: "서울" },
+          ],
+          application: {
+            required: true,
+            url: "https://www.data.go.kr/data/15073861/openapi.do",
+          },
         },
       ],
     },
@@ -47,14 +55,32 @@ export async function fetchCatalog(signal?: AbortSignal): Promise<CatalogRespons
 }
 
 /**
- * POST /providers/{provider}/test — "연결 테스트" 버튼(#492). mock 모드에서는 항상
- * connected를 반환해 네트워크 없이 UI를 검증할 수 있게 한다.
+ * POST /providers/{provider}/test 래퍼(#492). generic Provider probe는 임의의 첫
+ * Dataset을 필수 파라미터 없이 호출하므로 "연결 성공 여부"로 신뢰할 수 없어 Add
+ * Data user flow에서 제거됐다(#S-provider-probe). Builder contract는 유지되므로
+ * 래퍼 자체는 남겨 둔다(직접 진단용). mock 모드에서는 항상 connected를 반환한다.
  */
 export async function testProvider(provider: string, signal?: AbortSignal): Promise<ProviderTestResponse> {
   if (!isRealBuilderEnabled()) {
     return { provider, status: "connected", configured: true, latency_ms: 42, checked_at: new Date().toISOString() };
   }
   return builderApi.testProviderConnection(provider, signal);
+}
+
+/**
+ * GET /providers 요약에서 provider별 "effective credential 구성 여부"만 추린다
+ * (#S-add-data). Add Data의 credential prerequisite가 이 값을 authoritative
+ * source로 재사용한다 — `configured`는 user credential > server default > 없음을
+ * 반영한 effective 값이며(ADR 0012), Studio가 별도로 credential 존재를 추측하지
+ * 않는다. mock 모드는 `testProvider`(위)와 마찬가지로 항상 connected/configured로
+ * 취급해 네트워크 없이 나머지 mock 흐름을 막지 않는다 — prerequisite UX 자체는
+ * `ConfigureStep`에 `providerConfigured` prop을 직접 주입하는 컴포넌트 테스트로
+ * 검증한다.
+ */
+export async function fetchProviderConfigured(signal?: AbortSignal): Promise<Record<string, boolean>> {
+  if (!isRealBuilderEnabled()) return { datago: true };
+  const response = await builderApi.listProviders(signal);
+  return Object.fromEntries(response.providers.map((p) => [p.provider, p.configured]));
 }
 
 /**

@@ -250,6 +250,29 @@ export const catalogQuerySupportSchema = z.object({
 /**
  * GET /catalog 응답 스키마 (#416, BL2; #490으로 탐색용 metadata 확장)
  */
+/**
+ * GET /catalog 탐색 metadata의 안전한(secret-free) 요청 파라미터 설명 (#S-add-data).
+ * Builder가 raw_metadata에서 allowlist로 추려 직렬화한다 — serviceKey 등 시크릿
+ * 파라미터는 포함되지 않는다. 없는 dataset은 빈 배열.
+ */
+export const catalogRequestParameterSchema = z.object({
+  name: z.string(),
+  required: z.boolean(),
+  description: z.string().nullable(),
+  example: z.string().nullable(),
+});
+
+/**
+ * 공공데이터포털처럼 API Key 발급과 Dataset별 활용신청이 별개일 수 있는 경우의
+ * 안내 (#S-add-data). Builder가 raw_metadata.application을 그대로 전달한 것으로,
+ * 없으면 null(활용신청이 필요 없다는 뜻이 아니라 알려진 바 없음). Studio는 신청
+ * 완료/승인 여부를 이 필드로 추측하지 않는다 — Preview 성공이 최종 확인이다.
+ */
+export const catalogApplicationSchema = z.object({
+  required: z.boolean(),
+  url: z.string(),
+});
+
 export const catalogDatasetSchema = z.object({
   name: z.string(),
   title: z.string(),
@@ -260,6 +283,12 @@ export const catalogDatasetSchema = z.object({
   operations: z.array(z.enum(["list", "get", "schema", "raw", "download"])),
   query_support: catalogQuerySupportSchema.nullable(),
   requires_service_key: z.boolean(),
+  // 하위 호환: 이 필드를 아직 내려주지 않는 Builder(구버전)에서도 파싱이 깨지지
+  // 않도록 optional로 둔다(소비 측은 `?? []`). 최신 Builder는 항상 배열을 준다.
+  request_parameters: z.array(catalogRequestParameterSchema).optional(),
+  // 하위 호환: 이 필드를 아직 내려주지 않는 Builder(구버전)에서는 undefined다
+  // (소비 측은 `?? null`). 최신 Builder는 항상 값(객체 또는 null)을 준다.
+  application: catalogApplicationSchema.nullable().optional(),
 });
 
 export const catalogProviderSchema = z.object({
@@ -272,6 +301,8 @@ export const catalogResponseSchema = z.object({
 });
 
 export type CatalogQuerySupport = z.infer<typeof catalogQuerySupportSchema>;
+export type CatalogRequestParameter = z.infer<typeof catalogRequestParameterSchema>;
+export type CatalogApplication = z.infer<typeof catalogApplicationSchema>;
 export type CatalogDataset = z.infer<typeof catalogDatasetSchema>;
 export type CatalogProvider = z.infer<typeof catalogProviderSchema>;
 export type CatalogResponse = z.infer<typeof catalogResponseSchema>;
@@ -375,6 +406,11 @@ export const datasetDetailResponseSchema = datasetSummarySchema.extend({
 
 export const datasetsResponseSchema = z.object({
   datasets: z.array(datasetSummarySchema),
+  // `total`은 Builder 1.22.0에서 추가된 additive 필드다(canonical grouping +
+  // ownership 이후, pagination 이전의 distinct dataset 수). 1.21.0 이하 Builder는
+  // 이 필드를 보내지 않으므로 optional로 둔다 — 없으면 Studio는 "확인 불가"로
+  // 표시하고, items.length/limit을 total로 대신 쓰지 않는다.
+  total: z.number().int().nonnegative().optional(),
 });
 
 export const datasetRunSummarySchema = z.object({
@@ -572,6 +608,22 @@ export const datasetQualityHistoryResponseSchema = z.object({
 });
 
 /**
+ * GET /quality/summary — 최근 24h cross-run quality aggregate (Builder 1.22.0, #486 후속).
+ * Home의 "QUALITY WARN (24H)" KPI가 임의 숫자 합성 없이 authoritative 값을 읽는다.
+ * per-run quality_results/dataset/owner는 포함하지 않는다.
+ */
+export const qualitySummaryResponseSchema = z.object({
+  window: z.literal("24h"),
+  generated_at: z.string(),
+  availability: z.enum(["available", "unavailable"]),
+  total_runs: z.number().int().nonnegative(),
+  evaluated_runs: z.number().int().nonnegative(),
+  pass_runs: z.number().int().nonnegative(),
+  warn_runs: z.number().int().nonnegative(),
+  fail_runs: z.number().int().nonnegative(),
+});
+
+/**
  * ============================================
  * Build Publish API (1.17.0, builder #491 / PR #547)
  * ============================================
@@ -696,6 +748,7 @@ export type QualityAvailability = z.infer<typeof qualityAvailabilitySchema>;
 export type BuildQualityResponse = z.infer<typeof buildQualityResponseSchema>;
 export type DatasetQualityHistoryEntry = z.infer<typeof datasetQualityHistoryEntrySchema>;
 export type DatasetQualityHistoryResponse = z.infer<typeof datasetQualityHistoryResponseSchema>;
+export type QualitySummaryResponse = z.infer<typeof qualitySummaryResponseSchema>;
 
 /**
  * Monitoring (#516) — Builder 실제 wire 계약(GET /monitoring/summary,

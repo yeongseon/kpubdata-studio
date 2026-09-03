@@ -1,18 +1,25 @@
 /**
  * 빌드 결과물 페이지 (/builds/:buildId/artifacts).
  *
- * manifest 요약, 생성 파일 목록, manifest 원본(JSON)을 보여준다(제안 §5.7, #30).
+ * manifest 요약, 다운로드 가능한 파일 목록, manifest 원본(JSON)을 보여준다(제안 §5.7, #30).
  *
- * 실연동 모드에서는 `GET /builds/{run_id}/manifest`의 authoritative manifest 본문을
- * 그대로 렌더링한다. 일부 legacy/partial 실행은 manifest에 메타데이터 필드가 없을 수
- * 있으며, 그 경우에만 "일부 메타데이터가 없다"고 사실대로 안내한다. mock 모드에서는
- * 결정적 fixture manifest를 쓴다.
+ * manifest 요약/JSON은 `GET /builds/{run_id}/manifest`에서, **다운로드 파일 목록은
+ * `GET /artifacts/{run_id}`**에서 따로 받는다. 두 호출은 독립적이라 한쪽 실패가 다른 쪽을
+ * 막지 않는다. 다운로드는 `/artifacts/{run_id}` 목록이 준 canonical run-relative 경로만
+ * 쓴다 — `manifest.outputs`는 output_root 절대 storage 경로라 다운로드 식별자로 못 쓴다.
+ * 일부 legacy/partial 실행은 manifest에 메타데이터 필드가 없을 수 있으며, 그 경우에만
+ * "일부 메타데이터가 없다"고 사실대로 안내한다. mock 모드에서는 결정적 fixture를 쓴다.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { getBuildManifest } from "@/features/artifacts/api";
+import {
+  downloadArtifact,
+  getBuildManifest,
+  listArtifactFiles,
+  saveBlobAsFile,
+} from "@/features/artifacts/api";
 import type { BuildManifest } from "@/shared/lib/types";
-import { Card, EmptyState, ErrorState, LinkButton, PageHeader, SkeletonTable } from "@/shared/ui";
+import { Button, Card, EmptyState, ErrorState, LinkButton, PageHeader, SkeletonTable } from "@/shared/ui";
 
 interface ManifestState {
   status: "loading" | "loaded" | "error";
@@ -20,11 +27,71 @@ interface ManifestState {
   error?: string;
 }
 
+type ArtifactsState =
+  | { status: "loading" }
+  | { status: "loaded"; files: string[] }
+  | { status: "error"; error: string };
+
 /** 파일 경로에서 표시용 이름과 형식(확장자)을 뽑는다. */
 function describeFile(path: string): { name: string; format: string } {
-  const name = path.split("/").pop() ?? path;
+  const name = path.split(/[\\/]/).pop() ?? path;
   const dot = name.lastIndexOf(".");
   return { name, format: dot >= 0 ? name.slice(dot + 1) : "—" };
+}
+
+type RowDownloadState =
+  | { status: "idle" }
+  | { status: "downloading" }
+  | { status: "error"; message: string };
+
+/**
+ * artifact 파일 한 줄. `path`는 `GET /artifacts/{run_id}`가 준 canonical run-relative
+ * POSIX 경로다. 다운로드는 exact run_id + 이 경로를 그대로 써서 인증된 Builder 요청
+ * (`downloadArtifact`)으로 받아 Blob으로 저장한다. 다운로드 중에는 버튼을 비활성화해
+ * 중복 클릭을 막고, 실패는 이 row에만 표시한다 — 페이지 전체를 실패 상태로 만들지 않는다.
+ */
+function ArtifactRow({ runId, path }: { runId: string; path: string }) {
+  const { name, format } = describeFile(path);
+  const [state, setState] = useState<RowDownloadState>({ status: "idle" });
+
+  const onDownload = useCallback(() => {
+    if (state.status === "downloading") return;
+    setState({ status: "downloading" });
+    downloadArtifact(runId, path)
+      .then(({ blob, filename }) => {
+        saveBlobAsFile(blob, filename);
+        setState({ status: "idle" });
+      })
+      .catch((cause: unknown) => {
+        setState({
+          status: "error",
+          message: cause instanceof Error ? cause.message : "다운로드에 실패했습니다.",
+        });
+      });
+  }, [runId, path, state.status]);
+
+  return (
+    <li className="grid grid-cols-[1.6fr_0.6fr_0.8fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0">
+      <span className="break-all font-medium">{name}</span>
+      <span className="uppercase text-muted-foreground">{format}</span>
+      <span className="flex flex-col items-start gap-1">
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={state.status === "downloading"}
+          disabled={state.status === "downloading"}
+          onClick={onDownload}
+        >
+          다운로드
+        </Button>
+        {state.status === "error" ? (
+          <span role="alert" className="text-xs text-red-600 dark:text-red-400">
+            {state.message}
+          </span>
+        ) : null}
+      </span>
+    </li>
+  );
 }
 
 /**
@@ -35,10 +102,12 @@ function describeFile(path: string): { name: string; format: string } {
 export function BuildArtifactsPage() {
   const { buildId = "" } = useParams();
   const [state, setState] = useState<ManifestState>({ status: "loading" });
+  const [artifacts, setArtifacts] = useState<ArtifactsState>({ status: "loading" });
 
   const load = useCallback(() => {
     const controller = new AbortController();
     setState({ status: "loading" });
+    setArtifacts({ status: "loading" });
     getBuildManifest(buildId, controller.signal)
       .then((manifest) => {
         if (!controller.signal.aborted) setState({ status: "loaded", manifest });
@@ -48,6 +117,20 @@ export function BuildArtifactsPage() {
         setState({
           status: "error",
           error: cause instanceof Error ? cause.message : "manifest를 불러오지 못했습니다.",
+        });
+      });
+    // 다운로드 가능한 파일 목록은 canonical `GET /artifacts/{run_id}`에서 별도로 받는다
+    // (manifest.outputs는 storage 절대경로라 다운로드 식별자로 못 쓴다). manifest 로드와
+    // 독립적이라 한쪽 실패가 다른 쪽을 막지 않는다.
+    listArtifactFiles(buildId, controller.signal)
+      .then((files) => {
+        if (!controller.signal.aborted) setArtifacts({ status: "loaded", files });
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        setArtifacts({
+          status: "error",
+          error: cause instanceof Error ? cause.message : "파일 목록을 불러오지 못했습니다.",
         });
       });
     return () => controller.abort();
@@ -142,23 +225,17 @@ export function BuildArtifactsPage() {
               <span>형식</span>
               <span>액션</span>
             </div>
-            {!manifest.outputs || manifest.outputs.length === 0 ? (
-              <EmptyState title={manifest.outputs === undefined ? "파일 정보 미제공" : "생성된 파일이 없습니다"} />
+            {artifacts.status === "loading" ? (
+              <SkeletonTable rows={4} />
+            ) : artifacts.status === "error" ? (
+              <EmptyState title="파일 목록을 불러오지 못했습니다" description={artifacts.error} />
+            ) : artifacts.files.length === 0 ? (
+              <EmptyState title="생성된 파일이 없습니다" />
             ) : (
               <ul>
-                {manifest.outputs.map((path) => {
-                  const { name, format } = describeFile(path);
-                  return (
-                    <li
-                      key={path}
-                      className="grid grid-cols-[1.6fr_0.6fr_0.8fr] items-center gap-4 border-b border-border px-6 py-3 text-sm last:border-0 "
-                    >
-                      <span className="break-all font-medium">{name}</span>
-                      <span className="uppercase text-muted-foreground">{format}</span>
-                      <span className="text-muted-foreground">다운로드(연동 예정)</span>
-                    </li>
-                  );
-                })}
+                {artifacts.files.map((path) => (
+                  <ArtifactRow key={path} runId={buildId} path={path} />
+                ))}
               </ul>
             )}
           </Card>

@@ -199,32 +199,60 @@ src/
 | [PRD.md](./PRD.md) | 제품 요구사항 |
 | [ROADMAP.md](./ROADMAP.md) | 개발 로드맵 |
 
-### Keycloak OIDC authentication (real Builder)
+### Keycloak OIDC 인증 (실연동 Builder)
 
-The real Builder flow authenticates humans through a self-hosted Keycloak realm using
-Authorization Code Flow + PKCE (S256). Studio is a public SPA — there is **no client
-secret** in the frontend. Email/password sign-in, verification, password reset, token
-refresh and logout are Keycloak's responsibility; Studio never sees or stores a password.
+실연동 Builder 흐름은 self-hosted Keycloak realm을 통해 사람 사용자를 인증한다 —
+Authorization Code Flow + PKCE(S256). Studio는 public SPA이므로 프런트엔드에 **client
+secret이 없다**. 이메일/비밀번호 로그인, 이메일 인증, 비밀번호 재설정, 토큰 갱신,
+로그아웃은 모두 Keycloak의 책임이며 Studio는 비밀번호를 보거나 저장하지 않는다.
+
+실연동 `/login`에서는 두 가지 로그인 경로를 제공한다.
+
+- **Google로 계속하기**: `keycloakLogin(returnTo, "google")`을 사용해 Keycloak의
+  Google Identity Broker를 통해 인증한다.
+- **KPubData 계정으로 로그인**: `keycloakLogin(returnTo)`을 사용해 Keycloak이
+  제공하는 로그인 화면으로 이동한다.
+
+두 경로 모두 Keycloak을 Authorization Server로 사용하며, Google 인증을 Studio가
+직접 처리하거나 Google 토큰을 Builder에 직접 전달하지 않는다.
+mock/demo 모드(`VITE_USE_REAL_BUILDER` 미설정)에서는 기존 이메일/비밀번호 폼을 그대로 쓴다.
 
 ```dotenv
-# Studio .env.local (do not commit)
+# Studio .env.local (커밋 금지)
 VITE_USE_REAL_BUILDER=true
 VITE_BUILDER_API_URL=http://localhost:8000
 VITE_OIDC_ISSUER=http://localhost:8080/realms/kpubdata
 VITE_OIDC_CLIENT_ID=kpubdata-studio
 ```
 
-Keycloak client (`kpubdata-studio`): public client (client auth OFF), Standard Flow ON,
-Direct Access Grants OFF, PKCE `S256` required, valid redirect URI + web origin
-`http://localhost:5173`, and access-token audience `kpubdata-builder`.
+Keycloak client(`kpubdata-studio`) 설정: public client(client auth OFF), Standard Flow ON,
+Direct Access Grants OFF, PKCE `S256` 필수, access-token audience `kpubdata-builder`,
+Google를 Identity Provider로 연결.
 
-- `VITE_OIDC_ISSUER` is the full issuer URL (`.../realms/<realm>`); Studio derives the
-  Keycloak base URL and realm from it. A missing or malformed issuer/client id fails
-  closed with a visible error — Studio never assumes the user is authenticated.
-- Access tokens live only in the `keycloak-js` in-memory session. Studio attaches
-  `Authorization: Bearer <token>` at the shared Builder request boundary and refreshes
-  near-expiry tokens there; nothing is written to `localStorage`/`sessionStorage` or logs.
-- The existing `X-API-Key` path on the Builder is unaffected.
+**Valid Redirect URIs / Web Origins (로컬 개발 기준):**
+
+- Web Origins: `http://localhost:5173`
+- Valid Redirect URIs에는 다음 두 가지가 모두 매칭돼야 한다:
+  - **로그인 callback** — `keycloakLogin`이 `/login?returnTo=...`로 돌아온다.
+  - **silent SSO callback** — `initKeycloak()`이 숨은 iframe으로 세션을 조용히 확인할 때
+    `redirect_uri`로 `/silent-check-sso.html`(앱 `BASE_URL` 하위)을 보낸다. 이 경로가
+    Valid Redirect URI에 없으면 최초 silent SSO 확인이 거부되어 Studio가 인증 오류
+    화면에 머문다.
+- 로컬에서는 `http://localhost:5173/silent-check-sso.html`과 로그인 callback의
+  query string까지 허용하는 패턴(예: `http://localhost:5173/login*`)을 등록하거나,
+  개발 편의상 `http://localhost:5173/*` 하나로 둘 다 커버할 수 있다.
+- **production에서는 넓은 wildcard(`https://<host>/*` 또는 `*`)를 기본값으로 쓰지 않는다.**
+  production 배포 origin에 대해 실제로 사용하는 silent SSO callback과 로그인 callback만
+  허용하고, 로그인 callback에 필요한 경우 `/login*`처럼 가능한 좁은 범위의 패턴을 사용한다.
+  sub-path 배포라면 `BASE_URL`도 포함한다.
+
+- `VITE_OIDC_ISSUER`는 전체 issuer URL(`.../realms/<realm>`)이다. Studio가 여기서
+  Keycloak base URL과 realm을 파생한다. issuer/client id가 없거나 형식이 잘못되면
+  화면에 보이는 오류로 fail-closed된다 — Studio는 사용자가 인증됐다고 가정하지 않는다.
+- access token은 `keycloak-js`의 메모리 세션에만 존재한다. Studio는 공유 Builder 요청
+  경계에서 `Authorization: Bearer <token>`을 붙이고 만료 임박 토큰을 그 자리에서 갱신한다.
+  `localStorage`/`sessionStorage`나 로그에는 아무것도 쓰지 않는다.
+- Builder의 기존 `X-API-Key` 경로는 영향받지 않는다.
 
 #### Builder side (real OIDC verification)
 

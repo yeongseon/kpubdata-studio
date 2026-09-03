@@ -71,7 +71,7 @@ describe("새 IA placeholder 화면 (#247)", () => {
     renderPage(<AddDataPage />);
     expect(screen.getByRole("heading", { name: "데이터 추가" })).toBeInTheDocument();
     expect(screen.queryByText("아직 준비 중인 화면입니다")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Source 선택" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "데이터 선택" })).toBeInTheDocument();
   });
 
   it("Dataset Detail loads the dataset identified by the route param", async () => {

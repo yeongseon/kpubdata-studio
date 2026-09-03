@@ -118,3 +118,62 @@ export async function getBuildManifest(
   const result = await builderApi.getBuildManifest(buildId, signal);
   return result as AuthoritativeBuildManifest;
 }
+
+/**
+ * 다운로드 가능한 산출물 파일 목록을 조회한다 — `GET /artifacts/{run_id}`.
+ *
+ * 이 목록의 각 경로가 **canonical artifact identifier**다: exact run 워크스페이스 기준
+ * POSIX 상대 경로이고, output_root/절대경로/OS 구분자를 포함하지 않는다. 다운로드는
+ * 반드시 이 값을 써야 한다 — `manifest.outputs`는 filesystem storage 경로(절대경로 +
+ * OS 구분자)라 다운로드 식별자로 쓸 수 없다.
+ *
+ * @returns run 디렉터리 기준 상대 파일 경로 배열.
+ */
+export async function listArtifactFiles(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  if (!isRealBuilderEnabled()) {
+    // mock 모드: 실제 워크스페이스가 없으므로 결정적 fixture manifest의 output 목록을
+    // 그대로 쓴다(이미 상대 POSIX 경로 형태다).
+    return mockManifest(runId).outputs ?? [];
+  }
+  const result = await builderApi.artifacts(runId, signal);
+  return result.files;
+}
+
+/**
+ * 특정 실행의 개별 산출물 파일을 인증된 Builder 요청으로 받아온다.
+ *
+ * `filePath`는 반드시 `listArtifactFiles`(= `GET /artifacts/{run_id}`)가 준 canonical
+ * run-relative POSIX 경로여야 한다 — Studio에서 경로 문자열을 변형하지 않는다.
+ * `builderApi.downloadArtifactFile`이 세그먼트별로만 URL 인코딩한다. mock 모드에는
+ * 실제 파일이 없으므로 지어내지 않고 명시적으로 지원하지 않음을 알린다.
+ */
+export async function downloadArtifact(
+  runId: string,
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; filename: string }> {
+  if (!isRealBuilderEnabled()) {
+    throw new Error(
+      "Mock 모드에서는 산출물 파일 다운로드를 시뮬레이션하지 않습니다. 실연동 모드에서 확인하세요.",
+    );
+  }
+  return builderApi.downloadArtifactFile(runId, filePath, signal);
+}
+
+/** Blob을 받아 원래 파일명으로 브라우저 다운로드를 트리거하고 object URL을 정리한다. */
+export function saveBlobAsFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

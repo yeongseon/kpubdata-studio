@@ -406,6 +406,8 @@ export type PreviewColumn = schemas.PreviewColumn;
 export type PreviewSource = schemas.PreviewSource;
 export type PreviewResponse = schemas.PreviewResponse;
 export type CatalogQuerySupport = schemas.CatalogQuerySupport;
+export type CatalogRequestParameter = schemas.CatalogRequestParameter;
+export type CatalogApplication = schemas.CatalogApplication;
 export type CatalogDataset = schemas.CatalogDataset;
 export type CatalogProvider = schemas.CatalogProvider;
 export type CatalogResponse = schemas.CatalogResponse;
@@ -432,6 +434,7 @@ export type SchemaDriftFinding = schemas.SchemaDriftFinding;
 export type BuildQualityResponse = schemas.BuildQualityResponse;
 export type DatasetQualityHistoryEntry = schemas.DatasetQualityHistoryEntry;
 export type DatasetQualityHistoryResponse = schemas.DatasetQualityHistoryResponse;
+export type QualitySummaryResponse = schemas.QualitySummaryResponse;
 export type QueryStage = schemas.QueryStage;
 export type QueryRequest = schemas.QueryRequest;
 export type QueryResponse = schemas.QueryResponse;
@@ -673,6 +676,19 @@ export const builderApi = {
     ),
 
   /**
+   * GET /quality/summary — 최근 24h cross-run quality aggregate (Builder 1.22.0, #486 후속).
+   * Home "QUALITY WARN (24H)" KPI가 이 값을 authoritative하게 읽는다. 1.21.0 이하
+   * Builder에서는 404이므로 호출부가 이 KPI만 독립적으로 "확인 불가" 처리한다 —
+   * 다른 KPI/Recent Builds는 영향받지 않는다.
+   */
+  getQualitySummary: (signal?: AbortSignal) =>
+    apiFetch(
+      "/quality/summary?window=24h",
+      { signal },
+      schemas.qualitySummaryResponseSchema,
+    ),
+
+  /**
    * POST /providers/{provider}/test — 현재 principal credential로 lightweight
    * connection test 실행 (#492). Add Data의 Public API 단계에서 "연결 테스트"
    * 버튼이 호출한다. credential 값 자체는 Studio가 주고받지 않는다 — Builder가
@@ -777,6 +793,8 @@ export const builderApi = {
   // uploadFile은 JSON이 아닌 raw body를 보내야 해서 apiFetch를 쓰지 않는 별도 함수로
   // 아래에 정의한다(함수 선언은 호이스팅되므로 여기서 참조할 수 있다).
   uploadFile,
+  // downloadArtifactFile도 응답이 바이너리라 apiFetch를 쓰지 않는 별도 함수다.
+  downloadArtifactFile,
 };
 
 /**
@@ -830,4 +848,81 @@ export async function uploadFile(
     throw new ApiError(500, "Builder 업로드 응답이 예상된 형식과 일치하지 않습니다.", parsed);
   }
   return result.data;
+}
+
+/** Content-Disposition 헤더에서 filename을 안전하게 뽑는다(없으면 null). 경로 구분자는 제거한다. */
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(header);
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  const raw = star?.[1] ?? plain?.[1];
+  if (!raw) return null;
+  let value = raw.trim();
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    /* 인코딩되지 않은 값은 그대로 쓴다 */
+  }
+  // 디렉터리 성분은 버리고 파일명만 남긴다.
+  return value.split(/[\\/]/).pop() || null;
+}
+
+/**
+ * GET /artifacts/{run_id}/{file_path} — 실행 산출물 개별 파일을 인증된 요청으로 받는다.
+ *
+ * 응답이 JSON이 아니라 바이너리 파일이라 `apiFetch`의 JSON 경로를 쓸 수 없다. Bearer
+ * 헤더는 `uploadFile`과 동일하게 `authTokenProvider`를 재사용하고, 401이면 동일한
+ * `authErrorCallback`을 호출한다.
+ *
+ * `filePath`는 반드시 Builder `GET /artifacts/{run_id}` 목록이 준 canonical
+ * run-relative POSIX 경로여야 한다(예: "silver/datago.air_quality/table.parquet").
+ * manifest.outputs는 output_root 절대경로 + OS 구분자라 여기 넘기면 안 된다.
+ * "/" 구분자는 그대로 두고 각 세그먼트만 URL 인코딩한다 — "/"를 "%2F"/"%5C"로 넣거나
+ * 경로 의미를 바꾸지 않는다(traversal은 Builder가 decode 후 재검증해 거부한다).
+ */
+export async function downloadArtifactFile(
+  runId: string,
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; filename: string }> {
+  const encodedPath = filePath
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+  const headers: Record<string, string> = {};
+  const token = (await authTokenProvider?.()) ?? null;
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/artifacts/${encodeURIComponent(runId)}/${encodedPath}`, {
+      method: "GET",
+      headers,
+      signal,
+    });
+  } catch (cause) {
+    if (signal?.aborted) throw cause;
+    throw new ApiError(0, "Builder API에 연결하지 못했습니다.", cause);
+  }
+
+  if (!response.ok) {
+    if (response.status === 401 && authErrorCallback) authErrorCallback();
+    let parsed: unknown;
+    try {
+      const text = await response.text();
+      parsed = text ? JSON.parse(text) : undefined;
+    } catch {
+      parsed = undefined;
+    }
+    throw new ApiError(response.status, formatApiErrorMessage(response.status, parsed), parsed);
+  }
+
+  const blob = await response.blob();
+  const filename =
+    filenameFromContentDisposition(response.headers.get("Content-Disposition")) ??
+    filePath.split("/").pop() ??
+    "artifact";
+  return { blob, filename };
 }
