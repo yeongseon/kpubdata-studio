@@ -12,6 +12,9 @@ import { KubiDrawer } from "@/features/kubi/KubiDrawer";
 import { KubiSearchInput } from "@/features/kubi/KubiSearchInput";
 import { useUIStore } from "@/shared/hooks/useUIStore";
 
+const sidebarLogoUrl = new URL("../../assets/logo/kpubdata-brand-assets/svg/horizontal_dark.svg", import.meta.url).href;
+const sidebarSymbolUrl = new URL("../../assets/logo/kpubdata-brand-assets/svg/sidebar_dark.svg", import.meta.url).href;
+
 /**
  * 현재 라우트에 맞는 헤더 CTA(라벨/이동 경로)를 고른다(제안 §6.4).
  *
@@ -251,10 +254,10 @@ function getResolvedTheme(theme: ReturnType<typeof useUIStore.getState>["theme"]
 function navigationClassName({ isActive }: { isActive: boolean }) {
   return [
     "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
     isActive
-      ? "bg-accent-subtle text-accent-subtle-foreground"
-      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      ? "bg-sidebar-active text-sidebar-active-foreground"
+      : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-active-foreground",
   ].join(" ");
 }
 
@@ -326,7 +329,7 @@ export function Layout() {
           <aside
             data-tour="sidebar"
           className={[
-            "fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border bg-card px-4 py-5 transition-all lg:static lg:translate-x-0",
+            "fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar px-4 py-5 text-sidebar-foreground transition-all lg:static lg:translate-x-0",
             isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
             isDesktopSidebarCollapsed ? "lg:w-20 lg:px-2" : "lg:w-72",
           ].join(" ")}
@@ -334,17 +337,17 @@ export function Layout() {
           <div className="flex items-start justify-between gap-3 pb-5">
             <div>
               <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-foreground">
-                  K
-                </span>
-                <Link
-                  className={[
-                    "text-base font-semibold tracking-tight",
-                    isDesktopSidebarCollapsed ? "lg:sr-only" : "",
-                  ].join(" ")}
-                  to="/"
-                >
-                  KPubData Studio
+                <Link aria-label="KPubData Studio 홈" className="flex min-w-0 items-center" to="/">
+                  <img
+                    alt="KPubData Studio"
+                    className={["w-[156px] max-w-full", isDesktopSidebarCollapsed ? "lg:hidden" : ""].join(" ")}
+                    src={sidebarLogoUrl}
+                  />
+                  <img
+                    alt="KPubData Studio"
+                    className={["hidden h-8 w-8", isDesktopSidebarCollapsed ? "lg:block" : ""].join(" ")}
+                    src={sidebarSymbolUrl}
+                  />
                 </Link>
               </div>
               {/* tagline은 Topbar가 workspace/product context를 담당하므로 Sidebar에서는
@@ -352,7 +355,7 @@ export function Layout() {
             </div>
             <button
               aria-label="사이드바 닫기"
-              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:hidden"
+              className="rounded-lg border border-sidebar-border p-1.5 text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-active-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar lg:hidden"
               onClick={closeMobileSidebar}
               type="button"
             >
@@ -362,7 +365,7 @@ export function Layout() {
                 항상 접근 가능하다(#247). collapsed 상태에서도 이 버튼 자체는 숨지 않는다. */}
             <button
               aria-label={isDesktopSidebarCollapsed ? "사이드바 펼치기" : "사이드바 접기"}
-              className="hidden shrink-0 rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:inline-flex"
+              className="hidden shrink-0 rounded-lg border border-sidebar-border p-1.5 text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-active-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar lg:inline-flex"
               onClick={toggleDesktopSidebarCollapsed}
               type="button"
             >
@@ -375,7 +378,7 @@ export function Layout() {
               <div key={group.label}>
                 <p
                   className={[
-                    "px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+                    "px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-muted",
                     isDesktopSidebarCollapsed ? "lg:sr-only" : "",
                   ].join(" ")}
                 >
@@ -401,7 +404,7 @@ export function Layout() {
               </div>
             ))}
 
-            <div className="mt-auto space-y-1 border-t border-border pt-3">
+            <div className="mt-auto space-y-1 border-t border-sidebar-border pt-3">
               <NavLink
                 className={navigationClassName}
                 onClick={closeMobileSidebar}
@@ -421,7 +424,7 @@ export function Layout() {
 
           <div
             className={[
-              "mt-4 rounded-lg border border-border bg-muted p-3",
+              "mt-4 rounded-lg border border-sidebar-border bg-sidebar-hover p-3",
               isDesktopSidebarCollapsed ? "lg:sr-only" : "",
             ].join(" ")}
           >
@@ -429,7 +432,7 @@ export function Layout() {
               <p className="text-sm font-medium">테마</p>
               <select
                 aria-label="테마 선택"
-                className="rounded-lg border border-input bg-card px-2.5 py-1.5 text-sm"
+                className="rounded-lg border border-sidebar-border bg-sidebar px-2.5 py-1.5 text-sm text-sidebar-foreground"
                 onChange={(event) => setTheme(event.target.value as "system" | "light" | "dark")}
                 value={theme}
               >
