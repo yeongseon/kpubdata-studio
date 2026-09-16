@@ -13,6 +13,8 @@
  * (`AddDataPage`의 onBuild → `job.start(specResult.spec)`) 이 컴포넌트를 거치지 않고
  * 원문 spec을 그대로 쓰므로, 표시용 redaction이 제출값에 영향을 주지 않는다.
  */
+import { useTranslation } from "react-i18next";
+import { i18n } from "@/shared/i18n";
 import { toBuilderSpec } from "@/features/build-spec/specMapping";
 import { PREVIEW_SOURCE_STATE_LABEL, summarizeChecksPassed, summarizePreviewSources } from "@/features/quality/model";
 import { QualityBadge } from "@/features/quality/QualityBadge";
@@ -51,7 +53,7 @@ function sourceSummary(draft: AddDataDraft): string {
   if (draft.sourceKind === "public_api") return `Public API · ${draft.publicApi.provider}/${draft.publicApi.dataset}`;
   if (draft.sourceKind === "file") return `File Upload · ${draft.file.filename ?? draft.file.format ?? ""}`;
   if (draft.sourceKind === "url") return `URL / REST API · ${redactUrlEndpoint(draft.url.endpoint).endpoint}`;
-  return "선택되지 않음";
+  return i18n.t("addData.review.notSelected");
 }
 
 function querySummary(draft: AddDataDraft): string {
@@ -70,8 +72,8 @@ const PIPELINE_STAGES = ["Bronze", "Validate", "Silver", "Gold"] as const;
  */
 function pipelineStageStatus(jobStatus: BuildJobStatus): string {
   if (jobStatus === "succeeded") return "Done";
-  if (jobStatus === "failed") return "중단";
-  if (jobStatus === "running") return "진행 중";
+  if (jobStatus === "failed") return i18n.t("addData.review.stageStopped");
+  if (jobStatus === "running") return i18n.t("addData.review.stageRunning");
   return "Pending";
 }
 
@@ -91,6 +93,7 @@ export function ReviewBuildStep({
   onBuild,
   onCancel,
 }: ReviewBuildStepProps) {
+  const { t } = useTranslation();
   // 실제 제출은 항상 원문 `spec`으로 이뤄진다(AddDataPage의 onBuild가 이 컴포넌트가
   // 아니라 자신의 specResult.spec을 그대로 job.start에 넘긴다) — 여기서 만드는
   // displaySpec은 화면 표시 전용 사본이며, redact 여부가 실제 제출값에 전혀 영향을
@@ -114,39 +117,39 @@ export function ReviewBuildStep({
 
   return (
     <div className="space-y-4">
-      <h3 className="text-xl font-semibold tracking-tight">검토 · Build</h3>
+      <h3 className="text-xl font-semibold tracking-tight">{t("addData.review.title")}</h3>
 
       <div className="grid gap-3 sm:grid-cols-4">
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase text-muted-foreground">데이터셋</p>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">{t("addData.review.cardDataset")}</p>
           <p className="mt-1 text-base font-semibold">{draft.title || draft.datasetId || "—"}</p>
           <p className="text-xs text-muted-foreground">{sourceSummary(draft)}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase text-muted-foreground">Preview 조건</p>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">{t("addData.review.cardPreview")}</p>
           <p className="mt-1 text-base font-semibold">{previewLimit} rows · {previewSampleMode}</p>
           <p className="text-xs text-muted-foreground">
             {previewSources.length > 0
               ? previewSources.length > 1
-                ? `${previewSources.length}개 source 표본${previewsSummary.mixed ? " · mixed" : ""}`
-                : `${totalRows}건 중 표본`
-              : "미실행"}
+                ? t("addData.review.previewSourcesSummary", { count: previewSources.length, mixed: previewsSummary.mixed ? " · mixed" : "" })
+                : t("addData.review.previewRowsSummary", { total: totalRows })
+              : t("addData.review.notRun")}
           </p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase text-muted-foreground">검증 결과</p>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">{t("addData.review.cardValidation")}</p>
           <p className="mt-1 text-base font-semibold">
-            {validation.status !== "validated" ? "미실행" : validation.valid ? "통과" : "실패"}
+            {validation.status !== "validated" ? t("addData.review.notRun") : validation.valid ? t("addData.review.validationPassed") : t("addData.review.validationFailed")}
           </p>
-          {quality ? <QualityBadge status={quality.status} /> : <p className="text-xs text-muted-foreground">품질 결과 없음</p>}
+          {quality ? <QualityBadge status={quality.status} /> : <p className="text-xs text-muted-foreground">{t("addData.review.noQuality")}</p>}
           {previewsSummary.mixed ? (
             <p role="status" className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-              Mixed — source별 상태가 다릅니다
+              {t("addData.review.mixedShort")}
             </p>
           ) : null}
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase text-muted-foreground">출력</p>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">{t("addData.review.cardOutput")}</p>
           <p className="mt-1 text-base font-semibold">{draft.exportFormats.join(", ").toUpperCase() || "—"}</p>
           <p className="text-xs text-muted-foreground">Bronze → Silver → Gold</p>
         </Card>
@@ -155,8 +158,7 @@ export function ReviewBuildStep({
       {isStale ? (
         <Card variant="error" className="p-4">
           <p role="alert" className="text-sm text-red-800 dark:text-red-200">
-            Preview 실행 이후 source/설정이 변경되어 이전 Preview·Validation 결과를 재사용할 수 없습니다.
-            Preview & Validate 단계에서 다시 실행해주세요.
+            {t("addData.review.staleNotice")}
           </p>
         </Card>
       ) : null}
@@ -180,19 +182,19 @@ export function ReviewBuildStep({
           <p className="text-sm font-semibold">Build plan</p>
           <dl className="divide-y divide-border text-sm">
             {[
-              ["Source / Provider", sourceSummary(draft)],
-              ["Dataset", draft.title || draft.datasetId || "—"],
-              ["Query / Config", querySummary(draft)],
+              [t("addData.review.planSource"), sourceSummary(draft)],
+              [t("addData.review.planDataset"), draft.title || draft.datasetId || "—"],
+              [t("addData.review.planQuery"), querySummary(draft)],
               [
-                "Preview",
+                t("addData.review.planPreview"),
                 previewSources.length > 0
                   ? previewSources.length > 1
-                    ? `${previewLimit} rows(${previewSampleMode}) · ${previewSources.length}개 source${previewsSummary.mixed ? " (mixed)" : ""}`
-                    : `${previewLimit} rows(${previewSampleMode}) · ${totalRows}건 중 표본`
-                  : "미실행",
+                    ? t("addData.review.planPreviewMulti", { limit: previewLimit, mode: previewSampleMode, count: previewSources.length, mixed: previewsSummary.mixed ? " (mixed)" : "" })
+                    : t("addData.review.planPreviewSingle", { limit: previewLimit, mode: previewSampleMode, total: totalRows })
+                  : t("addData.review.notRun"),
               ],
-              ["Validation", quality ? `${quality.pass}/${quality.evaluated} · ${quality.status}` : "미실행"],
-              ["Output", draft.exportFormats.join(", ").toUpperCase() || "—"],
+              [t("addData.review.planValidation"), quality ? `${quality.pass}/${quality.evaluated} · ${quality.status}` : t("addData.review.notRun")],
+              [t("addData.review.planOutput"), draft.exportFormats.join(", ").toUpperCase() || "—"],
             ].map(([label, value]) => (
               <div key={label} className="flex items-center justify-between gap-3 py-2">
                 <span className="text-muted-foreground">{label}</span>
@@ -202,7 +204,7 @@ export function ReviewBuildStep({
           </dl>
           {previewSources.length > 1 ? (
             <div className="space-y-1.5 border-t border-border pt-3">
-              <p className="text-sm font-semibold">Source별 Preview/Validation</p>
+              <p className="text-sm font-semibold">{t("addData.review.perSourceTitle")}</p>
               {previewsSummary.perSource.map(({ source: s, state, quality: q }) => (
                 <div key={s.source_key} className="flex items-center justify-between text-sm">
                   <span>{s.source_key}</span>
@@ -235,37 +237,35 @@ export function ReviewBuildStep({
         </Card>
 
         <Card className="space-y-2">
-          <p className="text-sm font-semibold">실제 제출될 canonical BuildSpec</p>
+          <p className="text-sm font-semibold">{t("addData.review.canonicalTitle")}</p>
           <pre className="overflow-x-auto rounded-xl bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
-            <code>{displaySubmissionSpec ? JSON.stringify(displaySubmissionSpec, null, 2) : "스펙을 아직 만들 수 없습니다."}</code>
+            <code>{displaySubmissionSpec ? JSON.stringify(displaySubmissionSpec, null, 2) : t("addData.review.specUnavailable")}</code>
           </pre>
           <p className="text-xs text-muted-foreground">
-            Build 시작 후 동일한 설정·검증 결과가 Run 상세에 그대로 이어집니다. URL source의 secret
-            query parameter, Public API source의 secret 파라미터 값은 표시에서만 가려지며, 실제
-            제출값에는 영향을 주지 않습니다.
+            {t("addData.review.canonicalNote")}
           </p>
         </Card>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <Button disabled={!canBuild} loading={jobStatus === "running"} onClick={onBuild}>
-          Build 시작
+          {t("addData.review.startBuild")}
         </Button>
         {jobStatus === "running" ? (
-          <Button variant="secondary" onClick={onCancel}>취소</Button>
+          <Button variant="secondary" onClick={onCancel}>{t("addData.review.cancel")}</Button>
         ) : null}
         {jobStatus === "succeeded" && runId ? (
-          <span className="text-sm text-accent-subtle-foreground">빌드 성공 (run {runId})</span>
+          <span className="text-sm text-accent-subtle-foreground">{t("addData.review.buildSuccess", { runId })}</span>
         ) : null}
         {jobStatus === "failed" ? (
           <span role="alert" className="text-sm text-red-700 dark:text-red-300">{jobError}</span>
         ) : null}
         {jobStatus === "cancelled" ? (
-          <span className="text-sm text-muted-foreground">실행이 취소되었습니다.</span>
+          <span className="text-sm text-muted-foreground">{t("addData.review.cancelled")}</span>
         ) : null}
         {jobInterrupted && jobStatus !== "cancelled" ? (
           <span className="text-sm text-muted-foreground">
-            요청을 중단했습니다. 서버 빌드 결과는 확인되지 않았습니다.
+            {t("addData.review.interrupted")}
           </span>
         ) : null}
       </div>
