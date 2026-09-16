@@ -963,6 +963,31 @@
     "lastSaved": "· Last saved {{date}}",
     "duplicate": "Duplicate"
   },
+  "reportEditor": {
+    "untitled": "Untitled",
+    "confirmDeleteBlock": "Delete this block?",
+    "refreshEvidenceFailed": "Failed to refresh Evidence.",
+    "newReportTitle": "{{title}} · {{runId}} report",
+    "createReportFailed": "Failed to create a new Report.",
+    "loading": "Loading…",
+    "notFoundTitle": "Report not found",
+    "notFoundHere": "This Report is not in this browser",
+    "notFoundHereDesc": "It may have been deleted or created on another browser/device (local storage does not sync across devices).",
+    "toReportList": "To report list",
+    "editReport": "Edit Report",
+    "title": "Title",
+    "saved": "Saved · revision {{revision}}",
+    "lastSavedAt": " · Last saved {{time}}",
+    "refreshEvidence": "Refresh Evidence",
+    "downloadMarkdown": "Download Markdown",
+    "downloadHtml": "Download HTML",
+    "print": "Print (Browser Print)",
+    "kubiAnalysis": "7. Kubi Analysis",
+    "noAiAnalysis": "No AI analysis added yet",
+    "noAiAnalysisDesc": "You can analyze the current Dataset/Run in Kubi, then review and add it to the report.",
+    "userNotes": "8. User Notes",
+    "addUserBlock": "+ Add a user-written block"
+  },
   "reports": {
     "page": {
       "eyebrow": "Reports",

@@ -963,6 +963,31 @@
     "lastSaved": "· 최근 저장 {{date}}",
     "duplicate": "복제"
   },
+  "reportEditor": {
+    "untitled": "제목 없음",
+    "confirmDeleteBlock": "이 블록을 삭제하시겠습니까?",
+    "refreshEvidenceFailed": "Evidence를 새로고침하지 못했습니다.",
+    "newReportTitle": "{{title}} · {{runId}} 보고서",
+    "createReportFailed": "새 Report를 만들지 못했습니다.",
+    "loading": "불러오는 중…",
+    "notFoundTitle": "Report를 찾을 수 없습니다",
+    "notFoundHere": "이 Report는 이 브라우저에 없습니다",
+    "notFoundHereDesc": "삭제되었거나 다른 브라우저/기기에서 만들어졌을 수 있습니다(로컬 저장소이므로 기기 간 동기화되지 않습니다).",
+    "toReportList": "Report 목록으로",
+    "editReport": "Report 편집",
+    "title": "제목",
+    "saved": "저장됨 · revision {{revision}}",
+    "lastSavedAt": " · 마지막 저장 {{time}}",
+    "refreshEvidence": "Evidence 새로고침",
+    "downloadMarkdown": "Markdown 다운로드",
+    "downloadHtml": "HTML 다운로드",
+    "print": "인쇄(Browser Print)",
+    "kubiAnalysis": "7. Kubi 분석",
+    "noAiAnalysis": "아직 추가된 AI 분석이 없습니다",
+    "noAiAnalysisDesc": "Kubi에서 현재 Dataset/Run을 분석한 뒤 검토하여 보고서에 추가할 수 있습니다.",
+    "userNotes": "8. 사용자 메모",
+    "addUserBlock": "+ 사용자 작성 블록 추가"
+  },
   "reports": {
     "page": {
       "eyebrow": "리포트",
