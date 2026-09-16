@@ -39,6 +39,21 @@
   "languageSwitcher": {
     "toggle": "언어 전환"
   },
+  "layout": {
+    "closeNav": "내비게이션 닫기",
+    "studioHome": "KPubData Studio 홈",
+    "closeSidebar": "사이드바 닫기",
+    "expandSidebar": "사이드바 펼치기",
+    "collapseSidebar": "사이드바 접기",
+    "theme": "테마",
+    "selectTheme": "테마 선택",
+    "toggleSidebar": "사이드바 열기/닫기",
+    "tagline": "공공데이터를 데이터셋으로 만드는 워크스페이스",
+    "openKubi": "Kubi 열기",
+    "goToSettingsFor": "{{email}} 설정으로 이동",
+    "loginRequiredSettings": "로그인이 필요합니다 — 설정으로 이동",
+    "loginRequired": "로그인이 필요합니다"
+  },
   "builds": {
     "statusFilter": {
       "all": "전체 상태",
@@ -960,6 +975,8 @@
     "cancel": "취소",
     "noProvider": "provider 없음",
     "noOutput": "output 없음",
+    "noSpecsEmptyTitle": "저장된 BuildSpec이 없습니다",
+    "renameAction": "이름변경",
     "lastSaved": "· 최근 저장 {{date}}",
     "duplicate": "복제"
   },

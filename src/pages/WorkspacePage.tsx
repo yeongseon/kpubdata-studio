@@ -272,7 +272,7 @@ export function WorkspacePage() {
           {savedSpecSummaries.length === 0 ? (
             <EmptyState
               className="py-8"
-              title={t("workspace.noSpecs")}
+              title={t("workspace.noSpecsEmptyTitle")}
               description={t("workspace.noSpecsDesc")}
               actionLabel={t("workspace.newBuild")}
               actionHref="/builds/new"
@@ -330,7 +330,7 @@ export function WorkspacePage() {
                           className="text-muted-foreground underline hover:text-foreground"
                           onClick={() => setRenameTarget({ id: summary.id, name: summary.name })}
                         >
-                          {t("workspace.rename")}
+                          {t("workspace.renameAction")}
                         </button>
                         <button
                           type="button"

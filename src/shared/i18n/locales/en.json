@@ -39,6 +39,21 @@
   "languageSwitcher": {
     "toggle": "Switch language"
   },
+  "layout": {
+    "closeNav": "Close navigation",
+    "studioHome": "KPubData Studio home",
+    "closeSidebar": "Close sidebar",
+    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse sidebar",
+    "theme": "Theme",
+    "selectTheme": "Select theme",
+    "toggleSidebar": "Toggle sidebar",
+    "tagline": "A workspace for turning public data into datasets",
+    "openKubi": "Open Kubi",
+    "goToSettingsFor": "Go to settings for {{email}}",
+    "loginRequiredSettings": "Login required — go to settings",
+    "loginRequired": "Login required"
+  },
   "builds": {
     "statusFilter": {
       "all": "All statuses",
@@ -957,12 +972,14 @@
     "clearAll": "Delete all",
     "noSpecsDesc": "Write a spec in New Build and save it to see it here.",
     "save": "Save",
-    "cancel": "Cancel",
-    "noProvider": "no provider",
-    "noOutput": "no output",
-    "lastSaved": "· Last saved {{date}}",
-    "duplicate": "Duplicate"
-  },
+     "cancel": "Cancel",
+     "noProvider": "no provider",
+     "noOutput": "no output",
+     "noSpecsEmptyTitle": "No saved BuildSpecs",
+     "renameAction": "Rename",
+     "lastSaved": "· Last saved {{date}}",
+     "duplicate": "Duplicate"
+   },
   "reportEditor": {
     "untitled": "Untitled",
     "confirmDeleteBlock": "Delete this block?",
