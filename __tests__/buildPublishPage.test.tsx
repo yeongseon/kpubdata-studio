@@ -82,6 +82,10 @@ describe("BuildPublishPage readiness (audit #4)", () => {
 
 describe("BuildPublishPage credential blockers (#399)", () => {
   function readinessWith(code: string, message: string) {
+    // 실제 Builder 모드로 둔다. mock 모드에서는 알려진 mock run id 만 해석되어
+    // "선택한 Run을 Builder에서 찾을 수 없습니다"로 단락되고, readiness 카드가
+    // 아예 렌더되지 않는다.
+    vi.stubEnv("VITE_USE_REAL_BUILDER", "true");
     return http.get(`${BUILDER_BASE}/builds/:runId/publish/readiness`, ({ params }) =>
       HttpResponse.json({
         run_id: String(params.runId),
