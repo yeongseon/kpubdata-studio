@@ -16,6 +16,8 @@
 # production
 /build
 /dist
+# Vite 프로젝트지만 tsconfig incremental 산출물이 여기로 떨어진다 (#404)
+.next/
 # mkdocs 빌드 산출물(배포 시 CI에서 생성)
 /site
 
