@@ -53,6 +53,14 @@ const BUILD_STATUS_KEY: Record<BuildRunStatus, string> = {
 const inputClassName =
   "h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
+/** publish 대상 credential 과 관련된 blocker code.
+ *
+ * ``credential_unavailable`` 은 "어디에도 credential 이 없다",
+ * ``credential_required`` 는 "이 배포는 서버 것을 빌려주지 않는다" 다
+ * (kpubdata-builder #665). 둘 다 같은 안내가 필요하지만 후자는 사용자가 직접
+ * 할 수 있는 조치가 더 있다. */
+const CREDENTIAL_BLOCKER_CODES = new Set(["credential_unavailable", "credential_required"]);
+
 export function BuildPublishPage() {
   const { t } = useTranslation();
   const { buildId: runId = "" } = useParams();
@@ -209,7 +217,11 @@ export function BuildPublishPage() {
             </p>
             {readiness.data.blockers.length > 0 ? <IssueList title="Blockers" issues={readiness.data.blockers} tone="error" /> : null}
             {readiness.data.warnings.length > 0 ? <IssueList title="Warnings" issues={readiness.data.warnings} tone="warning" /> : null}
-            {readiness.data.blockers.some((issue) => issue.code === "credential_unavailable") ? <p className="text-xs text-muted-foreground">{t("buildPublish.credentialNote")}</p> : null}
+            {readiness.data.blockers.some((issue) => CREDENTIAL_BLOCKER_CODES.has(issue.code)) ? <p className="text-xs text-muted-foreground">{t("buildPublish.credentialNote")}</p> : null}
+            {/* credential_required 는 "어디에도 없다"(credential_unavailable)와 다르다 —
+                이 배포가 서버 토큰을 빌려주지 않는다는 뜻이라, 사용자가 직접 할 수 있는
+                조치가 있다. 그 조치를 알려주지 않으면 서버 문제로 읽힌다. */}
+            {readiness.data.blockers.some((issue) => issue.code === "credential_required") ? <p className="text-xs text-muted-foreground">{t("buildPublish.credentialRequiredNote")}</p> : null}
           </div>
         ) : null}
       </Card>

@@ -1219,12 +1219,12 @@
     "buildCompleted": "Build completed",
     "exactRunNote": "This screen reads the dataset and completion state from the exact run ID in the URL — it never switches to the latest run.",
     "datasetLoadWarn": "The dataset information for this run could not be loaded. Readiness is still checked below by run ID.",
-    "readinessNote": "Builder decides on the run, gold stage, license, PII policy and server credential.",
+    "readinessNote": "Builder decides on the run, gold stage, license, PII policy and publish credential.",
     "recheck": "Check again",
     "readyLabel": "Builder is ready to publish",
     "blockedLabel": "Builder reported blockers — publishing is not possible.",
     "notReadyNoReason": "Builder judged this run not ready to publish but gave no specific blocker.",
-    "credentialNote": "This blocker refers to the Builder server's Hugging Face publish credential, not a source provider credential. Studio neither takes nor stores a token.",
+    "credentialNote": "This blocker refers to a publish target credential (Hugging Face / Kaggle), not a source provider credential. Depending on how the Builder is deployed it either uses the server credential or requires one you have stored yourself. Studio neither takes nor stores either.",
     "settingsTitle": "Publish settings",
     "settingsNote": "Local input validation, separate from readiness — Builder readiness does not check the destination or visibility.",
     "destinationHint": "An owner/dataset identifier Builder accepts",
@@ -1241,7 +1241,8 @@
     "publishFailed": "Publish failed",
     "noAutoRetry": "Do not retry automatically.",
     "abortedTitle": "Stopped waiting for the response.",
-    "abortedBody": "Only the browser request was stopped — the remote publish was not cancelled. Its outcome is unknown."
+    "abortedBody": "Only the browser request was stopped — the remote publish was not cancelled. Its outcome is unknown.",
+    "credentialRequiredNote": "This deployment does not lend out the server publish credential. Store your own with the Builder to publish."
   },
   "datasetDetail": {
     "stagesErrorMsg": "Could not load stage status.",
